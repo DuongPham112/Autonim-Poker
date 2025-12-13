@@ -1,3 +1,6 @@
+# Reference files (do not commit)
+reference/
+
 # Node modules (if you add npm packages later)
 node_modules/
 npm-debug.log*

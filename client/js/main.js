@@ -1,12 +1,12 @@
 /**
- * Autonim-Poker - Main Application Logic
- * CEP Extension for After Effects
+ * Autonim-Poker - Director Tool
+ * Pose-to-Pose Animation Recording for After Effects
  * 
  * Features:
  * - Import card images from folder using Node.js fs/path
- * - Draggable cards on poker table
- * - Motion recording with Space + Drag
- * - Export keyframe data to After Effects
+ * - Draggable cards with transform-based positioning
+ * - Pose-to-Pose recording: Snapshot → Edit → Finish Step
+ * - Export scenario JSON for After Effects
  */
 
 // ============================================
@@ -14,43 +14,73 @@
 // ============================================
 
 // CSInterface for AE communication
-const csInterface = new CSInterface();
+let csInterface;
+try {
+    csInterface = new CSInterface();
+} catch (e) {
+    console.warn('CSInterface not available - running outside CEP');
+    csInterface = null;
+}
 
 // Node.js modules (available in CEP with Node.js enabled)
-const fs = require('fs');
-const path = require('path');
+let fs, path;
+try {
+    fs = require('fs');
+    path = require('path');
+} catch (e) {
+    console.warn('Node.js modules not available');
+    fs = null;
+    path = null;
+}
 
-// Application state
+// Application Mode
+window.appMode = 'recording'; // 'recording' or 'play'
+
+// Project Info (Reference dimensions 1920x1080)
+const PROJECT_INFO = {
+    width: 1920,
+    height: 1080,
+    fps: 30
+};
+
+// Application State
 const appState = {
     cards: [],                    // Array of card objects
     selectedCard: null,           // Currently selected card
-    isRecording: false,           // Is currently recording motion
-    isSpacePressed: false,        // Is spacebar held down
-    isDragging: false,            // Is currently dragging
-    recordingInterval: null,      // Recording timer interval
-    sequenceCounter: 1,           // Counter for composition names
+    isEditingStep: false,         // Is currently editing a step
+    currentStepIndex: -1,         // Current step being edited
     deckPath: null                // Path to imported deck folder
 };
 
-// Data structure for export to AE
-const exportData = {
-    compName: 'Poker_Sequence_01',
-    frameRate: 30,
-    layers: []
+// Scenario Data (will be exported)
+const scenarioData = {
+    projectInfo: PROJECT_INFO,
+    initialState: {},             // Initial positions of all cards
+    scenario: []                  // Array of steps
 };
+
+// Current Step being edited
+let currentStep = null;
+let startSnapshot = null;         // Snapshot when step started
 
 // Supported image formats
 const SUPPORTED_FORMATS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'];
-const RECORDING_INTERVAL_MS = 30; // Sample every 30ms
 
 // ============================================
 // DOM ELEMENTS
 // ============================================
 
-let importDeckBtn, resetBtn, exportBtn, folderInput;
-let pokerTable, cardArea, tableInstructions;
-let cardCountEl, keyframeCountEl, statusMessage;
+let importDeckBtn, resetBtn, folderInput;
+let gameContainer, pokerTable, cardArea, tableInstructions;
+let cardCountEl, actionCountEl, statusMessage;
+let directorPanel, addStepBtn, finishStepBtn, stepDuration;
+let currentStepNum, totalSteps, timelinePreview;
+let noCardSelected, cardProperties, selectedCardName;
+let flipCardCheck, slamEffectCheck;
+let cardPosX, cardPosY, cardRot;
+let exportJsonBtn, exportToAEBtn;
 let recordingIndicator;
+let playModeBtn, recordModeBtn;
 
 // ============================================
 // INITIALIZATION
@@ -62,15 +92,36 @@ function init() {
     // Get DOM elements
     importDeckBtn = document.getElementById('importDeckBtn');
     resetBtn = document.getElementById('resetBtn');
-    exportBtn = document.getElementById('exportBtn');
     folderInput = document.getElementById('folderInput');
+    gameContainer = document.getElementById('gameContainer');
     pokerTable = document.getElementById('pokerTable');
     cardArea = document.getElementById('cardArea');
     tableInstructions = document.getElementById('tableInstructions');
     cardCountEl = document.getElementById('cardCount');
-    keyframeCountEl = document.getElementById('keyframeCount');
+    actionCountEl = document.getElementById('actionCount');
     statusMessage = document.getElementById('statusMessage');
     recordingIndicator = document.getElementById('recordingIndicator');
+
+    // Director Panel elements
+    directorPanel = document.getElementById('directorPanel');
+    addStepBtn = document.getElementById('addStepBtn');
+    finishStepBtn = document.getElementById('finishStepBtn');
+    stepDuration = document.getElementById('stepDuration');
+    currentStepNum = document.getElementById('currentStepNum');
+    totalSteps = document.getElementById('totalSteps');
+    timelinePreview = document.getElementById('timelinePreview');
+    noCardSelected = document.getElementById('noCardSelected');
+    cardProperties = document.getElementById('cardProperties');
+    selectedCardName = document.getElementById('selectedCardName');
+    flipCardCheck = document.getElementById('flipCardCheck');
+    slamEffectCheck = document.getElementById('slamEffectCheck');
+    cardPosX = document.getElementById('cardPosX');
+    cardPosY = document.getElementById('cardPosY');
+    cardRot = document.getElementById('cardRot');
+    exportJsonBtn = document.getElementById('exportJsonBtn');
+    exportToAEBtn = document.getElementById('exportToAEBtn');
+    playModeBtn = document.getElementById('playModeBtn');
+    recordModeBtn = document.getElementById('recordModeBtn');
 
     // Bind event listeners
     bindEvents();
@@ -78,23 +129,58 @@ function init() {
     // Update UI
     updateUI();
 
-    console.log('Autonim-Poker initialized');
-    setStatus('Ready - Import a deck to start');
+    console.log('Autonim-Poker Director Tool initialized');
+    setStatus('Ready - Import a deck to start recording');
 }
 
 function bindEvents() {
-    // Button clicks
+    // Import / Reset
     importDeckBtn.addEventListener('click', () => folderInput.click());
     folderInput.addEventListener('change', handleFolderSelect);
     resetBtn.addEventListener('click', handleReset);
-    exportBtn.addEventListener('click', handleExport);
 
-    // Keyboard events for recording
-    document.addEventListener('keydown', handleKeyDown);
-    document.addEventListener('keyup', handleKeyUp);
+    // Step Controls
+    addStepBtn.addEventListener('click', handleAddStep);
+    finishStepBtn.addEventListener('click', handleFinishStep);
 
-    // Prevent context menu on poker table
-    pokerTable.addEventListener('contextmenu', e => e.preventDefault());
+    // Action Properties
+    flipCardCheck.addEventListener('change', handleActionPropertyChange);
+    slamEffectCheck.addEventListener('change', handleActionPropertyChange);
+
+    // Export
+    exportJsonBtn.addEventListener('click', handleExportJSON);
+    exportToAEBtn.addEventListener('click', handleExportToAE);
+
+    // Mode switching
+    playModeBtn.addEventListener('click', () => setAppMode('play'));
+    recordModeBtn.addEventListener('click', () => setAppMode('recording'));
+
+    // Click outside cards to deselect
+    cardArea.addEventListener('click', (e) => {
+        if (e.target === cardArea) {
+            deselectCard();
+        }
+    });
+}
+
+// ============================================
+// MODE SWITCHING
+// ============================================
+
+function setAppMode(mode) {
+    window.appMode = mode;
+
+    if (mode === 'recording') {
+        directorPanel.classList.remove('hidden');
+        recordModeBtn.classList.add('active');
+        playModeBtn.classList.remove('active');
+    } else {
+        directorPanel.classList.add('hidden');
+        playModeBtn.classList.add('active');
+        recordModeBtn.classList.remove('active');
+    }
+
+    updateUI();
 }
 
 // ============================================
@@ -107,25 +193,28 @@ function handleFolderSelect(event) {
 
     // Get the folder path from first file
     const firstFile = files[0];
-    const folderPath = path.dirname(firstFile.path);
-    appState.deckPath = folderPath;
+    let folderPath = '';
 
-    setStatus(`Loading images from: ${path.basename(folderPath)}...`);
+    if (path && firstFile.path) {
+        folderPath = path.dirname(firstFile.path);
+        appState.deckPath = folderPath;
+    }
 
-    // Read all image files from the folder
+    setStatus(`Loading images...`, 'recording');
+
     try {
         const imageFiles = [];
-        
+
         // Iterate through selected files
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
-            const ext = path.extname(file.name).toLowerCase();
-            
+            const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+
             if (SUPPORTED_FORMATS.includes(ext)) {
                 imageFiles.push({
                     name: file.name,
-                    path: file.path,
-                    baseName: path.basename(file.name, ext)
+                    path: file.path || URL.createObjectURL(file),
+                    baseName: file.name.substring(0, file.name.lastIndexOf('.'))
                 });
             }
         }
@@ -141,10 +230,13 @@ function handleFolderSelect(event) {
         // Create cards from images
         createCardsFromImages(imageFiles);
 
+        // Save initial state
+        saveInitialState();
+
         // Hide instructions
         tableInstructions.classList.add('hidden');
 
-        setStatus(`Loaded ${imageFiles.length} cards from deck`, 'success');
+        setStatus(`Loaded ${imageFiles.length} cards. Ready to record!`, 'success');
         updateUI();
 
     } catch (error) {
@@ -160,37 +252,46 @@ function createCardsFromImages(imageFiles) {
     const tableRect = cardArea.getBoundingClientRect();
     const cardWidth = 80;
     const cardHeight = 112;
-    const padding = 20;
-    
-    // Calculate grid layout for initial card positions
-    const cardsPerRow = Math.floor((tableRect.width - padding * 2) / (cardWidth + 10));
-    
-    imageFiles.forEach((file, index) => {
-        const row = Math.floor(index / cardsPerRow);
-        const col = index % cardsPerRow;
-        
-        const x = padding + col * (cardWidth + 10);
-        const y = padding + row * (cardHeight + 10);
+    const padding = 60;
 
-        const card = createCard(file, x, y);
+    // Calculate grid layout for initial card positions
+    const cardsPerRow = Math.floor((tableRect.width - padding * 2) / (cardWidth + 15));
+    const maxCards = Math.min(imageFiles.length, 52);
+
+    for (let i = 0; i < maxCards; i++) {
+        const file = imageFiles[i];
+        const row = Math.floor(i / cardsPerRow);
+        const col = i % cardsPerRow;
+
+        const x = padding + col * (cardWidth + 15);
+        const y = padding + row * (cardHeight + 15);
+
+        const card = createCard(file, x, y, i);
         appState.cards.push(card);
-    });
+    }
 }
 
-function createCard(fileInfo, x, y) {
-    const cardId = `card_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+function createCard(fileInfo, x, y, index) {
+    const cardId = `card-${index}-${fileInfo.baseName.replace(/\s+/g, '_')}`;
+
     // Create card element
     const cardEl = document.createElement('div');
     cardEl.className = 'card';
     cardEl.id = cardId;
-    cardEl.style.left = `${x}px`;
-    cardEl.style.top = `${y}px`;
-    cardEl.style.transform = 'rotate(0deg)';
+    cardEl.dataset.index = index;
+
+    // Set initial position using transform
+    cardEl.style.left = '0';
+    cardEl.style.top = '0';
+    cardEl.style.transform = `translate(${x}px, ${y}px) rotate(0deg)`;
 
     // Create image
     const img = document.createElement('img');
-    img.src = `file://${fileInfo.path}`;
+    if (fileInfo.path.startsWith('blob:') || fileInfo.path.startsWith('file://')) {
+        img.src = fileInfo.path;
+    } else {
+        img.src = `file://${fileInfo.path}`;
+    }
     img.alt = fileInfo.baseName;
     img.draggable = false;
     cardEl.appendChild(img);
@@ -204,8 +305,8 @@ function createCard(fileInfo, x, y) {
     // Add to DOM
     cardArea.appendChild(cardEl);
 
-    // Bind drag events
-    bindCardDragEvents(cardEl);
+    // Make draggable
+    makeDraggable(cardEl);
 
     // Create card data object
     const cardData = {
@@ -216,253 +317,424 @@ function createCard(fileInfo, x, y) {
         x: x,
         y: y,
         rotation: 0,
-        keyframes: [],
-        isRecording: false
+        scale: 1,
+        faceUp: true,
+        flip: false,          // Action property
+        slamEffect: false     // Action property
     };
 
     return cardData;
 }
 
 // ============================================
-// CARD DRAGGING
+// DRAGGABLE FUNCTIONALITY
 // ============================================
 
-function bindCardDragEvents(cardEl) {
-    let startX, startY, startLeft, startTop;
-    let currentRotation = 0;
+function makeDraggable(element) {
+    let isDragging = false;
+    let startMouseX, startMouseY;
+    let startX, startY, rotation;
 
-    cardEl.addEventListener('mousedown', (e) => {
+    element.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return; // Only left click
-
         e.preventDefault();
-        
-        // Find card data
-        const cardData = appState.cards.find(c => c.id === cardEl.id);
-        if (!cardData) return;
+        e.stopPropagation();
 
-        appState.selectedCard = cardData;
-        appState.isDragging = true;
-
-        // Get starting positions
-        startX = e.clientX;
-        startY = e.clientY;
-        const rect = cardEl.getBoundingClientRect();
-        const tableRect = cardArea.getBoundingClientRect();
-        startLeft = rect.left - tableRect.left;
-        startTop = rect.top - tableRect.top;
-        currentRotation = cardData.rotation;
-
-        // Add dragging class
-        cardEl.classList.add('dragging');
-
-        // Bring to front
-        cardEl.style.zIndex = 1000;
-
-        // Check if should start recording
-        if (appState.isSpacePressed) {
-            startRecording(cardData);
+        // Select this card
+        const cardData = appState.cards.find(c => c.id === element.id);
+        if (cardData) {
+            selectCard(cardData);
         }
 
-        // Mouse move handler
-        const onMouseMove = (moveEvent) => {
-            const dx = moveEvent.clientX - startX;
-            const dy = moveEvent.clientY - startY;
+        isDragging = true;
+        element.classList.add('dragging');
 
-            // Update position
-            cardData.x = startLeft + dx;
-            cardData.y = startTop + dy;
+        // Get current transform values
+        const transform = getTransformValues(element);
+        startX = transform.x;
+        startY = transform.y;
+        rotation = transform.rotation;
 
-            // Calculate rotation based on movement velocity
-            if (appState.isRecording) {
-                const velocity = Math.sqrt(dx * dx + dy * dy);
-                const rotationDelta = Math.atan2(dy, dx) * (180 / Math.PI);
-                currentRotation = rotationDelta * 0.3; // Subtle rotation
-                cardData.rotation = currentRotation;
-            }
+        startMouseX = e.clientX;
+        startMouseY = e.clientY;
 
-            // Apply transform
-            cardEl.style.left = `${cardData.x}px`;
-            cardEl.style.top = `${cardData.y}px`;
-            cardEl.style.transform = `rotate(${cardData.rotation}deg)`;
+        // Bring to front
+        element.style.zIndex = 1000;
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+
+        const dx = e.clientX - startMouseX;
+        const dy = e.clientY - startMouseY;
+
+        // Calculate new position relative to game container
+        const containerRect = gameContainer.getBoundingClientRect();
+        const scaleX = PROJECT_INFO.width / containerRect.width;
+        const scaleY = PROJECT_INFO.height / containerRect.height;
+
+        const newX = startX + dx * scaleX;
+        const newY = startY + dy * scaleY;
+
+        // Apply transform
+        element.style.transform = `translate(${newX}px, ${newY}px) rotate(${rotation}deg)`;
+
+        // Update card data
+        const cardData = appState.cards.find(c => c.id === element.id);
+        if (cardData) {
+            cardData.x = newX;
+            cardData.y = newY;
+            updateCardPropertiesUI(cardData);
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (!isDragging) return;
+        isDragging = false;
+        element.classList.remove('dragging');
+        element.style.zIndex = '';
+
+        // Check if card has changed
+        checkCardChanges();
+        updateUI();
+    });
+
+    // Click to select
+    element.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const cardData = appState.cards.find(c => c.id === element.id);
+        if (cardData) {
+            selectCard(cardData);
+        }
+    });
+}
+
+function getTransformValues(element) {
+    const transform = element.style.transform;
+    const translateMatch = transform.match(/translate\(([^,]+)px,\s*([^)]+)px\)/);
+    const rotateMatch = transform.match(/rotate\(([^)]+)deg\)/);
+
+    return {
+        x: translateMatch ? parseFloat(translateMatch[1]) : 0,
+        y: translateMatch ? parseFloat(translateMatch[2]) : 0,
+        rotation: rotateMatch ? parseFloat(rotateMatch[1]) : 0
+    };
+}
+
+// ============================================
+// CARD SELECTION
+// ============================================
+
+function selectCard(cardData) {
+    // Deselect previous
+    if (appState.selectedCard) {
+        appState.selectedCard.element.classList.remove('selected');
+    }
+
+    // Select new
+    appState.selectedCard = cardData;
+    cardData.element.classList.add('selected');
+
+    // Update UI
+    noCardSelected.classList.add('hidden');
+    cardProperties.classList.remove('hidden');
+    selectedCardName.textContent = cardData.name;
+
+    // Sync action properties
+    flipCardCheck.checked = cardData.flip || false;
+    slamEffectCheck.checked = cardData.slamEffect || false;
+
+    updateCardPropertiesUI(cardData);
+}
+
+function deselectCard() {
+    if (appState.selectedCard) {
+        appState.selectedCard.element.classList.remove('selected');
+        appState.selectedCard = null;
+    }
+
+    noCardSelected.classList.remove('hidden');
+    cardProperties.classList.add('hidden');
+}
+
+function updateCardPropertiesUI(cardData) {
+    cardPosX.textContent = Math.round(cardData.x);
+    cardPosY.textContent = Math.round(cardData.y);
+    cardRot.textContent = `${Math.round(cardData.rotation)}°`;
+}
+
+// ============================================
+// ACTION PROPERTIES
+// ============================================
+
+function handleActionPropertyChange() {
+    if (!appState.selectedCard) return;
+
+    appState.selectedCard.flip = flipCardCheck.checked;
+    appState.selectedCard.slamEffect = slamEffectCheck.checked;
+
+    // Update visual indicators
+    const el = appState.selectedCard.element;
+    el.classList.toggle('flip-marked', appState.selectedCard.flip);
+    el.classList.toggle('slam-marked', appState.selectedCard.slamEffect);
+
+    checkCardChanges();
+}
+
+// ============================================
+// POSE-TO-POSE RECORDING
+// ============================================
+
+function handleAddStep() {
+    if (appState.isEditingStep) {
+        setStatus('Please finish the current step first', 'error');
+        return;
+    }
+
+    // Take snapshot of current state (Start State)
+    startSnapshot = takeSnapshot();
+
+    // Create new step
+    const stepIndex = scenarioData.scenario.length + 1;
+    currentStep = {
+        stepId: stepIndex,
+        duration: parseFloat(stepDuration.value) || 1.0,
+        actions: []
+    };
+
+    appState.isEditingStep = true;
+    appState.currentStepIndex = stepIndex;
+
+    // Update UI
+    finishStepBtn.disabled = false;
+    addStepBtn.disabled = true;
+    recordingIndicator.classList.add('active');
+    currentStepNum.textContent = stepIndex;
+
+    setStatus(`Editing Step ${stepIndex} - Drag cards and set properties, then click Finish Step`, 'recording');
+    updateUI();
+}
+
+function handleFinishStep() {
+    if (!appState.isEditingStep || !currentStep || !startSnapshot) {
+        setStatus('No step is being edited', 'error');
+        return;
+    }
+
+    // Compare current state with snapshot to find changes
+    const endSnapshot = takeSnapshot();
+    const actions = computeActions(startSnapshot, endSnapshot);
+
+    // Update step with actions
+    currentStep.duration = parseFloat(stepDuration.value) || 1.0;
+    currentStep.actions = actions;
+
+    // Add step to scenario
+    scenarioData.scenario.push(currentStep);
+
+    // Reset editing state
+    appState.isEditingStep = false;
+    currentStep = null;
+    startSnapshot = null;
+
+    // Reset card visual states
+    appState.cards.forEach(card => {
+        card.element.classList.remove('has-changes', 'flip-marked', 'slam-marked');
+        card.flip = false;
+        card.slamEffect = false;
+    });
+
+    // Update checkboxes if card is selected
+    if (appState.selectedCard) {
+        flipCardCheck.checked = false;
+        slamEffectCheck.checked = false;
+    }
+
+    // Update UI
+    finishStepBtn.disabled = true;
+    addStepBtn.disabled = false;
+    recordingIndicator.classList.remove('active');
+    currentStepNum.textContent = '-';
+    totalSteps.textContent = scenarioData.scenario.length;
+
+    renderTimeline();
+
+    setStatus(`Step ${scenarioData.scenario.length} saved with ${actions.length} action(s)`, 'success');
+    updateUI();
+}
+
+function takeSnapshot() {
+    const snapshot = {};
+    appState.cards.forEach(card => {
+        snapshot[card.id] = {
+            x: card.x,
+            y: card.y,
+            rotation: card.rotation,
+            scale: card.scale,
+            faceUp: card.faceUp
         };
+    });
+    return snapshot;
+}
 
-        // Mouse up handler
-        const onMouseUp = () => {
-            appState.isDragging = false;
-            cardEl.classList.remove('dragging');
-            cardEl.style.zIndex = '';
+function computeActions(startSnap, endSnap) {
+    const actions = [];
+    const POSITION_THRESHOLD = 1; // Minimum pixel change to register
 
-            // Stop recording if active
-            if (cardData.isRecording) {
-                stopRecording(cardData);
-            }
+    appState.cards.forEach(card => {
+        const start = startSnap[card.id];
+        const end = endSnap[card.id];
 
-            appState.selectedCard = null;
+        if (!start || !end) return;
 
-            document.removeEventListener('mousemove', onMouseMove);
-            document.removeEventListener('mouseup', onMouseUp);
+        // Check for position/rotation changes
+        const posChanged = Math.abs(end.x - start.x) > POSITION_THRESHOLD ||
+            Math.abs(end.y - start.y) > POSITION_THRESHOLD;
+        const rotChanged = Math.abs(end.rotation - start.rotation) > 0.5;
+        const hasFlip = card.flip;
+        const hasSlam = card.slamEffect;
 
-            updateUI();
+        if (posChanged || rotChanged || hasFlip || hasSlam) {
+            const action = {
+                targetId: card.id,
+                type: 'TRANSFORM',
+                endPosition: { x: Math.round(end.x), y: Math.round(end.y) },
+                endRotation: Math.round(end.rotation),
+                flip: hasFlip,
+                effect: hasSlam ? 'SLAM' : null
+            };
+
+            // Include start position for delta calculation
+            action.startPosition = { x: Math.round(start.x), y: Math.round(start.y) };
+            action.startRotation = Math.round(start.rotation);
+
+            actions.push(action);
+        }
+    });
+
+    return actions;
+}
+
+function checkCardChanges() {
+    if (!appState.isEditingStep || !startSnapshot) return;
+
+    appState.cards.forEach(card => {
+        const start = startSnapshot[card.id];
+        if (!start) return;
+
+        const posChanged = Math.abs(card.x - start.x) > 1 ||
+            Math.abs(card.y - start.y) > 1;
+        const hasAction = posChanged || card.flip || card.slamEffect;
+
+        card.element.classList.toggle('has-changes', hasAction && !card.flip && !card.slamEffect);
+    });
+
+    updateUI();
+}
+
+// ============================================
+// INITIAL STATE
+// ============================================
+
+function saveInitialState() {
+    scenarioData.initialState = {};
+    appState.cards.forEach(card => {
+        scenarioData.initialState[card.id] = {
+            name: card.name,
+            path: card.path,
+            x: Math.round(card.x),
+            y: Math.round(card.y),
+            rotation: card.rotation,
+            scale: card.scale,
+            faceUp: card.faceUp
         };
-
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
     });
 }
 
 // ============================================
-// RECORDING SYSTEM
+// TIMELINE
 // ============================================
 
-function handleKeyDown(e) {
-    if (e.code === 'Space' && !appState.isSpacePressed) {
-        e.preventDefault();
-        appState.isSpacePressed = true;
+function renderTimeline() {
+    timelinePreview.innerHTML = '';
 
-        // If already dragging, start recording
-        if (appState.isDragging && appState.selectedCard) {
-            startRecording(appState.selectedCard);
+    scenarioData.scenario.forEach((step, index) => {
+        const stepEl = document.createElement('div');
+        stepEl.className = 'timeline-step';
+        if (step.actions.length > 0) {
+            stepEl.classList.add('has-actions');
         }
-    }
-}
+        stepEl.textContent = step.stepId;
+        stepEl.title = `Step ${step.stepId}: ${step.actions.length} action(s), ${step.duration}s`;
 
-function handleKeyUp(e) {
-    if (e.code === 'Space') {
-        e.preventDefault();
-        appState.isSpacePressed = false;
+        stepEl.addEventListener('click', () => {
+            // Could add step preview/edit functionality here
+            console.log('Step clicked:', step);
+        });
 
-        // Stop any active recording
-        if (appState.selectedCard && appState.selectedCard.isRecording) {
-            stopRecording(appState.selectedCard);
-        }
-    }
-}
-
-function startRecording(cardData) {
-    if (cardData.isRecording) return;
-
-    cardData.isRecording = true;
-    appState.isRecording = true;
-
-    // Clear previous keyframes for this card
-    cardData.keyframes = [];
-    cardData.recordStartTime = Date.now();
-
-    // Add visual feedback
-    cardData.element.classList.add('recording');
-    recordingIndicator.classList.add('active');
-
-    setStatus(`Recording motion for: ${cardData.name}`, 'recording');
-
-    // Start sampling at 30ms intervals
-    appState.recordingInterval = setInterval(() => {
-        recordKeyframe(cardData);
-    }, RECORDING_INTERVAL_MS);
-
-    // Record first keyframe immediately
-    recordKeyframe(cardData);
-
-    console.log(`Started recording for card: ${cardData.name}`);
-}
-
-function stopRecording(cardData) {
-    if (!cardData.isRecording) return;
-
-    cardData.isRecording = false;
-    appState.isRecording = false;
-
-    // Stop sampling
-    if (appState.recordingInterval) {
-        clearInterval(appState.recordingInterval);
-        appState.recordingInterval = null;
-    }
-
-    // Remove visual feedback
-    cardData.element.classList.remove('recording');
-    recordingIndicator.classList.remove('active');
-
-    const keyframeCount = cardData.keyframes.length;
-    setStatus(`Recorded ${keyframeCount} keyframes for: ${cardData.name}`, 'success');
-
-    console.log(`Stopped recording for card: ${cardData.name}. Keyframes: ${keyframeCount}`);
-    updateUI();
-}
-
-function recordKeyframe(cardData) {
-    const time = (Date.now() - cardData.recordStartTime) / 1000; // Time in seconds
-
-    const keyframe = {
-        time: parseFloat(time.toFixed(3)),
-        x: Math.round(cardData.x),
-        y: Math.round(cardData.y),
-        rotation: parseFloat(cardData.rotation.toFixed(2))
-    };
-
-    cardData.keyframes.push(keyframe);
-    updateUI();
+        timelinePreview.appendChild(stepEl);
+    });
 }
 
 // ============================================
-// EXPORT TO AFTER EFFECTS
+// EXPORT
 // ============================================
 
-function handleExport() {
-    // Check if we have any cards with keyframes
-    const cardsWithKeyframes = appState.cards.filter(c => c.keyframes.length > 0);
-
-    if (cardsWithKeyframes.length === 0) {
-        setStatus('No recorded motion to export. Hold SPACE + Drag cards first.', 'error');
+function handleExportJSON() {
+    if (scenarioData.scenario.length === 0) {
+        setStatus('No steps recorded. Add steps first!', 'error');
         return;
     }
 
-    // Build export data
-    const exportPayload = {
-        compName: `Poker_Sequence_${String(appState.sequenceCounter).padStart(2, '0')}`,
-        frameRate: 30,
-        tableWidth: cardArea.offsetWidth,
-        tableHeight: cardArea.offsetHeight,
-        layers: cardsWithKeyframes.map(card => ({
-            name: card.name,
-            path: card.path,
-            keyframes: card.keyframes
-        }))
-    };
+    const jsonString = JSON.stringify(scenarioData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
 
-    setStatus('Exporting to After Effects...', 'recording');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `poker_scenario_${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 
-    // Send to ExtendScript
-    const jsonString = JSON.stringify(exportPayload);
-    
+    setStatus('Scenario JSON exported successfully!', 'success');
+}
+
+function handleExportToAE() {
+    if (!csInterface) {
+        setStatus('After Effects not connected. Export JSON instead.', 'error');
+        return;
+    }
+
+    if (scenarioData.scenario.length === 0) {
+        setStatus('No steps recorded. Add steps first!', 'error');
+        return;
+    }
+
+    setStatus('Sending to After Effects...', 'recording');
+
+    const jsonString = JSON.stringify(scenarioData);
+
     csInterface.evalScript(
-        `importPokerAnimation('${escapeJsonForScript(jsonString)}')`,
-        function(result) {
+        `importPokerScenario('${escapeJsonForScript(jsonString)}')`,
+        function (result) {
             try {
                 const response = JSON.parse(result);
                 if (response.success) {
-                    setStatus(`✓ Exported to AE: ${exportPayload.compName}`, 'success');
-                    appState.sequenceCounter++;
-                    
-                    // Clear keyframes after successful export
-                    appState.cards.forEach(card => {
-                        card.keyframes = [];
-                    });
-                    updateUI();
+                    setStatus(`✓ Sent to AE: ${response.message}`, 'success');
                 } else {
                     setStatus(`Export failed: ${response.message}`, 'error');
                 }
             } catch (e) {
-                // If script didn't return JSON, check for eval error
                 if (result === 'EvalScript error.') {
                     setStatus('Error: Check After Effects ExtendScript', 'error');
                 } else {
-                    setStatus('Export completed', 'success');
-                    appState.sequenceCounter++;
+                    setStatus('Sent to After Effects', 'success');
                 }
             }
         }
     );
-
-    console.log('Export payload:', exportPayload);
 }
 
 function escapeJsonForScript(jsonString) {
@@ -479,29 +751,37 @@ function escapeJsonForScript(jsonString) {
 // ============================================
 
 function handleReset() {
+    if (scenarioData.scenario.length > 0) {
+        if (!confirm('This will clear all recorded steps. Continue?')) {
+            return;
+        }
+    }
+
     clearCards();
-    appState.deckPath = null;
-    appState.sequenceCounter = 1;
+    scenarioData.scenario = [];
+    scenarioData.initialState = {};
+    appState.isEditingStep = false;
+    currentStep = null;
+    startSnapshot = null;
+
     tableInstructions.classList.remove('hidden');
-    setStatus('Table cleared - Import a deck to start');
+    finishStepBtn.disabled = true;
+    addStepBtn.disabled = false;
+    recordingIndicator.classList.remove('active');
+    currentStepNum.textContent = '-';
+    totalSteps.textContent = '0';
+
+    renderTimeline();
+    deselectCard();
+
+    setStatus('All cleared - Import a deck to start');
     updateUI();
 }
 
 function clearCards() {
-    // Stop any recording
-    if (appState.recordingInterval) {
-        clearInterval(appState.recordingInterval);
-        appState.recordingInterval = null;
-    }
-
-    // Remove all card elements
     cardArea.innerHTML = '';
-
-    // Clear state
     appState.cards = [];
     appState.selectedCard = null;
-    appState.isRecording = false;
-    recordingIndicator.classList.remove('active');
 }
 
 // ============================================
@@ -512,13 +792,12 @@ function updateUI() {
     // Update card count
     cardCountEl.textContent = `Cards: ${appState.cards.length}`;
 
-    // Count total keyframes
-    const totalKeyframes = appState.cards.reduce((sum, card) => sum + card.keyframes.length, 0);
-    keyframeCountEl.textContent = `Keyframes: ${totalKeyframes}`;
+    // Count total actions
+    const totalActions = scenarioData.scenario.reduce((sum, step) => sum + step.actions.length, 0);
+    actionCountEl.textContent = `Actions: ${totalActions}`;
 
-    // Update export button state
-    const hasKeyframes = appState.cards.some(c => c.keyframes.length > 0);
-    exportBtn.disabled = !hasKeyframes;
+    // Update total steps
+    totalSteps.textContent = scenarioData.scenario.length;
 }
 
 function setStatus(message, type = '') {
@@ -530,13 +809,19 @@ function setStatus(message, type = '') {
 }
 
 // ============================================
-// UTILITY FUNCTIONS
+// UTILITY
 // ============================================
 
-function getSystemInfo() {
-    const osInfo = csInterface.getOSInformation();
-    const appInfo = csInterface.hostEnvironment;
-    console.log('OS:', osInfo);
-    console.log('Host App:', appInfo);
-    return { os: osInfo, app: appInfo };
+function getRelativePosition(element) {
+    const containerRect = gameContainer.getBoundingClientRect();
+    const elementRect = element.getBoundingClientRect();
+
+    // Calculate position relative to game container, scaled to reference dimensions
+    const scaleX = PROJECT_INFO.width / containerRect.width;
+    const scaleY = PROJECT_INFO.height / containerRect.height;
+
+    return {
+        x: (elementRect.left - containerRect.left) * scaleX,
+        y: (elementRect.top - containerRect.top) * scaleY
+    };
 }

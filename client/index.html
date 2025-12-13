@@ -1,23 +1,108 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Autonim-Poker</title>
+    <title>Autonim-Poker - Director Tool</title>
     <link rel="stylesheet" href="css/style.css">
 </head>
+
 <body>
     <div class="container">
+        <!-- Director Panel (Recording Mode Controls) -->
+        <div id="directorPanel" class="director-panel">
+            <div class="director-header">
+                <h2>🎬 Director Panel</h2>
+                <span class="mode-badge">RECORDING MODE</span>
+            </div>
+
+            <!-- Step Controls -->
+            <div class="director-section">
+                <h3>Step Controls</h3>
+                <div class="step-info">
+                    <span>Current Step: <strong id="currentStepNum">-</strong></span>
+                    <span>Total: <strong id="totalSteps">0</strong></span>
+                </div>
+                <div class="control-group">
+                    <label for="stepDuration">Duration (seconds):</label>
+                    <input type="number" id="stepDuration" value="1.0" min="0.1" max="10" step="0.1">
+                </div>
+                <div class="step-buttons">
+                    <button id="addStepBtn" class="btn btn-success">
+                        <span>➕</span> Add New Step
+                    </button>
+                    <button id="finishStepBtn" class="btn btn-primary" disabled>
+                        <span>✓</span> Finish Step
+                    </button>
+                </div>
+            </div>
+
+            <!-- Action Properties (for selected card) -->
+            <div class="director-section">
+                <h3>Action Properties</h3>
+                <div id="noCardSelected" class="no-selection">
+                    Click a card to select it
+                </div>
+                <div id="cardProperties" class="card-properties hidden">
+                    <div class="selected-card-info">
+                        <span>Selected: <strong id="selectedCardName">-</strong></span>
+                    </div>
+                    <div class="checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="flipCardCheck">
+                            <span>🔄 Flip Card</span>
+                        </label>
+                    </div>
+                    <div class="checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="slamEffectCheck">
+                            <span>💥 Slam Effect</span>
+                        </label>
+                    </div>
+                    <div class="position-info">
+                        <span>X: <strong id="cardPosX">0</strong></span>
+                        <span>Y: <strong id="cardPosY">0</strong></span>
+                        <span>Rot: <strong id="cardRot">0°</strong></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Timeline Preview -->
+            <div class="director-section">
+                <h3>Timeline</h3>
+                <div id="timelinePreview" class="timeline-preview">
+                    <!-- Steps will be rendered here -->
+                </div>
+            </div>
+
+            <!-- Export -->
+            <div class="director-section">
+                <button id="exportJsonBtn" class="btn btn-export btn-large">
+                    <span>📥</span> Export Scenario JSON
+                </button>
+                <button id="exportToAEBtn" class="btn btn-primary btn-large">
+                    <span>🚀</span> Send to After Effects
+                </button>
+            </div>
+        </div>
+
         <!-- Header -->
         <header class="header">
             <div class="header-left">
                 <h1 class="logo">🎴 Autonim-Poker</h1>
                 <span class="version">v1.0.0</span>
             </div>
+            <div class="header-center">
+                <div class="mode-switch">
+                    <button id="playModeBtn" class="mode-btn">▶ Play</button>
+                    <button id="recordModeBtn" class="mode-btn active">🔴 Record</button>
+                </div>
+            </div>
             <div class="header-right">
                 <div class="recording-indicator" id="recordingIndicator">
                     <span class="rec-dot"></span>
-                    <span>REC</span>
+                    <span>EDITING STEP</span>
                 </div>
             </div>
         </header>
@@ -31,47 +116,55 @@
                 </button>
                 <button id="resetBtn" class="btn btn-danger">
                     <span class="btn-icon">🔄</span>
-                    Reset
+                    Reset All
                 </button>
             </div>
             <div class="controls-center">
                 <div class="info-panel">
                     <span id="cardCount">Cards: 0</span>
                     <span class="separator">|</span>
-                    <span id="keyframeCount">Keyframes: 0</span>
+                    <span id="actionCount">Actions: 0</span>
                 </div>
             </div>
             <div class="controls-right">
-                <button id="exportBtn" class="btn btn-primary btn-large">
-                    <span class="btn-icon">🚀</span>
-                    EXPORT TO AE
-                </button>
-            </div>
-        </div>
-
-        <!-- Poker Table -->
-        <div class="poker-table-container">
-            <div id="pokerTable" class="poker-table">
-                <div class="table-center-line"></div>
-                <div class="table-border"></div>
-                <div id="cardArea" class="card-area">
-                    <!-- Cards will be inserted here dynamically -->
-                </div>
-                <div class="table-instructions" id="tableInstructions">
-                    <p>📁 Click <strong>Import Deck</strong> to load card images</p>
-                    <p>🖱️ Drag cards to position them</p>
-                    <p>⌨️ Hold <strong>SPACE + Drag</strong> to record motion</p>
+                <div class="project-info">
+                    <span>1920 × 1080 @ 30fps</span>
                 </div>
             </div>
         </div>
 
-        <!-- Footer Status -->
+        <!-- Game Container (Reference: 1920x1080) -->
+        <div class="game-container-wrapper">
+            <div id="gameContainer" class="game-container">
+                <!-- Poker Table -->
+                <div id="pokerTable" class="poker-table">
+                    <div class="table-felt"></div>
+                    <div class="table-border-ring"></div>
+
+                    <!-- Card Area - Cards will be placed here -->
+                    <div id="cardArea" class="card-area">
+                        <!-- Dynamic cards inserted here -->
+                    </div>
+
+                    <!-- Instructions Overlay -->
+                    <div class="table-instructions" id="tableInstructions">
+                        <div class="instruction-content">
+                            <p>📁 <strong>Import Deck</strong> to load card images</p>
+                            <p>🖱️ <strong>Drag</strong> cards to position them</p>
+                            <p>📋 Use <strong>Director Panel</strong> to record steps</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
         <footer class="footer">
-            <div class="status-bar">
-                <span id="statusMessage">Ready - Import a deck to start</span>
+            <div class="status-bar" id="statusMessage">
+                Ready - Import a deck or start recording
             </div>
             <div class="help-hint">
-                <span>Space + Drag = Record</span>
+                Recording Mode Active
             </div>
         </footer>
     </div>
@@ -84,4 +177,5 @@
     <!-- Load main application logic -->
     <script src="js/main.js"></script>
 </body>
+
 </html>
