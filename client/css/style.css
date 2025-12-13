@@ -279,6 +279,48 @@ body {
     border-color: var(--accent-green);
 }
 
+/* Project Settings */
+.project-settings {
+    background: linear-gradient(180deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%);
+}
+
+.assets-path-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.btn-block {
+    width: 100%;
+    justify-content: center;
+}
+
+.assets-path-display {
+    padding: 10px 12px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 11px;
+    word-break: break-all;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+}
+
+.assets-path-display .path-label {
+    color: var(--text-muted);
+}
+
+.assets-path-display.has-path .path-label {
+    color: var(--accent-green);
+}
+
+.assets-path-display .path-value {
+    color: var(--text-primary);
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 10px;
+}
+
 /* Export Buttons */
 .btn-export {
     background: var(--accent-orange);

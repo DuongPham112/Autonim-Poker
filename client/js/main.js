@@ -49,7 +49,8 @@ const appState = {
     selectedCard: null,           // Currently selected card
     isEditingStep: false,         // Is currently editing a step
     currentStepIndex: -1,         // Current step being edited
-    deckPath: null                // Path to imported deck folder
+    deckPath: null,               // Path to imported deck folder
+    assetsRootPath: null          // Root path for assets (for AE)
 };
 
 // Scenario Data (will be exported)
@@ -81,6 +82,7 @@ let cardPosX, cardPosY, cardRot;
 let exportJsonBtn, exportToAEBtn;
 let recordingIndicator;
 let playModeBtn, recordModeBtn;
+let selectAssetsFolderBtn, assetsPathDisplay;
 
 // ============================================
 // INITIALIZATION
@@ -122,6 +124,8 @@ function init() {
     exportToAEBtn = document.getElementById('exportToAEBtn');
     playModeBtn = document.getElementById('playModeBtn');
     recordModeBtn = document.getElementById('recordModeBtn');
+    selectAssetsFolderBtn = document.getElementById('selectAssetsFolderBtn');
+    assetsPathDisplay = document.getElementById('assetsPathDisplay');
 
     // Bind event listeners
     bindEvents();
@@ -134,6 +138,9 @@ function init() {
 }
 
 function bindEvents() {
+    // Project Settings
+    selectAssetsFolderBtn.addEventListener('click', handleSelectAssetsFolder);
+
     // Import / Reset
     importDeckBtn.addEventListener('click', () => folderInput.click());
     folderInput.addEventListener('change', handleFolderSelect);
@@ -181,6 +188,137 @@ function setAppMode(mode) {
     }
 
     updateUI();
+}
+
+// ============================================
+// ASSETS FOLDER SELECTION (CEP API)
+// ============================================
+
+/**
+ * Handle selecting assets folder using CEP file dialog
+ * Uses window.cep.fs.showOpenDialog for folder selection
+ */
+function handleSelectAssetsFolder() {
+    // Check if running in CEP environment
+    if (typeof window.cep === 'undefined' || !window.cep.fs) {
+        // Fallback for browser testing - prompt for path
+        const manualPath = prompt('Enter assets folder path (CEP not available):', 'D:/Projects/Assets');
+        if (manualPath) {
+            setAssetsPath(manualPath);
+        }
+        return;
+    }
+
+    // CEP showOpenDialog parameters
+    const dialogTitle = 'Select Assets Folder';
+    const initialPath = appState.deckPath || '';
+    const fileTypes = []; // Empty for folder selection
+    const defaultExtension = '';
+    const friendlyDescription = '';
+    const allowMultiple = false;
+    const isFolder = true; // This flag tells CEP to select folders
+
+    // Use CEP's showOpenDialogEx for folder selection
+    try {
+        const result = window.cep.fs.showOpenDialogEx(
+            false,          // allowMultipleSelection
+            true,           // chooseDirectory (folder mode)
+            dialogTitle,    // title
+            initialPath,    // initialPath
+            fileTypes       // fileTypes (ignored for folder)
+        );
+
+        // Check result
+        if (result.err === 0 && result.data && result.data.length > 0) {
+            const selectedPath = result.data[0];
+            setAssetsPath(selectedPath);
+        } else if (result.err !== 0) {
+            console.warn('Folder selection cancelled or error:', result.err);
+        }
+    } catch (e) {
+        console.error('Error opening folder dialog:', e);
+
+        // Fallback: try alternative method
+        try {
+            const result = window.cep.fs.showOpenDialog(
+                false,          // allowMultipleSelection
+                true,           // chooseDirectory
+                dialogTitle,    // title
+                initialPath     // initialPath
+            );
+
+            if (result.err === 0 && result.data && result.data.length > 0) {
+                setAssetsPath(result.data[0]);
+            }
+        } catch (e2) {
+            console.error('Fallback folder dialog also failed:', e2);
+            setStatus('Error opening folder dialog', 'error');
+        }
+    }
+}
+
+/**
+ * Set the assets root path and update UI
+ * @param {string} folderPath - Selected folder path
+ */
+function setAssetsPath(folderPath) {
+    if (!folderPath) return;
+
+    // Normalize path (ensure forward slashes for script compatibility)
+    let normalizedPath = folderPath.replace(/\\/g, '/');
+
+    // Ensure trailing slash
+    if (!normalizedPath.endsWith('/')) {
+        normalizedPath += '/';
+    }
+
+    // Store in app state
+    appState.assetsRootPath = normalizedPath;
+
+    // Update UI display
+    updateAssetsPathDisplay(normalizedPath);
+
+    setStatus(`Assets folder set: ${getShortPath(normalizedPath)}`, 'success');
+    console.log('Assets root path set to:', normalizedPath);
+}
+
+/**
+ * Update the assets path display in UI
+ * @param {string} fullPath - Full folder path
+ */
+function updateAssetsPathDisplay(fullPath) {
+    if (!assetsPathDisplay) return;
+
+    // Clear existing content
+    assetsPathDisplay.innerHTML = '';
+    assetsPathDisplay.classList.add('has-path');
+
+    // Create path display elements
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'path-label';
+    labelSpan.textContent = '✓ ';
+
+    const pathSpan = document.createElement('span');
+    pathSpan.className = 'path-value';
+    pathSpan.textContent = getShortPath(fullPath);
+    pathSpan.title = fullPath; // Show full path on hover
+
+    assetsPathDisplay.appendChild(labelSpan);
+    assetsPathDisplay.appendChild(pathSpan);
+}
+
+/**
+ * Get shortened path for display
+ * @param {string} fullPath - Full path string
+ * @returns {string} Shortened path
+ */
+function getShortPath(fullPath) {
+    // Show just the last 2-3 directory levels
+    const parts = fullPath.replace(/\/$/, '').split('/');
+    if (parts.length <= 3) {
+        return fullPath;
+    }
+    return '.../' + parts.slice(-2).join('/') + '/';
 }
 
 // ============================================
@@ -712,12 +850,25 @@ function handleExportToAE() {
         return;
     }
 
+    // Validate assets path is selected
+    if (!appState.assetsRootPath) {
+        setStatus('❌ Please select Assets Folder first!', 'error');
+        // Highlight the button
+        selectAssetsFolderBtn.style.animation = 'pulse 0.5s ease-in-out 3';
+        setTimeout(() => {
+            selectAssetsFolderBtn.style.animation = '';
+        }, 1500);
+        return;
+    }
+
     setStatus('Sending to After Effects...', 'recording');
 
     const jsonString = JSON.stringify(scenarioData);
+    const assetsPath = escapeJsonForScript(appState.assetsRootPath);
 
+    // Call generateSequence with both JSON data and assets root path
     csInterface.evalScript(
-        `importPokerScenario('${escapeJsonForScript(jsonString)}')`,
+        `generateSequence('${escapeJsonForScript(jsonString)}', '${assetsPath}')`,
         function (result) {
             try {
                 const response = JSON.parse(result);
