@@ -1,0 +1,103 @@
+{
+  "appMode": "editing",
+  "paths": {
+    "avatarsFolder": "images/avatars",
+    "decorationsFolder": "images/decorations"
+  },
+  "settings": {
+    "players": 4,
+    "cardsPerPlayer": 4,
+    "spacing": {
+      "1": -63,
+      "2": 96,
+      "3": 91,
+      "4": 74
+    },
+    "avatarPositions": {
+      "top": {
+        "left": 49.565797438019594,
+        "top": 3.807106598984772
+      },
+      "bottom": {
+        "left": 34.86096871023928,
+        "top": 90.50761421319797
+      },
+      "left": {
+        "left": 4.186379751213668,
+        "top": 15.17766497461929
+      },
+      "right": null
+    },
+    "autoFit": true
+  },
+  "spacing": {
+    "1": -63,
+    "2": 96,
+    "3": 91,
+    "4": 74
+  },
+  "avatarPositions": {
+    "top": {
+      "left": 49.565797438019594,
+      "top": 3.807106598984772
+    },
+    "bottom": {
+      "left": 34.86096871023928,
+      "top": 90.50761421319797
+    },
+    "left": {
+      "left": 4.186379751213668,
+      "top": 15.17766497461929
+    },
+    "right": null
+  },
+  "autoFit": true,
+  "avatars": {
+    "top": "avar4.png",
+    "bottom": "avar1.png",
+    "left": "player2.png",
+    "right": "player1.png"
+  },
+  "decorations": {
+    "table": "table.png",
+    "background": "table-bg.png",
+    "backcard": "card-back.png"
+  },
+  "player1": {
+    "cards": [
+      "card-2-clubs.png",
+      "card-2-diamonds.png",
+      "card-2-hearts.png",
+      "card-2-spades.png",
+      null
+    ]
+  },
+  "player2": {
+    "cards": [
+      "card-3-diamonds.png",
+      "card-3-hearts.png",
+      "card-3-spades.png",
+      "card-3-clubs.png",
+      null
+    ]
+  },
+  "player3": {
+    "cards": [
+      "card-4-clubs.png",
+      "card-4-diamonds.png",
+      "card-4-spades.png",
+      "card-4-hearts.png",
+      null
+    ]
+  },
+  "player4": {
+    "cards": [
+      "card-k-diamonds.png",
+      "card-k-hearts.png",
+      "card-q-hearts.png",
+      "card-q-diamonds.png",
+      null
+    ]
+  },
+  "exportedAt": "2025-09-09T09:50:29.669Z"
+}

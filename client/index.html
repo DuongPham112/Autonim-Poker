@@ -3,56 +3,82 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Autonim_Poker</title>
+    <title>Autonim-Poker</title>
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>Autonim_Poker</h1>
-            <p class="subtitle">Automated Poker Animation Extension</p>
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1 class="logo">🎴 Autonim-Poker</h1>
+                <span class="version">v1.0.0</span>
+            </div>
+            <div class="header-right">
+                <div class="recording-indicator" id="recordingIndicator">
+                    <span class="rec-dot"></span>
+                    <span>REC</span>
+                </div>
+            </div>
         </header>
-        
-        <main>
-            <section class="control-panel">
-                <h2>Controls</h2>
-                
-                <div class="control-group">
-                    <label for="animationType">Animation Type:</label>
-                    <select id="animationType">
-                        <option value="deal">Deal Cards</option>
-                        <option value="flip">Flip Cards</option>
-                        <option value="shuffle">Shuffle Deck</option>
-                        <option value="collect">Collect Cards</option>
-                    </select>
+
+        <!-- Controls Bar -->
+        <div class="controls-bar">
+            <div class="controls-left">
+                <button id="importDeckBtn" class="btn btn-secondary">
+                    <span class="btn-icon">📁</span>
+                    Import Deck
+                </button>
+                <button id="resetBtn" class="btn btn-danger">
+                    <span class="btn-icon">🔄</span>
+                    Reset
+                </button>
+            </div>
+            <div class="controls-center">
+                <div class="info-panel">
+                    <span id="cardCount">Cards: 0</span>
+                    <span class="separator">|</span>
+                    <span id="keyframeCount">Keyframes: 0</span>
                 </div>
-                
-                <div class="control-group">
-                    <label for="duration">Duration (seconds):</label>
-                    <input type="number" id="duration" min="0.5" max="10" step="0.1" value="2.0">
+            </div>
+            <div class="controls-right">
+                <button id="exportBtn" class="btn btn-primary btn-large">
+                    <span class="btn-icon">🚀</span>
+                    EXPORT TO AE
+                </button>
+            </div>
+        </div>
+
+        <!-- Poker Table -->
+        <div class="poker-table-container">
+            <div id="pokerTable" class="poker-table">
+                <div class="table-center-line"></div>
+                <div class="table-border"></div>
+                <div id="cardArea" class="card-area">
+                    <!-- Cards will be inserted here dynamically -->
                 </div>
-                
-                <div class="control-group">
-                    <label for="cardCount">Number of Cards:</label>
-                    <input type="number" id="cardCount" min="1" max="52" value="5">
+                <div class="table-instructions" id="tableInstructions">
+                    <p>📁 Click <strong>Import Deck</strong> to load card images</p>
+                    <p>🖱️ Drag cards to position them</p>
+                    <p>⌨️ Hold <strong>SPACE + Drag</strong> to record motion</p>
                 </div>
-                
-                <button id="generateBtn" class="btn-primary">Generate Animation</button>
-            </section>
-            
-            <section class="info-panel">
-                <h2>Status</h2>
-                <div id="statusMessage" class="status-message">
-                    Ready to generate animations
-                </div>
-            </section>
-        </main>
-        
-        <footer>
-            <p>Version 1.0.0 | VibeCode</p>
+            </div>
+        </div>
+
+        <!-- Footer Status -->
+        <footer class="footer">
+            <div class="status-bar">
+                <span id="statusMessage">Ready - Import a deck to start</span>
+            </div>
+            <div class="help-hint">
+                <span>Space + Drag = Record</span>
+            </div>
         </footer>
     </div>
-    
+
+    <!-- Hidden folder input -->
+    <input type="file" id="folderInput" webkitdirectory directory multiple style="display: none;">
+
     <!-- Load CSInterface library -->
     <script src="../lib/CSInterface.js"></script>
     <!-- Load main application logic -->
