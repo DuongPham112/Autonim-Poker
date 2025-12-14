@@ -35,27 +35,36 @@ function renderBoard() {
     const board = document.getElementById('mainBoard');
     board.innerHTML = '';
 
-    // Create Back Slot row first (optional, or just put it somewhere)
-    // Actually, let's put Back at the top in a separate area if needed. 
-    // For now, let's just do the 52 cards. 
-    // Added Back card slot to header/separate
-
+    // Create Back Slot row
     const backRow = document.createElement('div');
     backRow.className = 'suit-row';
     backRow.innerHTML = `
         <div class="suit-label">Back</div>
         <div class="slots-container">
              <div class="card-slot" data-id="back" id="slot-back">
+                <span class="upload-icon">+</span>
                 <span class="slot-label">back.png</span>
+                <input type="file" id="file-back" style="display:none" accept="image/*">
              </div>
         </div>
     `;
     board.appendChild(backRow);
 
+    // Setup back slot click
+    const backSlot = backRow.querySelector('#slot-back');
+    backSlot.onclick = (e) => {
+        if (e.target.closest('.remove-btn')) return;
+        document.getElementById('file-back').click();
+    };
+    backRow.querySelector('#file-back').onchange = (e) => {
+        if (e.target.files.length > 0) fillSlot('back', null, e.target.files[0]);
+    };
+
     // Create 4 suit rows
     SUITS.forEach(suit => {
         const row = document.createElement('div');
         row.className = 'suit-row';
+        row.dataset.suit = suit;
 
         // Suit Icon
         let icon = '';
@@ -64,7 +73,24 @@ function renderBoard() {
         else if (suit === 'diamonds') icon = '♦';
         else if (suit === 'clubs') icon = '♣';
 
-        row.innerHTML = `<div class="suit-label ${suit}">${icon}</div>`;
+        // Suit label with batch upload button
+        const suitLabelDiv = document.createElement('div');
+        suitLabelDiv.className = `suit-label ${suit}`;
+        suitLabelDiv.innerHTML = `
+            ${icon}
+            <button class="batch-btn" title="Upload 13 cards (2→A)">📂</button>
+            <input type="file" class="batch-input" style="display:none" accept="image/*" multiple>
+        `;
+        row.appendChild(suitLabelDiv);
+
+        // Batch upload handler
+        const batchBtn = suitLabelDiv.querySelector('.batch-btn');
+        const batchInput = suitLabelDiv.querySelector('.batch-input');
+        batchBtn.onclick = (e) => {
+            e.stopPropagation();
+            batchInput.click();
+        };
+        batchInput.onchange = (e) => handleBatchUpload(suit, e.target.files);
 
         const slotsContainer = document.createElement('div');
         slotsContainer.className = 'slots-container';
@@ -79,11 +105,12 @@ function renderBoard() {
 
             // Allow clicking to upload
             slot.onclick = (e) => {
-                if (e.target.closest('.remove-btn')) return; // Don't trigger if clicked remove
+                if (e.target.closest('.remove-btn')) return;
                 document.getElementById(`file-${rank}_${suit}`).click();
             };
 
             slot.innerHTML = `
+                <span class="upload-icon">+</span>
                 <span class="slot-label">${rank}</span>
                 <input type="file" id="file-${rank}_${suit}" style="display:none" accept="image/*">
             `;
@@ -111,6 +138,26 @@ function renderBoard() {
     });
 }
 
+/**
+ * Handle batch upload for a specific suit
+ * Files are sorted by name and filled in sequence: 2, 3, 4, ..., 10, J, Q, K, A
+ */
+function handleBatchUpload(suit, files) {
+    const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) return;
+
+    // Sort files by name to ensure sequence
+    imageFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+    let filled = 0;
+    for (let i = 0; i < imageFiles.length && i < RANKS.length; i++) {
+        fillSlot(suit, RANKS[i], imageFiles[i]);
+        filled++;
+    }
+
+    showStatus(`Filled ${filled} ${suit} cards`);
+}
+
 function setupDragDrop() {
     const overlay = document.getElementById('dropOverlay');
 
@@ -133,7 +180,7 @@ function setupDragDrop() {
 
 function handleSlotDrop(e, suit, rank) {
     e.preventDefault();
-    e.stopPropagation(); // Stop bubbling to window
+    e.stopPropagation();
     e.target.closest('.card-slot').classList.remove('drag-over');
 
     const files = e.dataTransfer.files;
@@ -147,21 +194,12 @@ function handleMultiDrop(files) {
 
     if (imageFiles.length === 0) return;
 
-    // Sort files by name to ensure sequence (optional but helpful)
-    // imageFiles.sort((a, b) => a.name.localeCompare(b.name));
-
-    // Logic: If dropped on a specific row, fill that row?
-    // Current overlay is global. Let's ask user or imply logic.
-    // IMPLICIT LOGIC: Fill empty slots starting from first empty suit?
-    // OR: Just try to fill Spades -> Hearts -> Diamonds -> Clubs
-
     let fileIdx = 0;
 
     // Try to fill Back first if it's named 'back'
     const backFile = imageFiles.find(f => f.name.toLowerCase().includes('back'));
     if (backFile) {
         fillSlot('back', null, backFile);
-        // Remove from list
         const idx = imageFiles.indexOf(backFile);
         if (idx > -1) imageFiles.splice(idx, 1);
     }
@@ -213,10 +251,11 @@ function fillSlot(suit, rank, file) {
             delete cardMap[id];
             // Restore initial state with input
             slot.innerHTML = `
+                <span class="upload-icon">+</span>
                 <span class="slot-label">${suit === 'back' ? 'back' : rank}</span>
             `;
             if (existingInput) {
-                existingInput.value = ''; // Reset file input
+                existingInput.value = '';
                 slot.appendChild(existingInput);
             }
             slot.classList.remove('filled');
@@ -242,10 +281,9 @@ async function handleExport() {
     if (outResult.err !== 0 || outResult.data.length === 0) return;
 
     const outFolder = outResult.data[0];
-    // Only use targetWidth
     const targetWidth = parseInt(document.getElementById('outWidth').value) || 400;
 
-    showStatus('Processing...', 'loading');
+    showStatus('Processing...');
 
     let processed = 0;
     const total = Object.keys(cardMap).length;
@@ -256,7 +294,6 @@ async function handleExport() {
         const savePath = path.join(outFolder, fileName);
 
         try {
-            // Resize with only width constraint, height is auto
             const blob = await resizeImage(file, targetWidth);
             const buffer = await blobToBuffer(blob);
             fs.writeFileSync(savePath, buffer);
@@ -275,8 +312,6 @@ function resizeImage(file, targetWidth) {
     return new Promise((resolve) => {
         const img = new Image();
         img.onload = () => {
-            // Calculate height to maintain Aspect Ratio
-            // ratio = h / w  => h = w * ratio
             const ratio = img.height / img.width;
             const targetHeight = Math.round(targetWidth * ratio);
 
@@ -285,7 +320,6 @@ function resizeImage(file, targetWidth) {
             canvas.height = targetHeight;
             const ctx = canvas.getContext('2d');
 
-            // Draw image scaled
             ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
             canvas.toBlob(blob => resolve(blob), 'image/png');

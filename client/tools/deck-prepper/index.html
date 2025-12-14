@@ -234,6 +234,49 @@
             color: #888;
             font-size: 14px;
         }
+
+        /* Upload Icon (+) inside empty slots */
+        .upload-icon {
+            font-size: 28px;
+            color: #555;
+            pointer-events: none;
+            transition: color 0.2s;
+        }
+
+        .card-slot:hover .upload-icon {
+            color: var(--accent-color);
+        }
+
+        .card-slot.filled .upload-icon {
+            display: none;
+        }
+
+        .card-slot {
+            cursor: pointer;
+        }
+
+        /* Batch Upload Button */
+        .batch-btn {
+            background: transparent;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-top: 5px;
+            transition: background 0.2s;
+        }
+
+        .batch-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .suit-label {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+        }
     </style>
 </head>
 
