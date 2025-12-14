@@ -77,9 +77,6 @@
             <!-- Controls Bar -->
             <div class="controls-bar">
                 <div class="controls-left">
-                    <button id="flipAllBtn" class="btn btn-secondary" title="Flip all cards on table">
-                        🔄 Flip All
-                    </button>
                     <button id="resetTableBtn" class="btn btn-danger" title="Return all cards to tray">
                         ↩️ Reset Table
                     </button>
@@ -89,6 +86,21 @@
                         <span id="tableCardCount">Table: 0</span>
                         <span class="separator">|</span>
                         <span id="stepCount">Steps: 0</span>
+                    </div>
+                    <!-- Per-zone flip toggles -->
+                    <div class="zone-flip-controls">
+                        <label class="flip-toggle" title="Flip cards face-up for Player 1">
+                            <input type="checkbox" id="flipTop" data-zone="top"> Top
+                        </label>
+                        <label class="flip-toggle" title="Flip cards face-up for Player 3 (Main)">
+                            <input type="checkbox" id="flipBottom" data-zone="bottom" checked> Bottom
+                        </label>
+                        <label class="flip-toggle" title="Flip cards face-up for Player 4">
+                            <input type="checkbox" id="flipLeft" data-zone="left"> Left
+                        </label>
+                        <label class="flip-toggle" title="Flip cards face-up for Player 2">
+                            <input type="checkbox" id="flipRight" data-zone="right"> Right
+                        </label>
                     </div>
                 </div>
                 <div class="controls-right">

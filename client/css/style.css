@@ -379,6 +379,41 @@ body {
     margin: 0 5px;
 }
 
+/* Zone Flip Controls */
+.zone-flip-controls {
+    display: flex;
+    gap: 10px;
+    margin-left: 15px;
+    padding-left: 15px;
+    border-left: 1px solid var(--border-color);
+}
+
+.flip-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.flip-toggle:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.flip-toggle input[type="checkbox"] {
+    accent-color: var(--accent-green);
+    cursor: pointer;
+}
+
+.flip-toggle:has(input:checked) {
+    background: rgba(46, 204, 113, 0.15);
+    color: var(--accent-green);
+}
+
 .overlap-control {
     display: flex;
     align-items: center;

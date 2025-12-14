@@ -198,9 +198,13 @@ function bindEvents() {
     recordPhaseBtn.addEventListener('click', () => setPhase('record'));
 
     // Table controls
-    flipAllBtn.addEventListener('click', handleFlipAll);
     resetTableBtn.addEventListener('click', handleResetTable);
     overlapSlider.addEventListener('input', handleOverlapChange);
+
+    // Per-zone flip controls
+    document.querySelectorAll('.zone-flip-controls input[type="checkbox"]').forEach(checkbox => {
+        checkbox.addEventListener('change', handleZoneFlipChange);
+    });
 
     // Assets folder
     selectAssetsFolderBtn.addEventListener('click', handleSelectAssetsFolder);
@@ -652,6 +656,10 @@ function placeCardInZone(card, zoneName, rotation, zoneElement) {
     card.zone = zoneName;
     card.rotation = rotation;
 
+    // Check if zone should show face-up (based on checkbox)
+    const flipCheckbox = document.querySelector(`#flip${zoneName.charAt(0).toUpperCase() + zoneName.slice(1)}`);
+    card.isFaceUp = flipCheckbox ? flipCheckbox.checked : false;
+
     // Get existing cards in zone
     const zoneCards = appState.tableCards.filter(c => c.zone === zoneName);
     const position = zoneCards.length;
@@ -869,17 +877,20 @@ function flipCard(card) {
     }
 }
 
-function handleFlipAll() {
-    const faceUpCount = appState.tableCards.filter(c => c.isFaceUp).length;
-    const flipToUp = faceUpCount < appState.tableCards.length / 2;
+function handleZoneFlipChange(e) {
+    const zoneName = e.target.dataset.zone;
+    const shouldFaceUp = e.target.checked;
 
-    appState.tableCards.forEach(card => {
-        if (card.isFaceUp !== flipToUp) {
-            flipCard(card);
-        }
-    });
+    // Find all cards in this zone and flip them accordingly
+    appState.tableCards
+        .filter(card => card.zone === zoneName)
+        .forEach(card => {
+            if (card.isFaceUp !== shouldFaceUp) {
+                flipCard(card);
+            }
+        });
 
-    setStatus(`Flipped all cards ${flipToUp ? 'face up' : 'face down'}`);
+    setStatus(`${zoneName.charAt(0).toUpperCase() + zoneName.slice(1)} zone: ${shouldFaceUp ? 'Face up' : 'Face down'}`);
 }
 
 function updateCardPosDisplay(card) {
