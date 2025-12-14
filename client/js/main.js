@@ -663,13 +663,12 @@ function handleCardAreaDrop(e) {
         if (!card) return;
     }
 
-    // Calculate drop position relative to poker table
-    const pokerTable = document.getElementById('pokerTable');
-    const rect = pokerTable.getBoundingClientRect();
+    // Calculate drop position relative to gameContainer (which matches the AE canvas)
+    const rect = gameContainer.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    // Scale to project coordinates
+    // Scale to project coordinates (1920x1080)
     const scaleX = PROJECT_INFO.width / rect.width;
     const scaleY = PROJECT_INFO.height / rect.height;
 
