@@ -713,9 +713,14 @@ function createZoneCardElement(card, zoneElement) {
     cardEl.dataset.cardId = card.id;
 
     // Different overlap direction based on zone
-    if (zoneName === 'left' || zoneName === 'right') {
-        // Side zones: stack vertically, use marginTop for overlap
+    if (zoneName === 'left') {
+        // Left zone: cards stack top-to-bottom, later cards on top
         cardEl.style.marginTop = card.zonePosition > 0 ? `-${CARD_HEIGHT - appState.cardOverlap}px` : '0';
+    } else if (zoneName === 'right') {
+        // Right zone: cards stack bottom-to-top (reverse), so upper cards overlay lower
+        cardEl.style.marginTop = card.zonePosition > 0 ? `-${CARD_HEIGHT - appState.cardOverlap}px` : '0';
+        // Use z-index to reverse stacking visually - higher position = lower z-index
+        cardEl.style.zIndex = 100 - card.zonePosition;
     } else {
         // Top/Bottom/Community: stack horizontally, use marginLeft
         cardEl.style.marginLeft = card.zonePosition > 0 ? `-${CARD_WIDTH - appState.cardOverlap}px` : '0';
