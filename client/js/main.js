@@ -350,9 +350,10 @@ function handleFolderSelect(event) {
 
             if (SUPPORTED_FORMATS.includes(ext)) {
                 imageFiles.push({
-                    name: file.name,
-                    path: file.path || URL.createObjectURL(file),
-                    baseName: file.name.substring(0, file.name.lastIndexOf('.'))
+                    name: file.name,                          // Original filename with extension
+                    baseName: file.name.substring(0, file.name.lastIndexOf('.')),
+                    displayPath: URL.createObjectURL(file),   // Blob URL for display in panel
+                    path: file.path || ''                     // File system path (may be empty in browser)
                 });
             }
         }
@@ -423,9 +424,11 @@ function createCard(fileInfo, x, y, index) {
     cardEl.style.top = '0';
     cardEl.style.transform = `translate(${x}px, ${y}px) rotate(0deg)`;
 
-    // Create image
+    // Create image - use blob URL for display in panel
     const img = document.createElement('img');
-    if (fileInfo.path.startsWith('blob:') || fileInfo.path.startsWith('file://')) {
+    if (fileInfo.displayPath) {
+        img.src = fileInfo.displayPath;
+    } else if (fileInfo.path.startsWith('blob:') || fileInfo.path.startsWith('file://')) {
         img.src = fileInfo.path;
     } else {
         img.src = `file://${fileInfo.path}`;
@@ -447,11 +450,12 @@ function createCard(fileInfo, x, y, index) {
     makeDraggable(cardEl);
 
     // Create card data object
+    // IMPORTANT: Store filename (not blob URL) for AE export
     const cardData = {
         id: cardId,
         element: cardEl,
         name: fileInfo.baseName,
-        path: fileInfo.path,
+        filename: fileInfo.name,        // Original filename with extension (for AE)
         x: x,
         y: y,
         rotation: 0,
@@ -470,8 +474,8 @@ function createCard(fileInfo, x, y, index) {
 
 function makeDraggable(element) {
     let isDragging = false;
-    let startMouseX, startMouseY;
-    let startX, startY, rotation;
+    let offsetX, offsetY;  // Offset from mouse to card center
+    let rotation;
 
     element.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return; // Only left click
@@ -489,12 +493,24 @@ function makeDraggable(element) {
 
         // Get current transform values
         const transform = getTransformValues(element);
-        startX = transform.x;
-        startY = transform.y;
         rotation = transform.rotation;
 
-        startMouseX = e.clientX;
-        startMouseY = e.clientY;
+        // Calculate offset: difference between mouse position and card position
+        // This keeps the card at the same relative position to the mouse
+        const cardAreaRect = cardArea.getBoundingClientRect();
+        const mouseXInArea = e.clientX - cardAreaRect.left;
+        const mouseYInArea = e.clientY - cardAreaRect.top;
+
+        // Scale mouse position to reference coordinates
+        const scaleX = PROJECT_INFO.width / cardAreaRect.width;
+        const scaleY = PROJECT_INFO.height / cardAreaRect.height;
+
+        const scaledMouseX = mouseXInArea * scaleX;
+        const scaledMouseY = mouseYInArea * scaleY;
+
+        // Offset = card position - mouse position (in reference coords)
+        offsetX = transform.x - scaledMouseX;
+        offsetY = transform.y - scaledMouseY;
 
         // Bring to front
         element.style.zIndex = 1000;
@@ -503,21 +519,28 @@ function makeDraggable(element) {
     document.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
 
-        const dx = e.clientX - startMouseX;
-        const dy = e.clientY - startMouseY;
+        // Get mouse position relative to cardArea
+        const cardAreaRect = cardArea.getBoundingClientRect();
+        const mouseXInArea = e.clientX - cardAreaRect.left;
+        const mouseYInArea = e.clientY - cardAreaRect.top;
 
-        // Calculate new position relative to game container
-        const containerRect = gameContainer.getBoundingClientRect();
-        const scaleX = PROJECT_INFO.width / containerRect.width;
-        const scaleY = PROJECT_INFO.height / containerRect.height;
+        // Scale to reference coordinates (1920x1080)
+        const scaleX = PROJECT_INFO.width / cardAreaRect.width;
+        const scaleY = PROJECT_INFO.height / cardAreaRect.height;
 
-        const newX = startX + dx * scaleX;
-        const newY = startY + dy * scaleY;
+        const scaledMouseX = mouseXInArea * scaleX;
+        const scaledMouseY = mouseYInArea * scaleY;
 
-        // Apply transform
-        element.style.transform = `translate(${newX}px, ${newY}px) rotate(${rotation}deg)`;
+        // New card position = scaled mouse + offset
+        const newX = scaledMouseX + offsetX;
+        const newY = scaledMouseY + offsetY;
 
-        // Update card data
+        // Apply transform (scaled back to screen coordinates for visual)
+        const visualX = newX / scaleX;
+        const visualY = newY / scaleY;
+        element.style.transform = `translate(${visualX}px, ${visualY}px) rotate(${rotation}deg)`;
+
+        // Update card data (in reference coordinates)
         const cardData = appState.cards.find(c => c.id === element.id);
         if (cardData) {
             cardData.x = newX;
@@ -779,7 +802,7 @@ function saveInitialState() {
     appState.cards.forEach(card => {
         scenarioData.initialState[card.id] = {
             name: card.name,
-            path: card.path,
+            filename: card.filename,    // Filename for AE to import from assetsRootPath
             x: Math.round(card.x),
             y: Math.round(card.y),
             rotation: card.rotation,

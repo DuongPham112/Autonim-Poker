@@ -167,11 +167,16 @@ function setupInitialScene(comp, initialState, assetsRootPath, layerMap) {
         var layer = null;
 
         try {
-            // Determine asset file path
-            var assetPath = resolveAssetPath(assetInfo.path, assetsRootPath);
+            // Build full path: assetsRootPath + filename
+            var filename = assetInfo.filename || "";
+            var fullPath = "";
 
-            if (assetPath) {
-                var assetFile = new File(assetPath);
+            if (assetsRootPath && filename) {
+                fullPath = assetsRootPath + filename;
+            }
+
+            if (fullPath) {
+                var assetFile = new File(fullPath);
 
                 if (assetFile.exists) {
                     // Import file as footage
@@ -182,11 +187,12 @@ function setupInitialScene(comp, initialState, assetsRootPath, layerMap) {
                     layer = comp.layers.add(footage);
                 } else {
                     // File not found, create placeholder
-                    importErrors.push(assetId + " (file not found)");
+                    importErrors.push(assetId + " (file not found: " + fullPath + ")");
                     layer = createPlaceholderLayer(comp, assetInfo.name || assetId);
                 }
             } else {
                 // No valid path, create placeholder
+                importErrors.push(assetId + " (no filename)");
                 layer = createPlaceholderLayer(comp, assetInfo.name || assetId);
             }
 
@@ -564,18 +570,25 @@ function normalizeAssetPath(path) {
     if (!path) return "";
 
     // Remove file:// prefix if present
-    path = path.replace(/^file:\/\//, "");
-
-    // Normalize slashes for current OS
-    if ($.os.indexOf("Windows") !== -1) {
-        path = path.replace(/\//g, "\\");
-    } else {
-        path = path.replace(/\\/g, "/");
+    if (path.indexOf("file://") === 0) {
+        path = path.substring(7);
     }
 
+    // Normalize slashes - convert all to forward slashes for consistency
+    var result = "";
+    for (var i = 0; i < path.length; i++) {
+        var c = path.charAt(i);
+        if (c === "\\") {
+            result += "/";
+        } else {
+            result += c;
+        }
+    }
+    path = result;
+
     // Ensure trailing slash
-    if (path.length > 0 && path.charAt(path.length - 1) !== "/" && path.charAt(path.length - 1) !== "\\") {
-        path += ($.os.indexOf("Windows") !== -1) ? "\\" : "/";
+    if (path.length > 0 && path.charAt(path.length - 1) !== "/") {
+        path += "/";
     }
 
     return path;
@@ -590,16 +603,30 @@ function normalizeAssetPath(path) {
 function resolveAssetPath(assetPath, rootPath) {
     if (!assetPath) return null;
 
-    // Remove file:// and blob: prefixes
-    assetPath = assetPath.replace(/^file:\/\//, "");
+    // Remove file:// prefix
+    if (assetPath.indexOf("file://") === 0) {
+        assetPath = assetPath.substring(7);
+    }
+
+    // Skip blob URLs
     if (assetPath.indexOf("blob:") === 0) return null;
 
-    // Check if already absolute path
+    // Check if already absolute path (Windows or Mac)
     var isAbsolute = false;
-    if ($.os.indexOf("Windows") !== -1) {
-        isAbsolute = /^[A-Za-z]:[\\/]/.test(assetPath);
-    } else {
-        isAbsolute = assetPath.charAt(0) === "/";
+
+    // Windows: starts with drive letter like C:/ or C:\
+    if (assetPath.length >= 2) {
+        var firstChar = assetPath.charAt(0);
+        var secondChar = assetPath.charAt(1);
+        if (secondChar === ":" &&
+            ((firstChar >= "A" && firstChar <= "Z") || (firstChar >= "a" && firstChar <= "z"))) {
+            isAbsolute = true;
+        }
+    }
+
+    // Mac/Linux: starts with /
+    if (assetPath.charAt(0) === "/") {
+        isAbsolute = true;
     }
 
     if (isAbsolute) {
