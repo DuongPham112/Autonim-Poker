@@ -1220,15 +1220,39 @@ function handlePropertyChange() {
 function saveInitialState() {
     scenarioData.initialState = {};
 
+    // Calculate card scale for AE (web cards displayed at 60x84, target ~120px height in 1080p)
+    // This gives assets a scale factor to render at appropriate size
+    const targetCardHeight = 150; // Target card height in 1080p composition
+    const aeCardScale = targetCardHeight / 1080; // ~0.139 - about 14% scale
+
     appState.tableCards.forEach(card => {
+        // Calculate position based on zone if not directly on table
+        let posX = card.x || 0;
+        let posY = card.y || 0;
+
+        // For zone cards, calculate approximate center position
+        if (card.zone !== 'table' && (!card.x && !card.y)) {
+            const zonePositions = {
+                'top': { x: PROJECT_INFO.width / 2, y: 100 },
+                'bottom': { x: PROJECT_INFO.width / 2, y: PROJECT_INFO.height - 100 },
+                'left': { x: 150, y: PROJECT_INFO.height / 2 },
+                'right': { x: PROJECT_INFO.width - 150, y: PROJECT_INFO.height / 2 },
+                'community': { x: PROJECT_INFO.width / 2, y: PROJECT_INFO.height / 2 }
+            };
+            const zonePos = zonePositions[card.zone] || { x: PROJECT_INFO.width / 2, y: PROJECT_INFO.height / 2 };
+            posX = zonePos.x + (card.zonePosition || 0) * 40; // Offset for multiple cards
+            posY = zonePos.y;
+        }
+
         scenarioData.initialState[card.id] = {
             name: card.name,
             filename: card.filename,
             frontImage: card.filename,
             backImage: 'back.png',
-            x: Math.round(card.x || 0),
-            y: Math.round(card.y || 0),
+            x: Math.round(posX),
+            y: Math.round(posY),
             rotation: card.rotation || 0,
+            scale: aeCardScale,
             zone: card.zone,
             isFaceUp: card.isFaceUp
         };

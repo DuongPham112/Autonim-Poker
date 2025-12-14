@@ -448,8 +448,9 @@ body {
 .game-container {
     position: relative;
     width: 100%;
-    max-width: 1000px;
-    aspect-ratio: 16 / 10;
+    max-width: 1200px;
+    aspect-ratio: 16 / 9;
+    /* 1920x1080 AE composition aspect ratio */
     display: grid;
     grid-template-areas:
         ". top ."
@@ -458,6 +459,9 @@ body {
     grid-template-columns: 100px 1fr 100px;
     grid-template-rows: 80px 1fr 80px;
     gap: 10px;
+    background-color: var(--bg-primary);
+    background-size: cover;
+    background-position: center;
 }
 
 /* Player Zones */
