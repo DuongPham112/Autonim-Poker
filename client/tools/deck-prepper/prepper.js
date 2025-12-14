@@ -42,9 +42,7 @@ function renderBoard() {
         <div class="suit-label">Back</div>
         <div class="slots-container">
              <div class="card-slot" data-id="back" id="slot-back">
-                <span class="upload-icon">
-                    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                </span>
+                <span class="upload-icon">+</span>
                 <span class="slot-label">back.png</span>
                 <input type="file" id="file-back" style="display:none" accept="image/*">
              </div>
@@ -80,7 +78,9 @@ function renderBoard() {
         suitLabelDiv.className = `suit-label ${suit}`;
         suitLabelDiv.innerHTML = `
             ${icon}
-            <button class="batch-btn" title="Upload 13 cards (2→A)">📂</button>
+            <button class="batch-btn" title="Upload 13 cards (2→A)">
+                <svg viewBox="0 0 24 24" fill="none" class="lucide-folder-up" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 2H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path><path d="M12 10v6"></path><path d="M9 13l3-3 3 3"></path></svg>
+            </button>
             <input type="file" class="batch-input" style="display:none" accept="image/*" multiple>
         `;
         row.appendChild(suitLabelDiv);
@@ -112,9 +112,7 @@ function renderBoard() {
             };
 
             slot.innerHTML = `
-                <span class="upload-icon">
-                    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                </span>
+                <span class="upload-icon">+</span>
                 <span class="slot-label">${rank}</span>
                 <input type="file" id="file-${rank}_${suit}" style="display:none" accept="image/*">
             `;
@@ -255,9 +253,7 @@ function fillSlot(suit, rank, file) {
             delete cardMap[id];
             // Restore initial state with input
             slot.innerHTML = `
-                <span class="upload-icon">
-                    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                </span>
+                <span class="upload-icon">+</span>
                 <span class="slot-label">${suit === 'back' ? 'back' : rank}</span>
             `;
             if (existingInput) {
