@@ -1,11 +1,16 @@
 /**
  * ============================================
  * AUTONIM-POKER - ExtendScript for After Effects
- * Director Tool Animation Generator
+ * Director Tool Animation Generator v2.0
  * ============================================
  * 
  * This script processes JSON scenario data from the Director Tool
  * and generates animated compositions in After Effects.
+ * 
+ * v2.0 Features:
+ * - Card Pre-Comps (Front + Back layers)
+ * - Flip Animation (Scale X + Opacity Toggle)
+ * - Slam Effect (Overshoot bounce)
  */
 
 // ============================================
@@ -51,6 +56,8 @@ if (typeof JSON.stringify !== 'function') {
 var COMP_WIDTH = 1920;
 var COMP_HEIGHT = 1080;
 var FRAME_RATE = 30;
+var CARD_WIDTH = 80;    // Base width
+var CARD_HEIGHT = 112;  // Base height
 var SLAM_OVERSHOOT_SCALE = 130;  // 130% of original
 var SLAM_DURATION_FRAMES = 5;    // 5 frames for slam bounce
 
@@ -105,7 +112,7 @@ function generateSequence(jsonString, assetsRootPath) {
         // Store layer references by ID
         var layerMap = {};
 
-        // Setup initial scene state
+        // Setup initial scene state (Create Pre-Comps)
         var setupResult = setupInitialScene(comp, data.initialState, assetsRootPath, layerMap);
         if (!setupResult.success) {
             app.endUndoGroup();
@@ -150,6 +157,7 @@ function generateSequence(jsonString, assetsRootPath) {
 
 /**
  * Setup initial scene from initialState data
+ * Uses Pre-Comps for each card to support Flip animation
  * @param {CompItem} comp - The composition to add layers to
  * @param {object} initialState - Initial state data from JSON
  * @param {string} assetsRootPath - Root path for assets
@@ -167,42 +175,15 @@ function setupInitialScene(comp, initialState, assetsRootPath, layerMap) {
         var layer = null;
 
         try {
-            // Build full path: assetsRootPath + filename
-            var filename = assetInfo.filename || "";
-            var fullPath = "";
+            // Create Pre-Comp for this card (contains Front and Back layers)
+            layer = createCardPrecomp(comp, assetId, assetInfo, assetsRootPath);
 
-            if (assetsRootPath && filename) {
-                fullPath = assetsRootPath + filename;
+            if (!layer) {
+                importErrors.push(assetId + " (failed to create pre-comp)");
+                continue;
             }
 
-            if (fullPath) {
-                var assetFile = new File(fullPath);
-
-                if (assetFile.exists) {
-                    // Import file as footage
-                    var importOptions = new ImportOptions(assetFile);
-                    var footage = app.project.importFile(importOptions);
-
-                    // Add to composition
-                    layer = comp.layers.add(footage);
-                } else {
-                    // File not found, create placeholder
-                    importErrors.push(assetId + " (file not found: " + fullPath + ")");
-                    layer = createPlaceholderLayer(comp, assetInfo.name || assetId);
-                }
-            } else {
-                // No valid path, create placeholder
-                importErrors.push(assetId + " (no filename)");
-                layer = createPlaceholderLayer(comp, assetInfo.name || assetId);
-            }
-
-            // Set layer name to match asset ID
-            layer.name = assetId;
-
-            // Set anchor point to center (IMPORTANT for proper rotation/scale)
-            setAnchorPointToCenter(layer);
-
-            // Apply initial transform properties
+            // Apply initial transform properties to the Pre-Comp Layer in Main Comp
             applyInitialTransform(layer, assetInfo, comp);
 
             // Store reference in layer map
@@ -211,12 +192,10 @@ function setupInitialScene(comp, initialState, assetsRootPath, layerMap) {
 
         } catch (e) {
             importErrors.push(assetId + " (" + e.toString() + ")");
-            // Continue with other assets
         }
     }
 
     if (importErrors.length > 0) {
-        // Log errors but don't fail
         $.writeln("Import warnings: " + importErrors.join(", "));
     }
 
@@ -224,25 +203,99 @@ function setupInitialScene(comp, initialState, assetsRootPath, layerMap) {
 }
 
 /**
+ * Create a Pre-Composition for a card containing Front and Back layers
+ * @param {CompItem} mainComp - Main composition
+ * @param {string} cardId - Unique Card ID
+ * @param {object} cardInfo - Card info structure
+ * @param {string} assetsPath - Assets root path
+ * @returns {Layer} The layer instance of the pre-comp in the main comp
+ */
+function createCardPrecomp(mainComp, cardId, cardInfo, assetsPath) {
+    // 1. Create the Pre-Comp
+    var preCompName = "Card_" + cardInfo.name + "_" + cardId.split("-")[1]; // Add index to name unique
+    var cardWidth = CARD_WIDTH;
+    var cardHeight = CARD_HEIGHT;
+
+    // Create pre-comp with default dimensions (will resize to fit content)
+    var preComp = app.project.items.addComp(
+        preCompName,
+        cardWidth,
+        cardHeight,
+        1.0,
+        mainComp.duration,
+        mainComp.frameRate
+    );
+
+    // 2. Import Front Image
+    var frontLayer = importAndAddLayer(preComp, cardInfo.filename, assetsPath, "Front");
+
+    // 3. Import Back Image
+    var backLayer = importAndAddLayer(preComp, cardInfo.backImage || "back.png", assetsPath, "Back");
+
+    // Resize pre-comp to match asset size if needed
+    if (frontLayer && frontLayer.source) {
+        preComp.width = frontLayer.source.width;
+        preComp.height = frontLayer.source.height;
+        // Re-center layers
+        if (frontLayer) frontLayer.property("Position").setValue([preComp.width / 2, preComp.height / 2]);
+        if (backLayer) backLayer.property("Position").setValue([preComp.width / 2, preComp.height / 2]);
+    }
+
+    // 4. Set Initial Visibility based on Face State
+    // We use Opacity instead of Enabled so we can keyframe it later inside the pre-comp
+    // However, since we are inside a pre-comp, the time is relative.
+    // We will control the visibility by keyframing Opacity inside this pre-comp
+    // at time 0 based on isFaceUp.
+
+    var isFaceUp = cardInfo.isFaceUp === true;
+
+    if (frontLayer) frontLayer.property("Opacity").setValue(isFaceUp ? 100 : 0);
+    if (backLayer) backLayer.property("Opacity").setValue(isFaceUp ? 0 : 100);
+
+    // 5. Add Pre-Comp to Main Comp
+    var preCompLayer = mainComp.layers.add(preComp);
+    preCompLayer.name = cardId;
+
+    // Collapse Transformations (Continuous Rasterization) - vital for crisp edges if scaled
+    preCompLayer.collapseTransformation = true;
+
+    // Set anchor point to center
+    setAnchorPointToCenter(preCompLayer);
+
+    return preCompLayer;
+}
+
+/**
+ * Helper to import file and add to comp
+ */
+function importAndAddLayer(comp, filename, rootPath, layerName) {
+    if (!filename) return null;
+
+    var fullPath = resolveAssetPath(filename, rootPath);
+    if (!fullPath) return null;
+
+    var file = new File(fullPath);
+    if (!file.exists) return null;
+
+    var importOptions = new ImportOptions(file);
+    var footage = app.project.importFile(importOptions);
+    var layer = comp.layers.add(footage);
+    layer.name = layerName;
+
+    return layer;
+}
+
+/**
  * Set anchor point to center of layer
- * @param {Layer} layer - The layer to modify
  */
 function setAnchorPointToCenter(layer) {
     try {
-        var sourceWidth = 0;
-        var sourceHeight = 0;
+        var sourceWidth = layer.width;
+        var sourceHeight = layer.height;
 
-        if (layer.source && layer.source.width) {
-            // Footage layer
+        if (layer.source) {
             sourceWidth = layer.source.width;
             sourceHeight = layer.source.height;
-        } else if (layer instanceof ShapeLayer) {
-            // Shape layer - anchor already centered
-            return;
-        } else {
-            // Fallback
-            sourceWidth = layer.width || 100;
-            sourceHeight = layer.height || 100;
         }
 
         var centerX = sourceWidth / 2;
@@ -250,15 +303,12 @@ function setAnchorPointToCenter(layer) {
 
         layer.property("Anchor Point").setValue([centerX, centerY]);
     } catch (e) {
-        $.writeln("Warning: Could not set anchor point for " + layer.name);
+        // Ignore
     }
 }
 
 /**
  * Apply initial transform properties to layer
- * @param {Layer} layer - The layer to transform
- * @param {object} assetInfo - Asset info from initialState
- * @param {CompItem} comp - Parent composition
  */
 function applyInitialTransform(layer, assetInfo, comp) {
     // Position
@@ -273,11 +323,6 @@ function applyInitialTransform(layer, assetInfo, comp) {
     // Scale
     var scale = assetInfo.scale !== undefined ? assetInfo.scale * 100 : 100;
     layer.property("Scale").setValue([scale, scale]);
-
-    // Opacity
-    if (assetInfo.opacity !== undefined) {
-        layer.property("Opacity").setValue(assetInfo.opacity * 100);
-    }
 }
 
 // ============================================
@@ -286,10 +331,6 @@ function applyInitialTransform(layer, assetInfo, comp) {
 
 /**
  * Process all scenario steps and apply animations
- * @param {CompItem} comp - The composition
- * @param {array} scenario - Array of step objects
- * @param {object} layerMap - Map of layer IDs to layer objects
- * @returns {object} Result with success status and final time
  */
 function processScenarioAnimation(comp, scenario, layerMap) {
     var currentTime = 0;
@@ -305,18 +346,15 @@ function processScenarioAnimation(comp, scenario, layerMap) {
             var targetId = action.targetId;
             var layer = layerMap[targetId];
 
-            if (!layer) {
-                $.writeln("Warning: Layer not found for targetId: " + targetId);
-                continue;
-            }
+            if (!layer) continue;
 
             try {
                 // Process transform animation
-                processTransformAction(layer, action, currentTime, stepDuration, comp);
+                processTransformAction(layer, action, currentTime, stepDuration);
 
                 // Process FLIP effect
                 if (action.flip === true) {
-                    processFlipEffect(layer, currentTime, stepDuration);
+                    processFlipEffect(layer, currentTime, stepDuration, action.flipToFaceUp);
                 }
 
                 // Process SLAM effect
@@ -338,16 +376,9 @@ function processScenarioAnimation(comp, scenario, layerMap) {
 
 /**
  * Process transform (position, rotation) animation
- * @param {Layer} layer - Target layer
- * @param {object} action - Action data
- * @param {number} startTime - Start time in seconds
- * @param {number} duration - Duration in seconds
- * @param {CompItem} comp - Parent composition
  */
-function processTransformAction(layer, action, startTime, duration, comp) {
+function processTransformAction(layer, action, startTime, duration) {
     var endTime = startTime + duration;
-
-    // Get property references
     var positionProp = layer.property("Position");
     var rotationProp = layer.property("Rotation");
 
@@ -366,85 +397,120 @@ function processTransformAction(layer, action, startTime, duration, comp) {
         endRot = action.endRotation;
     }
 
-    // Add Position keyframes
+    // Add Keyframes
     positionProp.setValueAtTime(startTime, startPos);
     positionProp.setValueAtTime(endTime, endPos);
 
-    // Add Rotation keyframes
     rotationProp.setValueAtTime(startTime, startRot);
     rotationProp.setValueAtTime(endTime, endRot);
 
-    // Apply Bezier interpolation for smooth motion
+    // Apply Bezier interpolation
     applyBezierEasing(positionProp);
     applyBezierEasing(rotationProp);
 }
 
 /**
- * Process FLIP effect (card flip using Scale X)
- * Scale X: 100 -> 0 -> -100 (simulates 180° Y rotation)
- * @param {Layer} layer - Target layer
- * @param {number} startTime - Start time in seconds
- * @param {number} duration - Duration in seconds
+ * Process FLIP effect using Pre-Comp Opacity Toggle
+ * Animation:
+ * 1. Main Layer: Scale X 100 -> 0 (at mid) -> 100 (at end)
+ * 2. Pre-Comp Internals: Swap Opacity of Front/Back at mid time
  */
-function processFlipEffect(layer, startTime, duration) {
+function processFlipEffect(layer, startTime, duration, flipToFaceUp) {
     var scaleProp = layer.property("Scale");
-
-    // Calculate timing
     var midTime = startTime + duration * 0.5;
     var endTime = startTime + duration;
 
-    // Get current scale values
+    // 1. ANMIATE MAIN LAYER SCALE (Flip effect)
     var currentScale = scaleProp.valueAtTime(startTime, false);
+    var scaleX = Math.abs(currentScale[0]); // Always positive start
     var scaleY = currentScale[1];
-    var scaleX = Math.abs(currentScale[0]);
 
-    // Create flip animation: 100 -> 0 -> -100 on X axis
-    // This simulates a card flipping over (backface visible)
+    // Keyframes: Start (100) -> Mid (0) -> End (100)
     scaleProp.setValueAtTime(startTime, [scaleX, scaleY]);
-    scaleProp.setValueAtTime(midTime, [0, scaleY]);         // Card edge-on
-    scaleProp.setValueAtTime(endTime, [-scaleX, scaleY]);   // Card flipped (negative = mirrored)
+    scaleProp.setValueAtTime(midTime, [0, scaleY]);
+    scaleProp.setValueAtTime(endTime, [scaleX, scaleY]);
 
-    // Apply easing
     applyBezierEasing(scaleProp);
+
+    // 2. TOGGLE VISIBILITY INSIDE PRE-COMP
+    // We need to access the pre-comp item and add Hold keyframes to Opacity
+    var preComp = layer.source;
+    if (preComp && preComp instanceof CompItem) {
+        var frontLayer = preComp.layer("Front");
+        var backLayer = preComp.layer("Back");
+
+        if (frontLayer && backLayer) {
+            // Determine target opacity based on direction
+            // flipToFaceUp = true  => Front 0->100, Back 100->0
+            // flipToFaceUp = false => Front 100->0, Back 0->100
+
+            var frontOp = frontLayer.property("Opacity");
+            var backOp = backLayer.property("Opacity");
+
+            // Set Hold Keyframes at midTime
+            // Note: Since we are in a pre-comp, we use the same timeline times 
+            // because the pre-comp layer starts at 0 in the main comp (usually).
+            // If the layer was shifted in time, we'd need to adjust, but our generator 
+            // creates layer starting at 0.
+
+            var t = midTime;
+
+            if (flipToFaceUp) {
+                // Switch to Front Visible
+                frontOp.setValueAtTime(t - 0.01, 0); // Before mid: Hidden
+                frontOp.setValueAtTime(t, 100);      // At mid: Visible
+
+                backOp.setValueAtTime(t - 0.01, 100); // Before mid: Visible
+                backOp.setValueAtTime(t, 0);          // At mid: Hidden
+            } else {
+                // Switch to Back Visible
+                frontOp.setValueAtTime(t - 0.01, 100);
+                frontOp.setValueAtTime(t, 0);
+
+                backOp.setValueAtTime(t - 0.01, 0);
+                backOp.setValueAtTime(t, 100);
+            }
+
+            // Set all new keyframes to Hold Interpolation to prevent fading
+            setHoldInterpolation(frontOp);
+            setHoldInterpolation(backOp);
+        }
+    }
+}
+
+/**
+ * Set all keyframes of a property to Hold interpolation
+ */
+function setHoldInterpolation(property) {
+    if (property.numKeys > 0) {
+        for (var i = 1; i <= property.numKeys; i++) {
+            property.setInterpolationTypeAtKey(i, KeyframeInterpolationType.HOLD, KeyframeInterpolationType.HOLD);
+        }
+    }
 }
 
 /**
  * Process SLAM effect (overshoot scale bounce)
- * Scale: [100,100] -> [130,130] -> [100,100] in ~5 frames
- * @param {Layer} layer - Target layer
- * @param {number} startTime - Start time (when card arrives)
- * @param {number} duration - Step duration
- * @param {CompItem} comp - Parent composition
  */
 function processSlamEffect(layer, startTime, duration, comp) {
     var scaleProp = layer.property("Scale");
-    var frameRate = comp.frameRate || FRAME_RATE;
-    var frameDuration = 1 / frameRate;
+    var frameDuration = 1 / comp.frameRate;
 
-    // Slam happens at the END of the movement (when card lands)
     var slamStartTime = startTime + duration;
     var slamMidTime = slamStartTime + (SLAM_DURATION_FRAMES * 0.5 * frameDuration);
     var slamEndTime = slamStartTime + (SLAM_DURATION_FRAMES * frameDuration);
 
-    // Get current scale
     var currentScale = scaleProp.valueAtTime(slamStartTime, false);
     var baseScaleX = currentScale[0];
     var baseScaleY = currentScale[1];
 
-    // Overshoot values (130% of current)
     var overshootFactor = SLAM_OVERSHOOT_SCALE / 100;
-    var overshootScaleX = baseScaleX * overshootFactor;
-    var overshootScaleY = baseScaleY * overshootFactor;
 
-    // Create slam bounce keyframes
     scaleProp.setValueAtTime(slamStartTime, [baseScaleX, baseScaleY]);
-    scaleProp.setValueAtTime(slamMidTime, [overshootScaleX, overshootScaleY]);
+    scaleProp.setValueAtTime(slamMidTime, [baseScaleX * overshootFactor, baseScaleY * overshootFactor]);
     scaleProp.setValueAtTime(slamEndTime, [baseScaleX, baseScaleY]);
 
-    // Apply bounce easing (fast out, bounce back)
     applyBounceEasing(scaleProp, slamStartTime);
-
-    // Enable Motion Blur for this layer
     layer.motionBlur = true;
 }
 
@@ -452,79 +518,86 @@ function processSlamEffect(layer, startTime, duration, comp) {
 // EASING FUNCTIONS
 // ============================================
 
-/**
- * Apply Bezier (smooth) easing to all keyframes
- * @param {Property} property - The property to ease
- */
 function applyBezierEasing(property) {
     var numKeys = property.numKeys;
     if (numKeys < 2) return;
 
     for (var k = 1; k <= numKeys; k++) {
         try {
-            // Set keyframe interpolation to Bezier
+            // Skip Hold keyframes
+            if (property.keyOutInterpolationType(k) === KeyframeInterpolationType.HOLD) continue;
+
             property.setInterpolationTypeAtKey(k, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
 
-            // Create smooth ease (influence: 33%, speed: 0)
-            var easeIn = [];
-            var easeOut = [];
-            var dims = getDimensionCount(property);
+            // Mild ease
+            var easeIn = new KeyframeEase(0, 33);
+            var easeOut = new KeyframeEase(0, 33);
 
-            for (var d = 0; d < dims; d++) {
-                easeIn.push(new KeyframeEase(0, 33));   // Speed 0, Influence 33%
-                easeOut.push(new KeyframeEase(0, 33));
-            }
+            var dims = (property.value instanceof Array) ? property.value.length : 1;
 
             if (dims === 1) {
-                property.setTemporalEaseAtKey(k, [easeIn[0]], [easeOut[0]]);
+                property.setTemporalEaseAtKey(k, [easeIn], [easeOut]);
+            } else if (dims === 2) {
+                property.setTemporalEaseAtKey(k, [easeIn, easeIn], [easeOut, easeOut]);
             } else {
-                property.setTemporalEaseAtKey(k, easeIn, easeOut);
+                property.setTemporalEaseAtKey(k, [easeIn, easeIn, easeIn], [easeOut, easeOut, easeOut]);
             }
-        } catch (e) {
-            // Some properties may not support easing
-            $.writeln("Easing warning: " + e.toString());
+        } catch (e) { }
+    }
+}
+
+function applyBounceEasing(property, slamStartTime) {
+    // Similar to previous implementation...
+    // Only ease keys near slamStartTime
+    var numKeys = property.numKeys;
+    if (numKeys < 2) return;
+
+    for (var k = 1; k <= numKeys; k++) {
+        if (Math.abs(property.keyTime(k) - slamStartTime) < 0.2) {
+            try {
+                property.setInterpolationTypeAtKey(k, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
+                var ease = new KeyframeEase(0, 75); // Strong ease
+                var dims = (property.value instanceof Array) ? property.value.length : 1;
+
+                if (dims === 2) property.setTemporalEaseAtKey(k, [ease, ease], [ease, ease]);
+                else property.setTemporalEaseAtKey(k, [ease], [ease]);
+            } catch (e) { }
         }
     }
 }
 
-/**
- * Apply bounce easing for slam effect
- * @param {Property} property - The property to ease
- * @param {number} slamStartTime - When slam starts
- */
-function applyBounceEasing(property, slamStartTime) {
-    var numKeys = property.numKeys;
-    if (numKeys < 2) return;
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
 
-    // Find keyframes near slam time and apply quick bounce easing
-    for (var k = 1; k <= numKeys; k++) {
-        var keyTime = property.keyTime(k);
-
-        // Only affect slam keyframes (within 0.2s of slam start)
-        if (Math.abs(keyTime - slamStartTime) < 0.2) {
-            try {
-                property.setInterpolationTypeAtKey(k, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
-
-                var dims = getDimensionCount(property);
-                var easeIn = [];
-                var easeOut = [];
-
-                // Fast acceleration, quick bounce back
-                for (var d = 0; d < dims; d++) {
-                    easeIn.push(new KeyframeEase(0, 75));   // Strong influence
-                    easeOut.push(new KeyframeEase(0, 75));
-                }
-
-                if (dims === 1) {
-                    property.setTemporalEaseAtKey(k, [easeIn[0]], [easeOut[0]]);
-                } else {
-                    property.setTemporalEaseAtKey(k, easeIn, easeOut);
-                }
-            } catch (e) {
-                // Ignore easing errors
-            }
-        }
+function calculateTotalDuration(scenario) {
+    var total = 0;
+    for (var i = 0; i < scenario.length; i++) {
+        total += scenario[i].duration || 1.0;
     }
+    return total;
+}
+
+function normalizeAssetPath(path) {
+    if (!path) return "";
+    if (path.indexOf("file://") === 0) path = path.substring(7);
+
+    var result = "";
+    for (var i = 0; i < path.length; i++) {
+        result += (path.charAt(i) === "\\") ? "/" : path.charAt(i);
+    }
+    if (result.length > 0 && result.charAt(result.length - 1) !== "/") result += "/";
+    return result;
+}
+
+function resolveAssetPath(assetPath, rootPath) {
+    if (!assetPath) return null;
+    if (assetPath.indexOf("file://") === 0) assetPath = assetPath.substring(7);
+    if (assetPath.indexOf("blob:") === 0) return null;
+
+    // Check for absolute path (Windows drive or Forward slash)
+    var isAbsolute = (assetPath.length >= 2 && assetPath.charAt(1) === ":") || assetPath.charAt(0) === "/";
+    return isAbsolute ? assetPath : (rootPath ? rootPath + assetPath : assetPath);
 }
 
 /**
@@ -542,103 +615,6 @@ function getDimensionCount(property) {
     } catch (e) {
         return 1;
     }
-}
-
-// ============================================
-// UTILITY FUNCTIONS
-// ============================================
-
-/**
- * Calculate total duration from scenario steps
- * @param {array} scenario - Array of step objects
- * @returns {number} Total duration in seconds
- */
-function calculateTotalDuration(scenario) {
-    var total = 0;
-    for (var i = 0; i < scenario.length; i++) {
-        total += scenario[i].duration || 1.0;
-    }
-    return total;
-}
-
-/**
- * Normalize asset root path
- * @param {string} path - Input path
- * @returns {string} Normalized path
- */
-function normalizeAssetPath(path) {
-    if (!path) return "";
-
-    // Remove file:// prefix if present
-    if (path.indexOf("file://") === 0) {
-        path = path.substring(7);
-    }
-
-    // Normalize slashes - convert all to forward slashes for consistency
-    var result = "";
-    for (var i = 0; i < path.length; i++) {
-        var c = path.charAt(i);
-        if (c === "\\") {
-            result += "/";
-        } else {
-            result += c;
-        }
-    }
-    path = result;
-
-    // Ensure trailing slash
-    if (path.length > 0 && path.charAt(path.length - 1) !== "/") {
-        path += "/";
-    }
-
-    return path;
-}
-
-/**
- * Resolve full asset path from relative path
- * @param {string} assetPath - Asset path (may be relative or absolute)
- * @param {string} rootPath - Root assets folder
- * @returns {string|null} Full resolved path or null
- */
-function resolveAssetPath(assetPath, rootPath) {
-    if (!assetPath) return null;
-
-    // Remove file:// prefix
-    if (assetPath.indexOf("file://") === 0) {
-        assetPath = assetPath.substring(7);
-    }
-
-    // Skip blob URLs
-    if (assetPath.indexOf("blob:") === 0) return null;
-
-    // Check if already absolute path (Windows or Mac)
-    var isAbsolute = false;
-
-    // Windows: starts with drive letter like C:/ or C:\
-    if (assetPath.length >= 2) {
-        var firstChar = assetPath.charAt(0);
-        var secondChar = assetPath.charAt(1);
-        if (secondChar === ":" &&
-            ((firstChar >= "A" && firstChar <= "Z") || (firstChar >= "a" && firstChar <= "z"))) {
-            isAbsolute = true;
-        }
-    }
-
-    // Mac/Linux: starts with /
-    if (assetPath.charAt(0) === "/") {
-        isAbsolute = true;
-    }
-
-    if (isAbsolute) {
-        return assetPath;
-    }
-
-    // Combine with root path
-    if (rootPath) {
-        return rootPath + assetPath;
-    }
-
-    return assetPath;
 }
 
 /**
@@ -799,14 +775,8 @@ function importLegacyCardLayer(comp, layerData) {
 
         for (var i = 0; i < keyframes.length; i++) {
             var kf = keyframes[i];
-            positionProp.setValueAtTime(kf.time, [kf.x || 0, kf.y || 0]);
-            rotationProp.setValueAtTime(kf.time, kf.rotation || 0);
+            positionProp.setValueAtTime(kf.time, [kf.x, kf.y]);
+            rotationProp.setValueAtTime(kf.time, kf.rotation);
         }
-
-        applyBezierEasing(positionProp);
-        applyBezierEasing(rotationProp);
     }
-
-    layer.property("Scale").setValue([100, 100]);
-    return layer;
 }
