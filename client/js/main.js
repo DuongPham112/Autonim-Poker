@@ -652,12 +652,20 @@ function handleCardAreaDrop(e) {
     e.preventDefault();
 
     const cardId = e.dataTransfer.getData('text/plain');
-    const card = appState.trayCards.find(c => c.id === cardId);
 
-    if (!card || !card.inTray) return;
+    // Try to find card in tray OR in tableCards (for moving existing cards)
+    let card = appState.trayCards.find(c => c.id === cardId);
+    const fromTray = card && card.inTray;
 
-    // Calculate drop position
-    const rect = cardArea.getBoundingClientRect();
+    // If not in tray, look for it in table cards (Record mode - moving existing cards)
+    if (!fromTray) {
+        card = appState.tableCards.find(c => c.id === cardId);
+        if (!card) return;
+    }
+
+    // Calculate drop position relative to poker table
+    const pokerTable = document.getElementById('pokerTable');
+    const rect = pokerTable.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
@@ -665,7 +673,13 @@ function handleCardAreaDrop(e) {
     const scaleX = PROJECT_INFO.width / rect.width;
     const scaleY = PROJECT_INFO.height / rect.height;
 
-    placeCardOnTable(card, x * scaleX, y * scaleY);
+    if (fromTray) {
+        // From tray - place new card
+        placeCardOnTable(card, x * scaleX, y * scaleY);
+    } else {
+        // Moving existing card - update position
+        moveCardToPosition(card, x * scaleX, y * scaleY);
+    }
 }
 
 function placeCardInZone(card, zoneName, rotation, zoneElement) {
@@ -715,6 +729,36 @@ function placeCardOnTable(card, x, y) {
     updateUI();
 
     setStatus(`Placed ${card.displayName || card.name} on table`);
+}
+
+/**
+ * Move an existing card to a new position on the table
+ * Used in Record mode to reposition cards from zones to free table area
+ */
+function moveCardToPosition(card, x, y) {
+    // Remove existing element
+    if (card.element) {
+        card.element.remove();
+    }
+
+    // Update card state
+    const wasInZone = card.zone !== 'table';
+    card.zone = 'table';
+    card.x = x;
+    card.y = y;
+    card.rotation = 0;
+    card.zonePosition = 0;
+
+    // Create new table card element
+    createTableCardElement(card);
+
+    // Mark as having changes for recording
+    if (appState.phase === 'record') {
+        card.hasChanges = true;
+    }
+
+    updateUI();
+    setStatus(`Moved ${card.displayName || card.name} to table`);
 }
 
 // ============================================
@@ -768,8 +812,19 @@ function createZoneCardElement(card, zoneElement) {
     inner.appendChild(back);
     cardEl.appendChild(inner);
 
-    // Click to flip
+    // Click to flip/select
     cardEl.addEventListener('click', () => handleCardClick(card, cardEl));
+
+    // Make draggable for Record mode (move cards to table)
+    cardEl.draggable = true;
+    cardEl.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', card.id);
+        e.dataTransfer.effectAllowed = 'move';
+        cardEl.classList.add('dragging');
+    });
+    cardEl.addEventListener('dragend', () => {
+        cardEl.classList.remove('dragging');
+    });
 
     zoneCardsContainer.appendChild(cardEl);
     card.element = cardEl;
@@ -863,6 +918,16 @@ function selectCard(card) {
     cardProperties.classList.remove('hidden');
     selectedCardName.textContent = card.displayName || card.name;
     cardFaceState.textContent = card.isFaceUp ? 'Up' : 'Down';
+
+    // Update card thumbnail
+    const thumbContainer = document.getElementById('selectedCardThumb');
+    thumbContainer.innerHTML = '';
+    if (card.frontImageUrl) {
+        const img = document.createElement('img');
+        img.src = card.frontImageUrl;
+        img.alt = card.displayName || card.name;
+        thumbContainer.appendChild(img);
+    }
 
     flipCardCheck.checked = card.flipAction || false;
     slamEffectCheck.checked = card.slamEffect || false;
