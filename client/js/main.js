@@ -611,6 +611,24 @@ function setupZoneDropTargets() {
     });
 
     cardArea.addEventListener('drop', (e) => handleCardAreaDrop(e));
+
+    // Allow dropping on the poker table itself (for free placement)
+    const pokerTable = document.getElementById('pokerTable');
+    pokerTable.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        pokerTable.classList.add('drag-over');
+    });
+
+    pokerTable.addEventListener('dragleave', () => {
+        pokerTable.classList.remove('drag-over');
+    });
+
+    pokerTable.addEventListener('drop', (e) => {
+        e.preventDefault();
+        pokerTable.classList.remove('drag-over');
+        handleCardAreaDrop(e);
+    });
 }
 
 function handleZoneDrop(e, zone) {
