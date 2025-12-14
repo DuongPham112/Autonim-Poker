@@ -313,11 +313,51 @@ async function handleExport() {
         showStatus('Ready');
 
     } else {
-        // Browser Mode - Download as ZIP or individual files
-        showStatus('Processing for browser download...');
-
+        // Browser Mode - Try File System Access API first (Chrome/Edge)
         const total = filledSlots.length;
         let processed = 0;
+
+        // Check if File System Access API is supported
+        if ('showDirectoryPicker' in window) {
+            try {
+                showStatus('Select folder to save cards...');
+                const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+
+                showStatus('Processing...');
+
+                for (const id of filledSlots) {
+                    const file = cardMap[id];
+                    const fileName = (id === 'back') ? 'back.png' : `${id}.png`;
+
+                    try {
+                        const blob = await resizeImage(file, targetWidth);
+                        const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+                        const writable = await fileHandle.createWritable();
+                        await writable.write(blob);
+                        await writable.close();
+                        processed++;
+                        showStatus(`Saved ${processed}/${total}: ${fileName}`);
+                    } catch (e) {
+                        console.error('Error saving ' + fileName, e);
+                    }
+                }
+
+                alert(`Done! Saved ${processed} cards to selected folder.`);
+                showStatus('Ready');
+                return;
+
+            } catch (e) {
+                // User cancelled or error - fall back to download
+                if (e.name === 'AbortError') {
+                    showStatus('Cancelled.');
+                    return;
+                }
+                console.warn('File System Access failed, falling back to download:', e);
+            }
+        }
+
+        // Fallback: Download as ZIP or individual files
+        showStatus('Processing for browser download...');
 
         // Try to use JSZip if available, otherwise download individually
         if (typeof JSZip !== 'undefined') {
