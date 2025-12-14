@@ -1,12 +1,6 @@
 /**
- * Autonim-Poker - Director Tool
- * Pose-to-Pose Animation Recording for After Effects
- * 
- * Features:
- * - Import card images from folder using Node.js fs/path
- * - Draggable cards with transform-based positioning
- * - Pose-to-Pose recording: Snapshot → Edit → Finish Step
- * - Export scenario JSON for After Effects
+ * Autonim-Poker - Director Tool v2.0
+ * Card Tray, Player Zones, Face States, Flip Animation
  */
 
 // ============================================
@@ -23,66 +17,94 @@ try {
 }
 
 // Node.js modules (available in CEP with Node.js enabled)
-let fs, path;
+let fs, nodePath;
 try {
     fs = require('fs');
-    path = require('path');
+    nodePath = require('path');
 } catch (e) {
     console.warn('Node.js modules not available');
     fs = null;
-    path = null;
+    nodePath = null;
 }
 
-// Application Mode
-window.appMode = 'recording'; // 'recording' or 'play'
-
-// Project Info (Reference dimensions 1920x1080)
+// Project Constants
 const PROJECT_INFO = {
     width: 1920,
     height: 1080,
     fps: 30
 };
 
+// Card dimensions
+const CARD_WIDTH = 60;
+const CARD_HEIGHT = 84;
+
+// Standard 52-card deck
+const RANKS = ['ace', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'jack', 'queen', 'king'];
+const SUITS = ['spades', 'hearts', 'diamonds', 'clubs'];
+
 // Application State
 const appState = {
-    cards: [],                    // Array of card objects
+    phase: 'setup',               // 'setup' or 'record'
+    deckPath: null,               // Path to deck folder
+    assetsRootPath: null,         // Assets folder for AE
+    backImagePath: null,          // Path to back.png
+
+    // Card Tray
+    trayCards: [],                // Cards in tray (not yet on table)
+
+    // Table Cards
+    tableCards: [],               // Cards placed on table
     selectedCard: null,           // Currently selected card
-    isEditingStep: false,         // Is currently editing a step
-    currentStepIndex: -1,         // Current step being edited
-    deckPath: null,               // Path to imported deck folder
-    assetsRootPath: null          // Root path for assets (for AE)
+
+    // Recording
+    isEditingStep: false,
+    currentStepIndex: -1,
+
+    // Settings
+    cardOverlap: 25               // Overlap in pixels
 };
 
-// Scenario Data (will be exported)
+// Scenario Data (for export)
 const scenarioData = {
     projectInfo: PROJECT_INFO,
-    initialState: {},             // Initial positions of all cards
-    scenario: []                  // Array of steps
+    initialState: {},
+    scenario: []
 };
 
-// Current Step being edited
+// Recording state
 let currentStep = null;
-let startSnapshot = null;         // Snapshot when step started
-
-// Supported image formats
-const SUPPORTED_FORMATS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'];
+let startSnapshot = null;
 
 // ============================================
 // DOM ELEMENTS
 // ============================================
 
-let importDeckBtn, resetBtn, folderInput;
-let gameContainer, pokerTable, cardArea, tableInstructions;
-let cardCountEl, actionCountEl, statusMessage;
-let directorPanel, addStepBtn, finishStepBtn, stepDuration;
+// Tray Panel
+let cardTrayList, trayCardCount, deckSelect, loadDeckBtn, cardSearch;
+let suitFilterBtns;
+
+// Main Content
+let gameContainer, cardArea, tableInstructions;
+let setupPhaseBtn, recordPhaseBtn, recordingIndicator, modeBadge;
+let flipAllBtn, resetTableBtn, tableCardCount, stepCount;
+let overlapSlider, overlapValue;
+
+// Player Zones
+let zoneTop, zoneBottom, zoneLeft, zoneRight, communityZone;
+let playerZones = [];
+
+// Director Panel
+let directorPanel, stepControlsSection;
+let selectAssetsFolderBtn, assetsPathDisplay;
+let addStepBtn, finishStepBtn, stepDuration;
 let currentStepNum, totalSteps, timelinePreview;
-let noCardSelected, cardProperties, selectedCardName;
+let noCardSelected, cardProperties, selectedCardName, cardFaceState;
 let flipCardCheck, slamEffectCheck;
 let cardPosX, cardPosY, cardRot;
 let exportJsonBtn, exportToAEBtn;
-let recordingIndicator;
-let playModeBtn, recordModeBtn;
-let selectAssetsFolderBtn, assetsPathDisplay;
+
+// Status
+let statusMessage;
 
 // ============================================
 // INITIALIZATION
@@ -91,21 +113,54 @@ let selectAssetsFolderBtn, assetsPathDisplay;
 document.addEventListener('DOMContentLoaded', init);
 
 function init() {
-    // Get DOM elements
-    importDeckBtn = document.getElementById('importDeckBtn');
-    resetBtn = document.getElementById('resetBtn');
-    folderInput = document.getElementById('folderInput');
+    getDOMElements();
+    bindEvents();
+
+    // Try to auto-load default deck
+    autoLoadDefaultDeck();
+
+    updateUI();
+    setStatus('Ready - Load a deck and setup your cards');
+    console.log('Autonim-Poker v2.0 initialized');
+}
+
+function getDOMElements() {
+    // Tray Panel
+    cardTrayList = document.getElementById('cardTrayList');
+    trayCardCount = document.getElementById('trayCardCount');
+    deckSelect = document.getElementById('deckSelect');
+    loadDeckBtn = document.getElementById('loadDeckBtn');
+    cardSearch = document.getElementById('cardSearch');
+    suitFilterBtns = document.querySelectorAll('.suit-btn');
+
+    // Main Content
     gameContainer = document.getElementById('gameContainer');
-    pokerTable = document.getElementById('pokerTable');
     cardArea = document.getElementById('cardArea');
     tableInstructions = document.getElementById('tableInstructions');
-    cardCountEl = document.getElementById('cardCount');
-    actionCountEl = document.getElementById('actionCount');
-    statusMessage = document.getElementById('statusMessage');
+    setupPhaseBtn = document.getElementById('setupPhaseBtn');
+    recordPhaseBtn = document.getElementById('recordPhaseBtn');
     recordingIndicator = document.getElementById('recordingIndicator');
+    modeBadge = document.getElementById('modeBadge');
+    flipAllBtn = document.getElementById('flipAllBtn');
+    resetTableBtn = document.getElementById('resetTableBtn');
+    tableCardCount = document.getElementById('tableCardCount');
+    stepCount = document.getElementById('stepCount');
+    overlapSlider = document.getElementById('overlapSlider');
+    overlapValue = document.getElementById('overlapValue');
 
-    // Director Panel elements
+    // Player Zones
+    zoneTop = document.getElementById('zoneTop');
+    zoneBottom = document.getElementById('zoneBottom');
+    zoneLeft = document.getElementById('zoneLeft');
+    zoneRight = document.getElementById('zoneRight');
+    communityZone = document.getElementById('communityZone');
+    playerZones = [zoneTop, zoneBottom, zoneLeft, zoneRight, communityZone];
+
+    // Director Panel
     directorPanel = document.getElementById('directorPanel');
+    stepControlsSection = document.getElementById('stepControlsSection');
+    selectAssetsFolderBtn = document.getElementById('selectAssetsFolderBtn');
+    assetsPathDisplay = document.getElementById('assetsPathDisplay');
     addStepBtn = document.getElementById('addStepBtn');
     finishStepBtn = document.getElementById('finishStepBtn');
     stepDuration = document.getElementById('stepDuration');
@@ -115,6 +170,7 @@ function init() {
     noCardSelected = document.getElementById('noCardSelected');
     cardProperties = document.getElementById('cardProperties');
     selectedCardName = document.getElementById('selectedCardName');
+    cardFaceState = document.getElementById('cardFaceState');
     flipCardCheck = document.getElementById('flipCardCheck');
     slamEffectCheck = document.getElementById('slamEffectCheck');
     cardPosX = document.getElementById('cardPosX');
@@ -122,47 +178,49 @@ function init() {
     cardRot = document.getElementById('cardRot');
     exportJsonBtn = document.getElementById('exportJsonBtn');
     exportToAEBtn = document.getElementById('exportToAEBtn');
-    playModeBtn = document.getElementById('playModeBtn');
-    recordModeBtn = document.getElementById('recordModeBtn');
-    selectAssetsFolderBtn = document.getElementById('selectAssetsFolderBtn');
-    assetsPathDisplay = document.getElementById('assetsPathDisplay');
 
-    // Bind event listeners
-    bindEvents();
-
-    // Update UI
-    updateUI();
-
-    console.log('Autonim-Poker Director Tool initialized');
-    setStatus('Ready - Import a deck to start recording');
+    // Status
+    statusMessage = document.getElementById('statusMessage');
 }
 
 function bindEvents() {
-    // Project Settings
+    // Deck loading
+    loadDeckBtn.addEventListener('click', handleLoadDeck);
+
+    // Search and filter
+    cardSearch.addEventListener('input', filterTrayCards);
+    suitFilterBtns.forEach(btn => {
+        btn.addEventListener('click', () => handleSuitFilter(btn));
+    });
+
+    // Phase switching
+    setupPhaseBtn.addEventListener('click', () => setPhase('setup'));
+    recordPhaseBtn.addEventListener('click', () => setPhase('record'));
+
+    // Table controls
+    flipAllBtn.addEventListener('click', handleFlipAll);
+    resetTableBtn.addEventListener('click', handleResetTable);
+    overlapSlider.addEventListener('input', handleOverlapChange);
+
+    // Assets folder
     selectAssetsFolderBtn.addEventListener('click', handleSelectAssetsFolder);
 
-    // Import / Reset
-    importDeckBtn.addEventListener('click', () => folderInput.click());
-    folderInput.addEventListener('change', handleFolderSelect);
-    resetBtn.addEventListener('click', handleReset);
-
-    // Step Controls
+    // Recording controls
     addStepBtn.addEventListener('click', handleAddStep);
     finishStepBtn.addEventListener('click', handleFinishStep);
 
-    // Action Properties
-    flipCardCheck.addEventListener('change', handleActionPropertyChange);
-    slamEffectCheck.addEventListener('change', handleActionPropertyChange);
+    // Card properties
+    flipCardCheck.addEventListener('change', handlePropertyChange);
+    slamEffectCheck.addEventListener('change', handlePropertyChange);
 
     // Export
     exportJsonBtn.addEventListener('click', handleExportJSON);
     exportToAEBtn.addEventListener('click', handleExportToAE);
 
-    // Mode switching
-    playModeBtn.addEventListener('click', () => setAppMode('play'));
-    recordModeBtn.addEventListener('click', () => setAppMode('recording'));
+    // Zone drop targets
+    setupZoneDropTargets();
 
-    // Click outside cards to deselect
+    // Click on table to deselect
     cardArea.addEventListener('click', (e) => {
         if (e.target === cardArea) {
             deselectCard();
@@ -171,382 +229,708 @@ function bindEvents() {
 }
 
 // ============================================
-// MODE SWITCHING
+// PHASE MANAGEMENT
 // ============================================
 
-function setAppMode(mode) {
-    window.appMode = mode;
+function setPhase(phase) {
+    appState.phase = phase;
 
-    if (mode === 'recording') {
-        directorPanel.classList.remove('hidden');
-        recordModeBtn.classList.add('active');
-        playModeBtn.classList.remove('active');
+    if (phase === 'setup') {
+        setupPhaseBtn.classList.add('active');
+        recordPhaseBtn.classList.remove('active');
+        modeBadge.textContent = 'SETUP';
+        modeBadge.classList.remove('recording');
+        stepControlsSection.classList.add('hidden');
     } else {
-        directorPanel.classList.add('hidden');
-        playModeBtn.classList.add('active');
-        recordModeBtn.classList.remove('active');
+        recordPhaseBtn.classList.add('active');
+        setupPhaseBtn.classList.remove('active');
+        modeBadge.textContent = 'RECORD';
+        modeBadge.classList.add('recording');
+        stepControlsSection.classList.remove('hidden');
+
+        // Save initial state when entering record phase
+        saveInitialState();
     }
 
     updateUI();
 }
 
 // ============================================
-// ASSETS FOLDER SELECTION (CEP API)
+// DECK LOADING
 // ============================================
 
-/**
- * Handle selecting assets folder using CEP file dialog
- * Uses window.cep.fs.showOpenDialog for folder selection
- */
-function handleSelectAssetsFolder() {
-    // Check if running in CEP environment
-    if (typeof window.cep === 'undefined' || !window.cep.fs) {
-        // Fallback for browser testing - prompt for path
-        const manualPath = prompt('Enter assets folder path (CEP not available):', 'D:/Projects/Assets');
-        if (manualPath) {
-            setAssetsPath(manualPath);
-        }
+function autoLoadDefaultDeck() {
+    // Try to find default deck in assets folder
+    if (!csInterface) {
+        // Browser mode - create placeholder cards
+        createPlaceholderDeck();
         return;
     }
 
-    // CEP showOpenDialog parameters
-    const dialogTitle = 'Select Assets Folder';
-    const initialPath = appState.deckPath || '';
-    const fileTypes = []; // Empty for folder selection
-    const defaultExtension = '';
-    const friendlyDescription = '';
-    const allowMultiple = false;
-    const isFolder = true; // This flag tells CEP to select folders
+    // CEP mode - get extension path
+    const extPath = csInterface.getSystemPath(SystemPath.EXTENSION);
+    const defaultDeckPath = extPath + '/assets/decks/default';
 
-    // Use CEP's showOpenDialogEx for folder selection
-    try {
-        const result = window.cep.fs.showOpenDialogEx(
-            false,          // allowMultipleSelection
-            true,           // chooseDirectory (folder mode)
-            dialogTitle,    // title
-            initialPath,    // initialPath
-            fileTypes       // fileTypes (ignored for folder)
-        );
+    if (fs && fs.existsSync(defaultDeckPath)) {
+        loadDeckFromPath(defaultDeckPath);
+    } else {
+        setStatus('Default deck not found. Use Load button to select a deck folder.');
+        createPlaceholderDeck();
+    }
+}
 
-        // Check result
-        if (result.err === 0 && result.data && result.data.length > 0) {
-            const selectedPath = result.data[0];
-            setAssetsPath(selectedPath);
-        } else if (result.err !== 0) {
-            console.warn('Folder selection cancelled or error:', result.err);
-        }
-    } catch (e) {
-        console.error('Error opening folder dialog:', e);
-
-        // Fallback: try alternative method
+function handleLoadDeck() {
+    // Use CEP folder dialog if available
+    if (typeof window.cep !== 'undefined' && window.cep.fs) {
         try {
-            const result = window.cep.fs.showOpenDialog(
-                false,          // allowMultipleSelection
-                true,           // chooseDirectory
-                dialogTitle,    // title
-                initialPath     // initialPath
+            const result = window.cep.fs.showOpenDialogEx(
+                false,    // allowMultipleSelection
+                true,     // chooseDirectory
+                'Select Deck Folder',
+                '',       // initialPath
+                []        // fileTypes
             );
 
             if (result.err === 0 && result.data && result.data.length > 0) {
-                setAssetsPath(result.data[0]);
+                loadDeckFromPath(result.data[0]);
             }
-        } catch (e2) {
-            console.error('Fallback folder dialog also failed:', e2);
-            setStatus('Error opening folder dialog', 'error');
+        } catch (e) {
+            console.error('Error opening folder dialog:', e);
+            setStatus('Error selecting folder', 'error');
         }
+    } else {
+        // Browser fallback - use file input
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.webkitdirectory = true;
+        input.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                loadDeckFromFiles(e.target.files);
+            }
+        });
+        input.click();
     }
 }
 
-/**
- * Set the assets root path and update UI
- * @param {string} folderPath - Selected folder path
- */
-function setAssetsPath(folderPath) {
-    if (!folderPath) return;
-
-    // Normalize path (ensure forward slashes for script compatibility)
-    let normalizedPath = folderPath.replace(/\\/g, '/');
-
-    // Ensure trailing slash
-    if (!normalizedPath.endsWith('/')) {
-        normalizedPath += '/';
+function loadDeckFromPath(folderPath) {
+    if (!fs) {
+        setStatus('File system not available', 'error');
+        return;
     }
-
-    // Store in app state
-    appState.assetsRootPath = normalizedPath;
-
-    // Update UI display
-    updateAssetsPathDisplay(normalizedPath);
-
-    setStatus(`Assets folder set: ${getShortPath(normalizedPath)}`, 'success');
-    console.log('Assets root path set to:', normalizedPath);
-}
-
-/**
- * Update the assets path display in UI
- * @param {string} fullPath - Full folder path
- */
-function updateAssetsPathDisplay(fullPath) {
-    if (!assetsPathDisplay) return;
-
-    // Clear existing content
-    assetsPathDisplay.innerHTML = '';
-    assetsPathDisplay.classList.add('has-path');
-
-    // Create path display elements
-    const labelSpan = document.createElement('span');
-    labelSpan.className = 'path-label';
-    labelSpan.textContent = '✓ ';
-
-    const pathSpan = document.createElement('span');
-    pathSpan.className = 'path-value';
-    pathSpan.textContent = getShortPath(fullPath);
-    pathSpan.title = fullPath; // Show full path on hover
-
-    assetsPathDisplay.appendChild(labelSpan);
-    assetsPathDisplay.appendChild(pathSpan);
-}
-
-/**
- * Get shortened path for display
- * @param {string} fullPath - Full path string
- * @returns {string} Shortened path
- */
-function getShortPath(fullPath) {
-    // Show just the last 2-3 directory levels
-    const parts = fullPath.replace(/\/$/, '').split('/');
-    if (parts.length <= 3) {
-        return fullPath;
-    }
-    return '.../' + parts.slice(-2).join('/') + '/';
-}
-
-// ============================================
-// FILE SYSTEM - IMPORT DECK
-// ============================================
-
-function handleFolderSelect(event) {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-
-    // Get the folder path from first file
-    const firstFile = files[0];
-    let folderPath = '';
-
-    if (path && firstFile.path) {
-        folderPath = path.dirname(firstFile.path);
-        appState.deckPath = folderPath;
-    }
-
-    setStatus(`Loading images...`, 'recording');
 
     try {
-        const imageFiles = [];
-
-        // Iterate through selected files
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-
-            if (SUPPORTED_FORMATS.includes(ext)) {
-                imageFiles.push({
-                    name: file.name,                          // Original filename with extension
-                    baseName: file.name.substring(0, file.name.lastIndexOf('.')),
-                    displayPath: URL.createObjectURL(file),   // Blob URL for display in panel
-                    path: file.path || ''                     // File system path (may be empty in browser)
-                });
-            }
-        }
+        const files = fs.readdirSync(folderPath);
+        const imageFiles = files.filter(f => /\.(png|jpg|jpeg|gif|webp)$/i.test(f));
 
         if (imageFiles.length === 0) {
             setStatus('No image files found in folder', 'error');
             return;
         }
 
-        // Clear existing cards
-        clearCards();
+        // Find back.png
+        const backFile = imageFiles.find(f => f.toLowerCase() === 'back.png');
+        if (backFile) {
+            appState.backImagePath = folderPath + '/' + backFile;
+        }
 
-        // Create cards from images
-        createCardsFromImages(imageFiles);
+        // Store deck path
+        appState.deckPath = folderPath;
+        appState.assetsRootPath = folderPath + '/';
 
-        // Save initial state
-        saveInitialState();
+        // Create card data for each image (except back.png)
+        const cardFiles = imageFiles.filter(f => f.toLowerCase() !== 'back.png');
 
-        // Hide instructions
-        tableInstructions.classList.add('hidden');
+        appState.trayCards = cardFiles.map((filename, index) => {
+            const baseName = filename.replace(/\.[^.]+$/, '');
+            return createCardData(index, filename, baseName, folderPath);
+        });
 
-        setStatus(`Loaded ${imageFiles.length} cards. Ready to record!`, 'success');
-        updateUI();
+        renderCardTray();
+        updateAssetsDisplay();
+        setStatus(`Loaded ${appState.trayCards.length} cards from deck`, 'success');
 
-    } catch (error) {
-        console.error('Error loading images:', error);
-        setStatus('Error loading images: ' + error.message, 'error');
-    }
-
-    // Reset file input
-    folderInput.value = '';
-}
-
-function createCardsFromImages(imageFiles) {
-    const tableRect = cardArea.getBoundingClientRect();
-    const cardWidth = 80;
-    const cardHeight = 112;
-    const padding = 60;
-
-    // Calculate grid layout for initial card positions
-    const cardsPerRow = Math.floor((tableRect.width - padding * 2) / (cardWidth + 15));
-    const maxCards = Math.min(imageFiles.length, 52);
-
-    for (let i = 0; i < maxCards; i++) {
-        const file = imageFiles[i];
-        const row = Math.floor(i / cardsPerRow);
-        const col = i % cardsPerRow;
-
-        const x = padding + col * (cardWidth + 15);
-        const y = padding + row * (cardHeight + 15);
-
-        const card = createCard(file, x, y, i);
-        appState.cards.push(card);
+    } catch (e) {
+        console.error('Error loading deck:', e);
+        setStatus('Error loading deck: ' + e.message, 'error');
     }
 }
 
-function createCard(fileInfo, x, y, index) {
-    const cardId = `card-${index}-${fileInfo.baseName.replace(/\s+/g, '_')}`;
+function loadDeckFromFiles(files) {
+    const imageFiles = Array.from(files).filter(f =>
+        /\.(png|jpg|jpeg|gif|webp)$/i.test(f.name)
+    );
 
-    // Create card element
-    const cardEl = document.createElement('div');
-    cardEl.className = 'card';
-    cardEl.id = cardId;
-    cardEl.dataset.index = index;
+    if (imageFiles.length === 0) {
+        setStatus('No image files found', 'error');
+        return;
+    }
 
-    // Set initial position using transform
-    cardEl.style.left = '0';
-    cardEl.style.top = '0';
-    cardEl.style.transform = `translate(${x}px, ${y}px) rotate(0deg)`;
+    // Find back.png
+    const backFile = imageFiles.find(f => f.name.toLowerCase() === 'back.png');
+    if (backFile) {
+        appState.backImagePath = URL.createObjectURL(backFile);
+    }
 
-    // Create image - use blob URL for display in panel
+    // Get folder path from first file
+    if (nodePath && imageFiles[0].path) {
+        appState.deckPath = nodePath.dirname(imageFiles[0].path);
+        appState.assetsRootPath = appState.deckPath + '/';
+    }
+
+    // Create card data
+    const cardFiles = imageFiles.filter(f => f.name.toLowerCase() !== 'back.png');
+
+    appState.trayCards = cardFiles.map((file, index) => {
+        const baseName = file.name.replace(/\.[^.]+$/, '');
+        return {
+            id: `card-${index}-${baseName.replace(/\s+/g, '_')}`,
+            name: baseName,
+            filename: file.name,
+            frontImageUrl: URL.createObjectURL(file),
+            backImageUrl: appState.backImagePath || '',
+            isFaceUp: false,
+            inTray: true
+        };
+    });
+
+    renderCardTray();
+    updateAssetsDisplay();
+    setStatus(`Loaded ${appState.trayCards.length} cards`, 'success');
+}
+
+function createPlaceholderDeck() {
+    // Create 52 placeholder cards for browser testing
+    appState.trayCards = [];
+    let index = 0;
+
+    for (const suit of SUITS) {
+        for (const rank of RANKS) {
+            const name = `${rank}_${suit}`;
+            appState.trayCards.push({
+                id: `card-${index}-${name}`,
+                name: name,
+                displayName: `${rank.charAt(0).toUpperCase() + rank.slice(1)} of ${suit}`,
+                filename: `${name}.png`,
+                frontImageUrl: '',  // Will show placeholder
+                backImageUrl: '',
+                suit: suit,
+                rank: rank,
+                isFaceUp: false,
+                inTray: true
+            });
+            index++;
+        }
+    }
+
+    renderCardTray();
+}
+
+function createCardData(index, filename, baseName, folderPath) {
+    // Try to parse suit from filename
+    let suit = 'unknown';
+    let rank = baseName;
+
+    for (const s of SUITS) {
+        if (baseName.toLowerCase().includes(s)) {
+            suit = s;
+            rank = baseName.toLowerCase().replace(s, '').replace(/[_-]/g, '').trim();
+            break;
+        }
+    }
+
+    return {
+        id: `card-${index}-${baseName.replace(/\s+/g, '_')}`,
+        name: baseName,
+        displayName: baseName.replace(/[_-]/g, ' '),
+        filename: filename,
+        frontImageUrl: `file://${folderPath}/${filename}`,
+        backImageUrl: appState.backImagePath ? `file://${appState.backImagePath}` : '',
+        suit: suit,
+        rank: rank,
+        isFaceUp: false,
+        inTray: true
+    };
+}
+
+// ============================================
+// CARD TRAY
+// ============================================
+
+function renderCardTray() {
+    cardTrayList.innerHTML = '';
+
+    const cardsToShow = getFilteredTrayCards();
+
+    if (cardsToShow.length === 0) {
+        cardTrayList.innerHTML = '<div class="tray-loading"><p>No cards match filter</p></div>';
+        return;
+    }
+
+    cardsToShow.forEach(card => {
+        const cardEl = createTrayCardElement(card);
+        cardTrayList.appendChild(cardEl);
+    });
+
+    trayCardCount.textContent = appState.trayCards.filter(c => c.inTray).length;
+}
+
+function createTrayCardElement(card) {
+    const el = document.createElement('div');
+    el.className = 'tray-card';
+    el.dataset.cardId = card.id;
+    el.draggable = true;
+
+    // Card image
     const img = document.createElement('img');
-    if (fileInfo.displayPath) {
-        img.src = fileInfo.displayPath;
-    } else if (fileInfo.path.startsWith('blob:') || fileInfo.path.startsWith('file://')) {
-        img.src = fileInfo.path;
+    if (card.frontImageUrl) {
+        img.src = card.frontImageUrl;
     } else {
-        img.src = `file://${fileInfo.path}`;
+        // Placeholder with suit symbol
+        img.src = createPlaceholderCardImage(card);
     }
-    img.alt = fileInfo.baseName;
-    img.draggable = false;
-    cardEl.appendChild(img);
+    img.alt = card.name;
+    el.appendChild(img);
 
-    // Create label
-    const label = document.createElement('div');
-    label.className = 'card-label';
-    label.textContent = fileInfo.baseName;
-    cardEl.appendChild(label);
+    // Card name
+    const nameEl = document.createElement('div');
+    nameEl.className = 'card-name';
+    nameEl.textContent = card.displayName || card.name;
+    el.appendChild(nameEl);
 
-    // Add to DOM
-    cardArea.appendChild(cardEl);
+    // Drag events
+    el.addEventListener('dragstart', (e) => handleTrayCardDragStart(e, card));
+    el.addEventListener('dragend', handleTrayCardDragEnd);
 
-    // Make draggable
-    makeDraggable(cardEl);
+    return el;
+}
 
-    // Create card data object
-    // IMPORTANT: Store filename (not blob URL) for AE export
-    const cardData = {
-        id: cardId,
-        element: cardEl,
-        name: fileInfo.baseName,
-        filename: fileInfo.name,        // Original filename with extension (for AE)
-        x: x,
-        y: y,
-        rotation: 0,
-        scale: 1,
-        faceUp: true,
-        flip: false,          // Action property
-        slamEffect: false     // Action property
+function createPlaceholderCardImage(card) {
+    // Create simple SVG placeholder
+    const suitSymbols = {
+        spades: '♠',
+        hearts: '♥',
+        diamonds: '♦',
+        clubs: '♣',
+        unknown: '?'
+    };
+    const suitColors = {
+        spades: '#2c3e50',
+        hearts: '#e74c3c',
+        diamonds: '#e74c3c',
+        clubs: '#2c3e50',
+        unknown: '#666'
     };
 
-    return cardData;
+    const symbol = suitSymbols[card.suit] || '?';
+    const color = suitColors[card.suit] || '#666';
+    const rankDisplay = card.rank ? card.rank.charAt(0).toUpperCase() : '?';
+
+    const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="56" viewBox="0 0 40 56">
+            <rect width="40" height="56" fill="white" rx="3"/>
+            <text x="5" y="15" font-size="12" fill="${color}">${rankDisplay}</text>
+            <text x="20" y="35" font-size="18" text-anchor="middle" fill="${color}">${symbol}</text>
+        </svg>
+    `;
+    return 'data:image/svg+xml,' + encodeURIComponent(svg);
+}
+
+function getFilteredTrayCards() {
+    const searchTerm = cardSearch.value.toLowerCase();
+    const activeFilter = document.querySelector('.suit-btn.active');
+    const suitFilter = activeFilter ? activeFilter.dataset.suit : 'all';
+
+    return appState.trayCards.filter(card => {
+        if (!card.inTray) return false;
+
+        // Search filter
+        if (searchTerm && !card.name.toLowerCase().includes(searchTerm)) {
+            return false;
+        }
+
+        // Suit filter
+        if (suitFilter !== 'all' && card.suit !== suitFilter) {
+            return false;
+        }
+
+        return true;
+    });
+}
+
+function filterTrayCards() {
+    renderCardTray();
+}
+
+function handleSuitFilter(btn) {
+    suitFilterBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderCardTray();
 }
 
 // ============================================
-// DRAGGABLE FUNCTIONALITY
+// DRAG & DROP FROM TRAY
 // ============================================
 
-function makeDraggable(element) {
+function handleTrayCardDragStart(e, card) {
+    e.dataTransfer.setData('text/plain', card.id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.target.classList.add('dragging');
+
+    // Highlight drop zones
+    playerZones.forEach(zone => zone.classList.add('drag-target'));
+}
+
+function handleTrayCardDragEnd(e) {
+    e.target.classList.remove('dragging');
+    playerZones.forEach(zone => zone.classList.remove('drag-target', 'drag-over'));
+}
+
+function setupZoneDropTargets() {
+    playerZones.forEach(zone => {
+        zone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            zone.classList.add('drag-over');
+        });
+
+        zone.addEventListener('dragleave', () => {
+            zone.classList.remove('drag-over');
+        });
+
+        zone.addEventListener('drop', (e) => handleZoneDrop(e, zone));
+    });
+
+    // Also allow dropping on the main card area
+    cardArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+    });
+
+    cardArea.addEventListener('drop', (e) => handleCardAreaDrop(e));
+}
+
+function handleZoneDrop(e, zone) {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+
+    const cardId = e.dataTransfer.getData('text/plain');
+    const card = appState.trayCards.find(c => c.id === cardId);
+
+    if (!card || !card.inTray) return;
+
+    // Get zone info
+    const zoneName = zone.dataset.zone;
+    const rotation = parseInt(zone.dataset.rotation) || 0;
+
+    // Move card from tray to zone
+    placeCardInZone(card, zoneName, rotation, zone);
+}
+
+function handleCardAreaDrop(e) {
+    e.preventDefault();
+
+    const cardId = e.dataTransfer.getData('text/plain');
+    const card = appState.trayCards.find(c => c.id === cardId);
+
+    if (!card || !card.inTray) return;
+
+    // Calculate drop position
+    const rect = cardArea.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    // Scale to project coordinates
+    const scaleX = PROJECT_INFO.width / rect.width;
+    const scaleY = PROJECT_INFO.height / rect.height;
+
+    placeCardOnTable(card, x * scaleX, y * scaleY);
+}
+
+function placeCardInZone(card, zoneName, rotation, zoneElement) {
+    // Mark as not in tray
+    card.inTray = false;
+    card.zone = zoneName;
+    card.rotation = rotation;
+
+    // Get existing cards in zone
+    const zoneCards = appState.tableCards.filter(c => c.zone === zoneName);
+    const position = zoneCards.length;
+
+    // Calculate overlap position
+    card.zonePosition = position;
+
+    // Add to table cards
+    appState.tableCards.push(card);
+
+    // Create visual card in zone
+    createZoneCardElement(card, zoneElement);
+
+    // Update tray
+    renderCardTray();
+    hideInstructions();
+    updateUI();
+
+    setStatus(`Placed ${card.displayName || card.name} in ${zoneName} zone`);
+}
+
+function placeCardOnTable(card, x, y) {
+    card.inTray = false;
+    card.zone = 'table';
+    card.x = x;
+    card.y = y;
+    card.rotation = 0;
+
+    appState.tableCards.push(card);
+
+    createTableCardElement(card);
+
+    renderCardTray();
+    hideInstructions();
+    updateUI();
+
+    setStatus(`Placed ${card.displayName || card.name} on table`);
+}
+
+// ============================================
+// CARD ELEMENTS ON TABLE
+// ============================================
+
+function createZoneCardElement(card, zoneElement) {
+    const zoneCardsContainer = zoneElement.querySelector('.zone-cards');
+
+    const cardEl = document.createElement('div');
+    cardEl.className = `zone-card ${card.isFaceUp ? 'face-up' : 'face-down'}`;
+    cardEl.id = card.id;
+    cardEl.dataset.cardId = card.id;
+    cardEl.style.marginLeft = card.zonePosition > 0 ? `-${CARD_WIDTH - appState.cardOverlap}px` : '0';
+
+    // Apply rotation for left/right zones
+    if (card.rotation !== 0) {
+        cardEl.style.transform = `rotate(${card.rotation}deg)`;
+    }
+
+    // Inner structure for flip
+    const inner = document.createElement('div');
+    inner.className = 'card-inner';
+
+    // Front face
+    const front = document.createElement('div');
+    front.className = 'card-face card-front';
+    const frontImg = document.createElement('img');
+    frontImg.src = card.frontImageUrl || createPlaceholderCardImage(card);
+    front.appendChild(frontImg);
+
+    // Back face
+    const back = document.createElement('div');
+    back.className = 'card-face card-back';
+    if (card.backImageUrl) {
+        const backImg = document.createElement('img');
+        backImg.src = card.backImageUrl;
+        back.appendChild(backImg);
+    }
+
+    inner.appendChild(front);
+    inner.appendChild(back);
+    cardEl.appendChild(inner);
+
+    // Click to flip
+    cardEl.addEventListener('click', () => handleCardClick(card, cardEl));
+
+    zoneCardsContainer.appendChild(cardEl);
+    card.element = cardEl;
+}
+
+function createTableCardElement(card) {
+    const cardEl = document.createElement('div');
+    cardEl.className = `card ${card.isFaceUp ? 'face-up' : 'face-down'}`;
+    cardEl.id = card.id;
+    cardEl.dataset.cardId = card.id;
+
+    // Position
+    const scaleX = gameContainer.offsetWidth / PROJECT_INFO.width;
+    const scaleY = gameContainer.offsetHeight / PROJECT_INFO.height;
+
+    cardEl.style.left = '0';
+    cardEl.style.top = '0';
+    cardEl.style.transform = `translate(${card.x * scaleX}px, ${card.y * scaleY}px) rotate(${card.rotation}deg)`;
+
+    // Inner structure for flip
+    const inner = document.createElement('div');
+    inner.className = 'card-inner';
+
+    // Front face
+    const front = document.createElement('div');
+    front.className = 'card-face card-front';
+    const frontImg = document.createElement('img');
+    frontImg.src = card.frontImageUrl || createPlaceholderCardImage(card);
+    front.appendChild(frontImg);
+
+    // Back face
+    const back = document.createElement('div');
+    back.className = 'card-face card-back';
+    if (card.backImageUrl) {
+        const backImg = document.createElement('img');
+        backImg.src = card.backImageUrl;
+        back.appendChild(backImg);
+    }
+
+    inner.appendChild(front);
+    inner.appendChild(back);
+    cardEl.appendChild(inner);
+
+    // Label
+    const label = document.createElement('div');
+    label.className = 'card-label';
+    label.textContent = card.displayName || card.name;
+    cardEl.appendChild(label);
+
+    // Click to select/flip
+    cardEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleCardClick(card, cardEl);
+    });
+
+    // Make draggable
+    makeCardDraggable(cardEl, card);
+
+    cardArea.appendChild(cardEl);
+    card.element = cardEl;
+}
+
+// ============================================
+// CARD INTERACTIONS
+// ============================================
+
+function handleCardClick(card, element) {
+    // Select the card
+    selectCard(card);
+
+    // If in setup phase, also flip the card
+    if (appState.phase === 'setup') {
+        flipCard(card);
+    }
+}
+
+function selectCard(card) {
+    // Deselect previous
+    if (appState.selectedCard && appState.selectedCard.element) {
+        appState.selectedCard.element.classList.remove('selected');
+    }
+
+    appState.selectedCard = card;
+
+    if (card.element) {
+        card.element.classList.add('selected');
+    }
+
+    // Update properties panel
+    noCardSelected.classList.add('hidden');
+    cardProperties.classList.remove('hidden');
+    selectedCardName.textContent = card.displayName || card.name;
+    cardFaceState.textContent = card.isFaceUp ? 'Up' : 'Down';
+
+    flipCardCheck.checked = card.flipAction || false;
+    slamEffectCheck.checked = card.slamEffect || false;
+
+    updateCardPosDisplay(card);
+}
+
+function deselectCard() {
+    if (appState.selectedCard && appState.selectedCard.element) {
+        appState.selectedCard.element.classList.remove('selected');
+    }
+    appState.selectedCard = null;
+
+    noCardSelected.classList.remove('hidden');
+    cardProperties.classList.add('hidden');
+}
+
+function flipCard(card) {
+    card.isFaceUp = !card.isFaceUp;
+
+    if (card.element) {
+        // Add flip animation
+        card.element.classList.add('flipping');
+
+        setTimeout(() => {
+            card.element.classList.remove('face-up', 'face-down');
+            card.element.classList.add(card.isFaceUp ? 'face-up' : 'face-down');
+            card.element.classList.remove('flipping');
+        }, 200); // Half of flip duration
+    }
+
+    // Update panel
+    if (appState.selectedCard === card) {
+        cardFaceState.textContent = card.isFaceUp ? 'Up' : 'Down';
+    }
+}
+
+function handleFlipAll() {
+    const faceUpCount = appState.tableCards.filter(c => c.isFaceUp).length;
+    const flipToUp = faceUpCount < appState.tableCards.length / 2;
+
+    appState.tableCards.forEach(card => {
+        if (card.isFaceUp !== flipToUp) {
+            flipCard(card);
+        }
+    });
+
+    setStatus(`Flipped all cards ${flipToUp ? 'face up' : 'face down'}`);
+}
+
+function updateCardPosDisplay(card) {
+    cardPosX.textContent = Math.round(card.x || 0);
+    cardPosY.textContent = Math.round(card.y || 0);
+    cardRot.textContent = `${Math.round(card.rotation || 0)}°`;
+}
+
+// ============================================
+// DRAGGABLE CARDS ON TABLE
+// ============================================
+
+function makeCardDraggable(element, card) {
     let isDragging = false;
-    let offsetX, offsetY;  // Offset from mouse to card center
-    let rotation;
+    let offsetX, offsetY;
 
     element.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return; // Only left click
+        if (e.button !== 0) return;
         e.preventDefault();
-        e.stopPropagation();
-
-        // Select this card
-        const cardData = appState.cards.find(c => c.id === element.id);
-        if (cardData) {
-            selectCard(cardData);
-        }
 
         isDragging = true;
         element.classList.add('dragging');
 
-        // Get current transform values
-        const transform = getTransformValues(element);
-        rotation = transform.rotation;
+        const rect = cardArea.getBoundingClientRect();
+        const scaleX = PROJECT_INFO.width / rect.width;
+        const scaleY = PROJECT_INFO.height / rect.height;
 
-        // Calculate offset: difference between mouse position and card position
-        // This keeps the card at the same relative position to the mouse
-        const cardAreaRect = cardArea.getBoundingClientRect();
-        const mouseXInArea = e.clientX - cardAreaRect.left;
-        const mouseYInArea = e.clientY - cardAreaRect.top;
+        const mouseX = (e.clientX - rect.left) * scaleX;
+        const mouseY = (e.clientY - rect.top) * scaleY;
 
-        // Scale mouse position to reference coordinates
-        const scaleX = PROJECT_INFO.width / cardAreaRect.width;
-        const scaleY = PROJECT_INFO.height / cardAreaRect.height;
+        offsetX = card.x - mouseX;
+        offsetY = card.y - mouseY;
 
-        const scaledMouseX = mouseXInArea * scaleX;
-        const scaledMouseY = mouseYInArea * scaleY;
-
-        // Offset = card position - mouse position (in reference coords)
-        offsetX = transform.x - scaledMouseX;
-        offsetY = transform.y - scaledMouseY;
-
-        // Bring to front
         element.style.zIndex = 1000;
     });
 
     document.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
 
-        // Get mouse position relative to cardArea
-        const cardAreaRect = cardArea.getBoundingClientRect();
-        const mouseXInArea = e.clientX - cardAreaRect.left;
-        const mouseYInArea = e.clientY - cardAreaRect.top;
+        const rect = cardArea.getBoundingClientRect();
+        const scaleX = PROJECT_INFO.width / rect.width;
+        const scaleY = PROJECT_INFO.height / rect.height;
 
-        // Scale to reference coordinates (1920x1080)
-        const scaleX = PROJECT_INFO.width / cardAreaRect.width;
-        const scaleY = PROJECT_INFO.height / cardAreaRect.height;
+        const mouseX = (e.clientX - rect.left) * scaleX;
+        const mouseY = (e.clientY - rect.top) * scaleY;
 
-        const scaledMouseX = mouseXInArea * scaleX;
-        const scaledMouseY = mouseYInArea * scaleY;
+        card.x = mouseX + offsetX;
+        card.y = mouseY + offsetY;
 
-        // New card position = scaled mouse + offset
-        const newX = scaledMouseX + offsetX;
-        const newY = scaledMouseY + offsetY;
+        // Update visual position
+        const visualX = card.x / scaleX;
+        const visualY = card.y / scaleY;
+        element.style.transform = `translate(${visualX}px, ${visualY}px) rotate(${card.rotation}deg)`;
 
-        // Apply transform (scaled back to screen coordinates for visual)
-        const visualX = newX / scaleX;
-        const visualY = newY / scaleY;
-        element.style.transform = `translate(${visualX}px, ${visualY}px) rotate(${rotation}deg)`;
-
-        // Update card data (in reference coordinates)
-        const cardData = appState.cards.find(c => c.id === element.id);
-        if (cardData) {
-            cardData.x = newX;
-            cardData.y = newY;
-            updateCardPropertiesUI(cardData);
-        }
+        updateCardPosDisplay(card);
     });
 
     document.addEventListener('mouseup', () => {
@@ -554,164 +938,114 @@ function makeDraggable(element) {
         isDragging = false;
         element.classList.remove('dragging');
         element.style.zIndex = '';
-
-        // Check if card has changed
-        checkCardChanges();
-        updateUI();
     });
+}
 
-    // Click to select
-    element.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const cardData = appState.cards.find(c => c.id === element.id);
-        if (cardData) {
-            selectCard(cardData);
+// ============================================
+// OVERLAP CONTROL
+// ============================================
+
+function handleOverlapChange() {
+    appState.cardOverlap = parseInt(overlapSlider.value);
+    overlapValue.textContent = `${appState.cardOverlap}px`;
+
+    // Re-render zone cards with new overlap
+    reRenderZoneCards();
+}
+
+function reRenderZoneCards() {
+    playerZones.forEach(zone => {
+        const zoneName = zone.dataset.zone;
+        const zoneCards = appState.tableCards.filter(c => c.zone === zoneName);
+
+        zoneCards.forEach((card, index) => {
+            if (card.element) {
+                card.element.style.marginLeft = index > 0 ? `-${CARD_WIDTH - appState.cardOverlap}px` : '0';
+            }
+        });
+    });
+}
+
+// ============================================
+// RESET TABLE
+// ============================================
+
+function handleResetTable() {
+    if (appState.tableCards.length === 0) return;
+
+    if (!confirm('Return all cards to tray?')) return;
+
+    // Remove card elements
+    appState.tableCards.forEach(card => {
+        if (card.element) {
+            card.element.remove();
         }
+        card.inTray = true;
+        card.zone = null;
+        card.element = null;
+        card.isFaceUp = false;
     });
-}
 
-function getTransformValues(element) {
-    const transform = element.style.transform;
-    const translateMatch = transform.match(/translate\(([^,]+)px,\s*([^)]+)px\)/);
-    const rotateMatch = transform.match(/rotate\(([^)]+)deg\)/);
+    appState.tableCards = [];
+    appState.selectedCard = null;
 
-    return {
-        x: translateMatch ? parseFloat(translateMatch[1]) : 0,
-        y: translateMatch ? parseFloat(translateMatch[2]) : 0,
-        rotation: rotateMatch ? parseFloat(rotateMatch[1]) : 0
-    };
-}
+    renderCardTray();
+    showInstructions();
+    deselectCard();
+    updateUI();
 
-// ============================================
-// CARD SELECTION
-// ============================================
-
-function selectCard(cardData) {
-    // Deselect previous
-    if (appState.selectedCard) {
-        appState.selectedCard.element.classList.remove('selected');
-    }
-
-    // Select new
-    appState.selectedCard = cardData;
-    cardData.element.classList.add('selected');
-
-    // Update UI
-    noCardSelected.classList.add('hidden');
-    cardProperties.classList.remove('hidden');
-    selectedCardName.textContent = cardData.name;
-
-    // Sync action properties
-    flipCardCheck.checked = cardData.flip || false;
-    slamEffectCheck.checked = cardData.slamEffect || false;
-
-    updateCardPropertiesUI(cardData);
-}
-
-function deselectCard() {
-    if (appState.selectedCard) {
-        appState.selectedCard.element.classList.remove('selected');
-        appState.selectedCard = null;
-    }
-
-    noCardSelected.classList.remove('hidden');
-    cardProperties.classList.add('hidden');
-}
-
-function updateCardPropertiesUI(cardData) {
-    cardPosX.textContent = Math.round(cardData.x);
-    cardPosY.textContent = Math.round(cardData.y);
-    cardRot.textContent = `${Math.round(cardData.rotation)}°`;
+    setStatus('All cards returned to tray');
 }
 
 // ============================================
-// ACTION PROPERTIES
-// ============================================
-
-function handleActionPropertyChange() {
-    if (!appState.selectedCard) return;
-
-    appState.selectedCard.flip = flipCardCheck.checked;
-    appState.selectedCard.slamEffect = slamEffectCheck.checked;
-
-    // Update visual indicators
-    const el = appState.selectedCard.element;
-    el.classList.toggle('flip-marked', appState.selectedCard.flip);
-    el.classList.toggle('slam-marked', appState.selectedCard.slamEffect);
-
-    checkCardChanges();
-}
-
-// ============================================
-// POSE-TO-POSE RECORDING
+// RECORDING LOGIC
 // ============================================
 
 function handleAddStep() {
     if (appState.isEditingStep) {
-        setStatus('Please finish the current step first', 'error');
+        setStatus('Finish current step first', 'error');
         return;
     }
 
-    // Take snapshot of current state (Start State)
+    if (appState.tableCards.length === 0) {
+        setStatus('Place some cards on the table first', 'error');
+        return;
+    }
+
     startSnapshot = takeSnapshot();
 
-    // Create new step
-    const stepIndex = scenarioData.scenario.length + 1;
     currentStep = {
-        stepId: stepIndex,
+        stepId: scenarioData.scenario.length + 1,
         duration: parseFloat(stepDuration.value) || 1.0,
         actions: []
     };
 
     appState.isEditingStep = true;
-    appState.currentStepIndex = stepIndex;
+    appState.currentStepIndex = currentStep.stepId;
 
-    // Update UI
     finishStepBtn.disabled = false;
     addStepBtn.disabled = true;
     recordingIndicator.classList.add('active');
-    currentStepNum.textContent = stepIndex;
+    currentStepNum.textContent = currentStep.stepId;
 
-    setStatus(`Editing Step ${stepIndex} - Drag cards and set properties, then click Finish Step`, 'recording');
-    updateUI();
+    setStatus(`Editing Step ${currentStep.stepId} - Move cards and set properties`);
 }
 
 function handleFinishStep() {
-    if (!appState.isEditingStep || !currentStep || !startSnapshot) {
-        setStatus('No step is being edited', 'error');
-        return;
-    }
+    if (!appState.isEditingStep || !currentStep) return;
 
-    // Compare current state with snapshot to find changes
     const endSnapshot = takeSnapshot();
     const actions = computeActions(startSnapshot, endSnapshot);
 
-    // Update step with actions
-    currentStep.duration = parseFloat(stepDuration.value) || 1.0;
     currentStep.actions = actions;
+    currentStep.duration = parseFloat(stepDuration.value) || 1.0;
 
-    // Add step to scenario
     scenarioData.scenario.push(currentStep);
 
-    // Reset editing state
     appState.isEditingStep = false;
     currentStep = null;
     startSnapshot = null;
 
-    // Reset card visual states
-    appState.cards.forEach(card => {
-        card.element.classList.remove('has-changes', 'flip-marked', 'slam-marked');
-        card.flip = false;
-        card.slamEffect = false;
-    });
-
-    // Update checkboxes if card is selected
-    if (appState.selectedCard) {
-        flipCardCheck.checked = false;
-        slamEffectCheck.checked = false;
-    }
-
-    // Update UI
     finishStepBtn.disabled = true;
     addStepBtn.disabled = false;
     recordingIndicator.classList.remove('active');
@@ -719,20 +1053,18 @@ function handleFinishStep() {
     totalSteps.textContent = scenarioData.scenario.length;
 
     renderTimeline();
-
-    setStatus(`Step ${scenarioData.scenario.length} saved with ${actions.length} action(s)`, 'success');
+    setStatus(`Step ${scenarioData.scenario.length} saved with ${actions.length} actions`, 'success');
     updateUI();
 }
 
 function takeSnapshot() {
     const snapshot = {};
-    appState.cards.forEach(card => {
+    appState.tableCards.forEach(card => {
         snapshot[card.id] = {
-            x: card.x,
-            y: card.y,
-            rotation: card.rotation,
-            scale: card.scale,
-            faceUp: card.faceUp
+            x: card.x || 0,
+            y: card.y || 0,
+            rotation: card.rotation || 0,
+            isFaceUp: card.isFaceUp
         };
     });
     return snapshot;
@@ -740,112 +1072,74 @@ function takeSnapshot() {
 
 function computeActions(startSnap, endSnap) {
     const actions = [];
-    const POSITION_THRESHOLD = 1; // Minimum pixel change to register
 
-    appState.cards.forEach(card => {
+    appState.tableCards.forEach(card => {
         const start = startSnap[card.id];
         const end = endSnap[card.id];
 
         if (!start || !end) return;
 
-        // Check for position/rotation changes
-        const posChanged = Math.abs(end.x - start.x) > POSITION_THRESHOLD ||
-            Math.abs(end.y - start.y) > POSITION_THRESHOLD;
-        const rotChanged = Math.abs(end.rotation - start.rotation) > 0.5;
-        const hasFlip = card.flip;
+        const posChanged = Math.abs((end.x || 0) - (start.x || 0)) > 1 ||
+            Math.abs((end.y || 0) - (start.y || 0)) > 1;
+        const rotChanged = Math.abs((end.rotation || 0) - (start.rotation || 0)) > 0.5;
+        const flipChanged = end.isFaceUp !== start.isFaceUp;
+        const hasFlipAction = card.flipAction;
         const hasSlam = card.slamEffect;
 
-        if (posChanged || rotChanged || hasFlip || hasSlam) {
-            const action = {
+        if (posChanged || rotChanged || flipChanged || hasFlipAction || hasSlam) {
+            actions.push({
                 targetId: card.id,
                 type: 'TRANSFORM',
-                endPosition: { x: Math.round(end.x), y: Math.round(end.y) },
-                endRotation: Math.round(end.rotation),
-                flip: hasFlip,
+                startPosition: { x: Math.round(start.x || 0), y: Math.round(start.y || 0) },
+                endPosition: { x: Math.round(end.x || 0), y: Math.round(end.y || 0) },
+                startRotation: Math.round(start.rotation || 0),
+                endRotation: Math.round(end.rotation || 0),
+                flip: hasFlipAction || flipChanged,
+                flipToFaceUp: end.isFaceUp,
                 effect: hasSlam ? 'SLAM' : null
-            };
-
-            // Include start position for delta calculation
-            action.startPosition = { x: Math.round(start.x), y: Math.round(start.y) };
-            action.startRotation = Math.round(start.rotation);
-
-            actions.push(action);
+            });
         }
     });
 
     return actions;
 }
 
-function checkCardChanges() {
-    if (!appState.isEditingStep || !startSnapshot) return;
+function handlePropertyChange() {
+    if (!appState.selectedCard) return;
 
-    appState.cards.forEach(card => {
-        const start = startSnapshot[card.id];
-        if (!start) return;
-
-        const posChanged = Math.abs(card.x - start.x) > 1 ||
-            Math.abs(card.y - start.y) > 1;
-        const hasAction = posChanged || card.flip || card.slamEffect;
-
-        card.element.classList.toggle('has-changes', hasAction && !card.flip && !card.slamEffect);
-    });
-
-    updateUI();
+    appState.selectedCard.flipAction = flipCardCheck.checked;
+    appState.selectedCard.slamEffect = slamEffectCheck.checked;
 }
 
 // ============================================
-// INITIAL STATE
+// INITIAL STATE & EXPORT
 // ============================================
 
 function saveInitialState() {
     scenarioData.initialState = {};
-    appState.cards.forEach(card => {
+
+    appState.tableCards.forEach(card => {
         scenarioData.initialState[card.id] = {
             name: card.name,
-            filename: card.filename,    // Filename for AE to import from assetsRootPath
-            x: Math.round(card.x),
-            y: Math.round(card.y),
-            rotation: card.rotation,
-            scale: card.scale,
-            faceUp: card.faceUp
+            filename: card.filename,
+            frontImage: card.filename,
+            backImage: 'back.png',
+            x: Math.round(card.x || 0),
+            y: Math.round(card.y || 0),
+            rotation: card.rotation || 0,
+            zone: card.zone,
+            isFaceUp: card.isFaceUp
         };
     });
 }
 
-// ============================================
-// TIMELINE
-// ============================================
-
-function renderTimeline() {
-    timelinePreview.innerHTML = '';
-
-    scenarioData.scenario.forEach((step, index) => {
-        const stepEl = document.createElement('div');
-        stepEl.className = 'timeline-step';
-        if (step.actions.length > 0) {
-            stepEl.classList.add('has-actions');
-        }
-        stepEl.textContent = step.stepId;
-        stepEl.title = `Step ${step.stepId}: ${step.actions.length} action(s), ${step.duration}s`;
-
-        stepEl.addEventListener('click', () => {
-            // Could add step preview/edit functionality here
-            console.log('Step clicked:', step);
-        });
-
-        timelinePreview.appendChild(stepEl);
-    });
-}
-
-// ============================================
-// EXPORT
-// ============================================
-
 function handleExportJSON() {
-    if (scenarioData.scenario.length === 0) {
-        setStatus('No steps recorded. Add steps first!', 'error');
+    if (appState.tableCards.length === 0) {
+        setStatus('No cards on table to export', 'error');
         return;
     }
+
+    saveInitialState();
 
     const jsonString = JSON.stringify(scenarioData, null, 2);
     const blob = new Blob([jsonString], { type: 'application/json' });
@@ -859,60 +1153,51 @@ function handleExportJSON() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    setStatus('Scenario JSON exported successfully!', 'success');
+    setStatus('Scenario exported!', 'success');
 }
 
 function handleExportToAE() {
     if (!csInterface) {
-        setStatus('After Effects not connected. Export JSON instead.', 'error');
+        setStatus('After Effects not connected', 'error');
         return;
     }
 
-    if (scenarioData.scenario.length === 0) {
-        setStatus('No steps recorded. Add steps first!', 'error');
+    if (appState.tableCards.length === 0) {
+        setStatus('No cards on table', 'error');
         return;
     }
 
-    // Validate assets path is selected
     if (!appState.assetsRootPath) {
-        setStatus('❌ Please select Assets Folder first!', 'error');
-        // Highlight the button
-        selectAssetsFolderBtn.style.animation = 'pulse 0.5s ease-in-out 3';
-        setTimeout(() => {
-            selectAssetsFolderBtn.style.animation = '';
-        }, 1500);
+        setStatus('Select Assets Folder first!', 'error');
         return;
     }
+
+    saveInitialState();
 
     setStatus('Sending to After Effects...', 'recording');
 
     const jsonString = JSON.stringify(scenarioData);
-    const assetsPath = escapeJsonForScript(appState.assetsRootPath);
+    const assetsPath = escapeForScript(appState.assetsRootPath);
 
-    // Call generateSequence with both JSON data and assets root path
     csInterface.evalScript(
-        `generateSequence('${escapeJsonForScript(jsonString)}', '${assetsPath}')`,
-        function (result) {
+        `generateSequence('${escapeForScript(jsonString)}', '${assetsPath}')`,
+        (result) => {
             try {
                 const response = JSON.parse(result);
                 if (response.success) {
-                    setStatus(`✓ Sent to AE: ${response.message}`, 'success');
+                    setStatus(`✓ ${response.message}`, 'success');
                 } else {
-                    setStatus(`Export failed: ${response.message}`, 'error');
+                    setStatus(`Error: ${response.message}`, 'error');
                 }
             } catch (e) {
-                if (result === 'EvalScript error.') {
-                    setStatus('Error: Check After Effects ExtendScript', 'error');
-                } else {
-                    setStatus('Sent to After Effects', 'success');
-                }
+                setStatus('Sent to After Effects', 'success');
             }
         }
     );
 }
 
-function escapeJsonForScript(jsonString) {
-    return jsonString
+function escapeForScript(str) {
+    return str
         .replace(/\\/g, '\\\\')
         .replace(/'/g, "\\'")
         .replace(/"/g, '\\"')
@@ -921,81 +1206,78 @@ function escapeJsonForScript(jsonString) {
 }
 
 // ============================================
-// RESET
+// ASSETS FOLDER
 // ============================================
 
-function handleReset() {
-    if (scenarioData.scenario.length > 0) {
-        if (!confirm('This will clear all recorded steps. Continue?')) {
-            return;
+function handleSelectAssetsFolder() {
+    if (typeof window.cep !== 'undefined' && window.cep.fs) {
+        try {
+            const result = window.cep.fs.showOpenDialogEx(
+                false, true, 'Select Assets Folder', '', []
+            );
+
+            if (result.err === 0 && result.data && result.data.length > 0) {
+                appState.assetsRootPath = result.data[0].replace(/\\/g, '/') + '/';
+                updateAssetsDisplay();
+                setStatus('Assets folder set', 'success');
+            }
+        } catch (e) {
+            setStatus('Error selecting folder', 'error');
+        }
+    } else {
+        const path = prompt('Enter assets folder path:', appState.deckPath || 'D:/Assets');
+        if (path) {
+            appState.assetsRootPath = path.replace(/\\/g, '/') + '/';
+            updateAssetsDisplay();
         }
     }
-
-    clearCards();
-    scenarioData.scenario = [];
-    scenarioData.initialState = {};
-    appState.isEditingStep = false;
-    currentStep = null;
-    startSnapshot = null;
-
-    tableInstructions.classList.remove('hidden');
-    finishStepBtn.disabled = true;
-    addStepBtn.disabled = false;
-    recordingIndicator.classList.remove('active');
-    currentStepNum.textContent = '-';
-    totalSteps.textContent = '0';
-
-    renderTimeline();
-    deselectCard();
-
-    setStatus('All cleared - Import a deck to start');
-    updateUI();
 }
 
-function clearCards() {
-    cardArea.innerHTML = '';
-    appState.cards = [];
-    appState.selectedCard = null;
+function updateAssetsDisplay() {
+    if (appState.assetsRootPath) {
+        const shortPath = appState.assetsRootPath.split('/').slice(-3).join('/');
+        assetsPathDisplay.innerHTML = `<span class="path-label">✓ .../${shortPath}</span>`;
+        assetsPathDisplay.classList.add('has-path');
+    }
 }
 
 // ============================================
-// UI UPDATES
+// TIMELINE
+// ============================================
+
+function renderTimeline() {
+    timelinePreview.innerHTML = '';
+
+    scenarioData.scenario.forEach(step => {
+        const el = document.createElement('div');
+        el.className = 'timeline-step';
+        if (step.actions.length > 0) el.classList.add('has-actions');
+        el.textContent = step.stepId;
+        el.title = `Step ${step.stepId}: ${step.actions.length} actions, ${step.duration}s`;
+        timelinePreview.appendChild(el);
+    });
+}
+
+// ============================================
+// UI HELPERS
 // ============================================
 
 function updateUI() {
-    // Update card count
-    cardCountEl.textContent = `Cards: ${appState.cards.length}`;
-
-    // Count total actions
-    const totalActions = scenarioData.scenario.reduce((sum, step) => sum + step.actions.length, 0);
-    actionCountEl.textContent = `Actions: ${totalActions}`;
-
-    // Update total steps
+    tableCardCount.textContent = `Table: ${appState.tableCards.length}`;
+    stepCount.textContent = `Steps: ${scenarioData.scenario.length}`;
     totalSteps.textContent = scenarioData.scenario.length;
 }
 
 function setStatus(message, type = '') {
     statusMessage.textContent = message;
     statusMessage.className = 'status-bar';
-    if (type) {
-        statusMessage.classList.add(type);
-    }
+    if (type) statusMessage.classList.add(`status-${type}`);
 }
 
-// ============================================
-// UTILITY
-// ============================================
+function hideInstructions() {
+    tableInstructions.classList.add('hidden');
+}
 
-function getRelativePosition(element) {
-    const containerRect = gameContainer.getBoundingClientRect();
-    const elementRect = element.getBoundingClientRect();
-
-    // Calculate position relative to game container, scaled to reference dimensions
-    const scaleX = PROJECT_INFO.width / containerRect.width;
-    const scaleY = PROJECT_INFO.height / containerRect.height;
-
-    return {
-        x: (elementRect.left - containerRect.left) * scaleX,
-        y: (elementRect.top - containerRect.top) * scaleY
-    };
+function showInstructions() {
+    tableInstructions.classList.remove('hidden');
 }
