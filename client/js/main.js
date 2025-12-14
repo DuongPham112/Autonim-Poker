@@ -697,16 +697,20 @@ function placeCardOnTable(card, x, y) {
 
 function createZoneCardElement(card, zoneElement) {
     const zoneCardsContainer = zoneElement.querySelector('.zone-cards');
+    const zoneName = zoneElement.dataset.zone;
 
     const cardEl = document.createElement('div');
     cardEl.className = `zone-card ${card.isFaceUp ? 'face-up' : 'face-down'}`;
     cardEl.id = card.id;
     cardEl.dataset.cardId = card.id;
-    cardEl.style.marginLeft = card.zonePosition > 0 ? `-${CARD_WIDTH - appState.cardOverlap}px` : '0';
 
-    // Apply rotation for left/right zones
-    if (card.rotation !== 0) {
-        cardEl.style.transform = `rotate(${card.rotation}deg)`;
+    // Different overlap direction based on zone
+    if (zoneName === 'left' || zoneName === 'right') {
+        // Side zones: stack vertically, use marginTop for overlap
+        cardEl.style.marginTop = card.zonePosition > 0 ? `-${CARD_HEIGHT - appState.cardOverlap}px` : '0';
+    } else {
+        // Top/Bottom/Community: stack horizontally, use marginLeft
+        cardEl.style.marginLeft = card.zonePosition > 0 ? `-${CARD_WIDTH - appState.cardOverlap}px` : '0';
     }
 
     // Inner structure for flip
