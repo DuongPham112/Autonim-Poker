@@ -263,24 +263,37 @@
         /* Batch Upload Button */
         .batch-btn {
             background: transparent;
-            border: none;
-            font-size: 16px;
+            border: 2px solid #9b59b6;
+            /* Purple */
+            color: #9b59b6;
             cursor: pointer;
-            padding: 2px 6px;
-            border-radius: 4px;
+            padding: 6px 12px;
+            border-radius: 6px;
             margin-top: 5px;
-            transition: background 0.2s;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .batch-btn:hover {
-            background: rgba(255, 255, 255, 0.1);
+            border-color: #af7ac5;
+            color: #af7ac5;
+            background: rgba(155, 89, 182, 0.15);
+            box-shadow: 0 0 10px rgba(155, 89, 182, 0.3);
+        }
+
+        .batch-btn svg {
+            width: 20px;
+            height: 20px;
+            stroke-width: 2.5px;
         }
 
         .suit-label {
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 2px;
+            gap: 4px;
         }
     </style>
 </head>
