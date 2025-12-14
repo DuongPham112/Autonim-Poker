@@ -77,7 +77,23 @@ function renderBoard() {
             slot.dataset.id = `${rank}_${suit}`;
             slot.id = `slot-${rank}_${suit}`;
 
-            slot.innerHTML = `<span class="slot-label">${rank}</span>`;
+            // Allow clicking to upload
+            slot.onclick = (e) => {
+                if (e.target.closest('.remove-btn')) return; // Don't trigger if clicked remove
+                document.getElementById(`file-${rank}_${suit}`).click();
+            };
+
+            slot.innerHTML = `
+                <span class="slot-label">${rank}</span>
+                <input type="file" id="file-${rank}_${suit}" style="display:none" accept="image/*">
+            `;
+
+            const fileInput = slot.querySelector('input');
+            fileInput.onchange = (e) => {
+                if (e.target.files.length > 0) {
+                    fillSlot(suit, rank, e.target.files[0]);
+                }
+            };
 
             // Allow individual drop
             slot.addEventListener('dragover', e => {
@@ -177,7 +193,11 @@ function fillSlot(suit, rank, file) {
     const slot = document.getElementById(slotId);
 
     if (slot) {
-        slot.innerHTML = ''; // Clear label
+        // Keep the input
+        const existingInput = slot.querySelector('input');
+        slot.innerHTML = '';
+        if (existingInput) slot.appendChild(existingInput);
+
         const img = document.createElement('img');
         img.src = URL.createObjectURL(file);
         slot.appendChild(img);
@@ -191,7 +211,14 @@ function fillSlot(suit, rank, file) {
         removeBtn.onclick = (e) => {
             e.stopPropagation();
             delete cardMap[id];
-            slot.innerHTML = `<span class="slot-label">${suit === 'back' ? 'back' : rank}</span>`;
+            // Restore initial state with input
+            slot.innerHTML = `
+                <span class="slot-label">${suit === 'back' ? 'back' : rank}</span>
+            `;
+            if (existingInput) {
+                existingInput.value = ''; // Reset file input
+                slot.appendChild(existingInput);
+            }
             slot.classList.remove('filled');
         };
         slot.appendChild(removeBtn);
@@ -215,8 +242,8 @@ async function handleExport() {
     if (outResult.err !== 0 || outResult.data.length === 0) return;
 
     const outFolder = outResult.data[0];
+    // Only use targetWidth
     const targetWidth = parseInt(document.getElementById('outWidth').value) || 400;
-    const targetHeight = parseInt(document.getElementById('outHeight').value) || 560;
 
     showStatus('Processing...', 'loading');
 
@@ -229,7 +256,8 @@ async function handleExport() {
         const savePath = path.join(outFolder, fileName);
 
         try {
-            const blob = await resizeImage(file, targetWidth, targetHeight);
+            // Resize with only width constraint, height is auto
+            const blob = await resizeImage(file, targetWidth);
             const buffer = await blobToBuffer(blob);
             fs.writeFileSync(savePath, buffer);
             processed++;
@@ -243,17 +271,22 @@ async function handleExport() {
     showStatus('Ready');
 }
 
-function resizeImage(file, width, height) {
+function resizeImage(file, targetWidth) {
     return new Promise((resolve) => {
         const img = new Image();
         img.onload = () => {
+            // Calculate height to maintain Aspect Ratio
+            // ratio = h / w  => h = w * ratio
+            const ratio = img.height / img.width;
+            const targetHeight = Math.round(targetWidth * ratio);
+
             const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
             const ctx = canvas.getContext('2d');
 
             // Draw image scaled
-            ctx.drawImage(img, 0, 0, width, height);
+            ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
             canvas.toBlob(blob => resolve(blob), 'image/png');
         };
