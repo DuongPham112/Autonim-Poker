@@ -273,41 +273,113 @@ function fillSlot(suit, rank, file) {
 }
 
 async function handleExport() {
-    if (!fs) {
-        alert('This feature requires Node.js context (CEP Extension). Browser download not implemented yet.');
+    const filledSlots = Object.keys(cardMap);
+
+    if (filledSlots.length === 0) {
+        alert('No cards to export! Please add some cards first.');
         return;
     }
 
-    // Select Output Folder
-    const outResult = window.cep.fs.showOpenDialogEx(false, true, "Select Export Folder", "", []);
-    if (outResult.err !== 0 || outResult.data.length === 0) return;
-
-    const outFolder = outResult.data[0];
     const targetWidth = parseInt(document.getElementById('outWidth').value) || 400;
 
-    showStatus('Processing...');
+    // CEP/Node.js Mode
+    if (fs && typeof window.cep !== 'undefined') {
+        const outResult = window.cep.fs.showOpenDialogEx(false, true, "Select Export Folder", "", []);
+        if (outResult.err !== 0 || outResult.data.length === 0) return;
 
-    let processed = 0;
-    const total = Object.keys(cardMap).length;
+        const outFolder = outResult.data[0];
+        showStatus('Processing...');
 
-    for (const id in cardMap) {
-        const file = cardMap[id];
-        const fileName = (id === 'back') ? 'back.png' : `${id}.png`;
-        const savePath = path.join(outFolder, fileName);
+        let processed = 0;
+        const total = filledSlots.length;
 
-        try {
-            const blob = await resizeImage(file, targetWidth);
-            const buffer = await blobToBuffer(blob);
-            fs.writeFileSync(savePath, buffer);
-            processed++;
-            showStatus(`Saved ${processed}/${total}: ${fileName}`);
-        } catch (e) {
-            console.error('Error saving ' + fileName, e);
+        for (const id of filledSlots) {
+            const file = cardMap[id];
+            const fileName = (id === 'back') ? 'back.png' : `${id}.png`;
+            const savePath = path.join(outFolder, fileName);
+
+            try {
+                const blob = await resizeImage(file, targetWidth);
+                const buffer = await blobToBuffer(blob);
+                fs.writeFileSync(savePath, buffer);
+                processed++;
+                showStatus(`Saved ${processed}/${total}: ${fileName}`);
+            } catch (e) {
+                console.error('Error saving ' + fileName, e);
+            }
         }
-    }
 
-    alert(`Done! Saved ${processed} cards to ${outFolder}`);
-    showStatus('Ready');
+        alert(`Done! Saved ${processed} cards to ${outFolder}`);
+        showStatus('Ready');
+
+    } else {
+        // Browser Mode - Download as ZIP or individual files
+        showStatus('Processing for browser download...');
+
+        const total = filledSlots.length;
+        let processed = 0;
+
+        // Try to use JSZip if available, otherwise download individually
+        if (typeof JSZip !== 'undefined') {
+            const zip = new JSZip();
+
+            for (const id of filledSlots) {
+                const file = cardMap[id];
+                const fileName = (id === 'back') ? 'back.png' : `${id}.png`;
+
+                try {
+                    const blob = await resizeImage(file, targetWidth);
+                    zip.file(fileName, blob);
+                    processed++;
+                    showStatus(`Processing ${processed}/${total}: ${fileName}`);
+                } catch (e) {
+                    console.error('Error processing ' + fileName, e);
+                }
+            }
+
+            const zipBlob = await zip.generateAsync({ type: 'blob' });
+            downloadBlob(zipBlob, 'deck_export.zip');
+            alert(`Done! Downloaded ZIP with ${processed} cards.`);
+
+        } else {
+            // No JSZip - Download each file individually
+            if (!confirm(`Will download ${total} individual PNG files. Continue?`)) return;
+
+            for (const id of filledSlots) {
+                const file = cardMap[id];
+                const fileName = (id === 'back') ? 'back.png' : `${id}.png`;
+
+                try {
+                    const blob = await resizeImage(file, targetWidth);
+                    downloadBlob(blob, fileName);
+                    processed++;
+                    showStatus(`Downloaded ${processed}/${total}: ${fileName}`);
+                    // Small delay to prevent browser blocking
+                    await new Promise(r => setTimeout(r, 200));
+                } catch (e) {
+                    console.error('Error downloading ' + fileName, e);
+                }
+            }
+
+            alert(`Done! Downloaded ${processed} card files.`);
+        }
+
+        showStatus('Ready');
+    }
+}
+
+/**
+ * Download a blob as a file in browser
+ */
+function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }
 
 function resizeImage(file, targetWidth) {
