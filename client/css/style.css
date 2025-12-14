@@ -516,12 +516,18 @@ body {
 
 .zone-left {
     grid-area: left;
-    flex-direction: row;
+}
+
+.zone-left .zone-cards {
+    flex-direction: column;
 }
 
 .zone-right {
     grid-area: right;
-    flex-direction: row;
+}
+
+.zone-right .zone-cards {
+    flex-direction: column;
 }
 
 /* Poker Table */
