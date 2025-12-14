@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ExtensionManifest Version="7.0" ExtensionBundleId="com.vibecode.autonimpoker" ExtensionBundleVersion="1.0.0"
-                   ExtensionBundleName="Autonim_Poker" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+                   ExtensionBundleName="Autonim-Poker" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <Author>VibeCode</Author>
   <Contact mailto="support@vibecode.com"/>
   <Legal>
@@ -42,7 +42,7 @@
         </Lifecycle>
         <UI>
           <Type>Panel</Type>
-          <Menu>Autonim_Poker</Menu>
+          <Menu>Autonim-Poker</Menu>
           <Geometry>
             <Size>
               <Height>600</Height>
