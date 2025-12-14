@@ -42,7 +42,9 @@ function renderBoard() {
         <div class="suit-label">Back</div>
         <div class="slots-container">
              <div class="card-slot" data-id="back" id="slot-back">
-                <span class="upload-icon">+</span>
+                <span class="upload-icon">
+                    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                </span>
                 <span class="slot-label">back.png</span>
                 <input type="file" id="file-back" style="display:none" accept="image/*">
              </div>
@@ -110,7 +112,9 @@ function renderBoard() {
             };
 
             slot.innerHTML = `
-                <span class="upload-icon">+</span>
+                <span class="upload-icon">
+                    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                </span>
                 <span class="slot-label">${rank}</span>
                 <input type="file" id="file-${rank}_${suit}" style="display:none" accept="image/*">
             `;
@@ -251,7 +255,9 @@ function fillSlot(suit, rank, file) {
             delete cardMap[id];
             // Restore initial state with input
             slot.innerHTML = `
-                <span class="upload-icon">+</span>
+                <span class="upload-icon">
+                    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                </span>
                 <span class="slot-label">${suit === 'back' ? 'back' : rank}</span>
             `;
             if (existingInput) {
