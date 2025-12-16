@@ -116,8 +116,8 @@ function init() {
     getDOMElements();
     bindEvents();
 
-    // Try to auto-load default deck
-    autoLoadDefaultDeck();
+    // Scan and populate deck dropdown, then auto-load first deck
+    scanAndPopulateDecks();
 
     updateUI();
     setStatus('Ready - Load a deck and setup your cards');
@@ -186,6 +186,7 @@ function getDOMElements() {
 function bindEvents() {
     // Deck loading
     loadDeckBtn.addEventListener('click', handleLoadDeck);
+    deckSelect.addEventListener('change', handleDeckSelectChange);
 
     // Search and filter
     cardSearch.addEventListener('input', filterTrayCards);
@@ -263,25 +264,79 @@ function setPhase(phase) {
 // DECK LOADING
 // ============================================
 
-function autoLoadDefaultDeck() {
-    // Try to find default deck in assets folder
+/**
+ * Scan the assets/decks folder and populate the deck dropdown
+ */
+function scanAndPopulateDecks() {
+    // Browser mode - create placeholder cards
     if (!csInterface) {
-        // Browser mode - create placeholder cards
         createPlaceholderDeck();
         return;
     }
 
     // CEP mode - get extension path
     const extPath = csInterface.getSystemPath(SystemPath.EXTENSION);
-    const defaultDeckPath = extPath + '/assets/decks/default';
+    const decksFolder = extPath + '/assets/decks';
 
-    if (fs && fs.existsSync(defaultDeckPath)) {
-        loadDeckFromPath(defaultDeckPath);
-    } else {
-        setStatus('Default deck not found. Use Load button to select a deck folder.');
+    if (!fs || !fs.existsSync(decksFolder)) {
+        setStatus('Decks folder not found. Use Load button to select a deck folder.');
+        createPlaceholderDeck();
+        return;
+    }
+
+    try {
+        // Scan for subdirectories in decks folder
+        const items = fs.readdirSync(decksFolder);
+        const deckFolders = items.filter(item => {
+            const itemPath = decksFolder + '/' + item;
+            // Check if it's a directory and not a file like README.md
+            return fs.statSync(itemPath).isDirectory();
+        });
+
+        if (deckFolders.length === 0) {
+            setStatus('No deck folders found in assets/decks/');
+            createPlaceholderDeck();
+            return;
+        }
+
+        // Clear and populate dropdown
+        deckSelect.innerHTML = '';
+        deckFolders.forEach((folder, index) => {
+            const option = document.createElement('option');
+            option.value = decksFolder + '/' + folder;
+            // Capitalize folder name for display
+            option.textContent = folder.charAt(0).toUpperCase() + folder.slice(1);
+            deckSelect.appendChild(option);
+        });
+
+        // Store decks folder path for later use
+        appState.decksFolder = decksFolder;
+
+        // Auto-load the first deck
+        const firstDeckPath = decksFolder + '/' + deckFolders[0];
+        loadDeckFromPath(firstDeckPath);
+
+        console.log(`Found ${deckFolders.length} deck(s): ${deckFolders.join(', ')}`);
+
+    } catch (e) {
+        console.error('Error scanning decks folder:', e);
+        setStatus('Error scanning decks: ' + e.message, 'error');
         createPlaceholderDeck();
     }
 }
+
+/**
+ * Handle deck selection change from dropdown
+ */
+function handleDeckSelectChange() {
+    const selectedPath = deckSelect.value;
+    if (selectedPath) {
+        // Reset table before loading new deck
+        handleResetTable();
+        loadDeckFromPath(selectedPath);
+    }
+}
+
 
 function handleLoadDeck() {
     // Use CEP folder dialog if available
