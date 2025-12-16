@@ -659,31 +659,8 @@ function setupZoneDropTargets() {
         zone.addEventListener('drop', (e) => handleZoneDrop(e, zone));
     });
 
-    // Also allow dropping on the main card area
-    cardArea.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-    });
-
-    cardArea.addEventListener('drop', (e) => handleCardAreaDrop(e));
-
-    // Allow dropping on the poker table itself (for free placement)
-    const pokerTable = document.getElementById('pokerTable');
-    pokerTable.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        pokerTable.classList.add('drag-over');
-    });
-
-    pokerTable.addEventListener('dragleave', () => {
-        pokerTable.classList.remove('drag-over');
-    });
-
-    pokerTable.addEventListener('drop', (e) => {
-        e.preventDefault();
-        pokerTable.classList.remove('drag-over');
-        handleCardAreaDrop(e);
-    });
+    // Note: Removed cardArea and pokerTable drop handlers
+    // Cards can only be dropped into defined zones (player zones + community zone)
 }
 
 function handleZoneDrop(e, zone) {
@@ -691,50 +668,96 @@ function handleZoneDrop(e, zone) {
     zone.classList.remove('drag-over');
 
     const cardId = e.dataTransfer.getData('text/plain');
-    const card = appState.trayCards.find(c => c.id === cardId);
 
-    if (!card || !card.inTray) return;
-
-    // Get zone info
-    const zoneName = zone.dataset.zone;
-    const rotation = parseInt(zone.dataset.rotation) || 0;
-
-    // Move card from tray to zone
-    placeCardInZone(card, zoneName, rotation, zone);
-}
-
-function handleCardAreaDrop(e) {
-    e.preventDefault();
-
-    const cardId = e.dataTransfer.getData('text/plain');
-
-    // Try to find card in tray OR in tableCards (for moving existing cards)
+    // Try to find card in tray first
     let card = appState.trayCards.find(c => c.id === cardId);
     const fromTray = card && card.inTray;
 
-    // If not in tray, look for it in table cards (Record mode - moving existing cards)
+    // If not in tray, look for it in table cards (for moving between zones)
     if (!fromTray) {
         card = appState.tableCards.find(c => c.id === cardId);
         if (!card) return;
     }
 
-    // Calculate drop position relative to gameContainer (which matches the AE canvas)
-    const rect = gameContainer.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    // Scale to project coordinates (1920x1080)
-    const scaleX = PROJECT_INFO.width / rect.width;
-    const scaleY = PROJECT_INFO.height / rect.height;
+    // Get zone info
+    const zoneName = zone.dataset.zone;
+    const rotation = parseInt(zone.dataset.rotation) || 0;
 
     if (fromTray) {
-        // From tray - place new card
-        placeCardOnTable(card, x * scaleX, y * scaleY);
+        // From tray - place new card in zone
+        placeCardInZone(card, zoneName, rotation, zone);
     } else {
-        // Moving existing card - update position
-        moveCardToPosition(card, x * scaleX, y * scaleY);
+        // Moving card between zones (Record mode)
+        moveCardToZone(card, zoneName, rotation, zone);
     }
 }
+
+/**
+ * Move a card from one zone to another (used in Record mode)
+ */
+function moveCardToZone(card, newZoneName, newRotation, newZoneElement) {
+    // Remove card element from old zone
+    if (card.element) {
+        card.element.remove();
+    }
+
+    // Update card properties
+    const oldZone = card.zone;
+    card.zone = newZoneName;
+    card.rotation = newRotation;
+
+    // Check if new zone should show face-up
+    const flipCheckbox = document.querySelector(`#flip${newZoneName.charAt(0).toUpperCase() + newZoneName.slice(1)}`);
+    if (flipCheckbox) {
+        card.isFaceUp = flipCheckbox.checked;
+    }
+
+    // Recalculate zone positions for old zone (fill gaps)
+    if (oldZone && oldZone !== newZoneName) {
+        const oldZoneCards = appState.tableCards.filter(c => c.zone === oldZone && c.id !== card.id);
+        oldZoneCards.forEach((c, idx) => {
+            c.zonePosition = idx;
+        });
+        // Re-render old zone cards
+        const oldZoneElement = document.querySelector(`[data-zone="${oldZone}"]`);
+        if (oldZoneElement) {
+            rerenderZoneCards(oldZone, oldZoneElement);
+        }
+    }
+
+    // Get new position in target zone
+    const newZoneCards = appState.tableCards.filter(c => c.zone === newZoneName && c.id !== card.id);
+    card.zonePosition = newZoneCards.length;
+
+    // Create visual card in new zone
+    createZoneCardElement(card, newZoneElement);
+
+    // Mark as having changes for recording
+    if (appState.phase === 'record') {
+        card.hasChanges = true;
+    }
+
+    updateUI();
+    setStatus(`Moved ${card.displayName || card.name} to ${newZoneName} zone`);
+}
+
+/**
+ * Re-render all cards in a zone (used after moving cards)
+ */
+function rerenderZoneCards(zoneName, zoneElement) {
+    const zoneCardsContainer = zoneElement.querySelector('.zone-cards');
+    if (!zoneCardsContainer) return;
+
+    // Clear zone cards container
+    zoneCardsContainer.innerHTML = '';
+
+    // Get all cards in this zone and re-create elements
+    const zoneCards = appState.tableCards.filter(c => c.zone === zoneName);
+    zoneCards.forEach(card => {
+        createZoneCardElement(card, zoneElement);
+    });
+}
+
 
 function placeCardInZone(card, zoneName, rotation, zoneElement) {
     // Mark as not in tray
@@ -869,15 +892,19 @@ function createZoneCardElement(card, zoneElement) {
     // Click to flip/select
     cardEl.addEventListener('click', () => handleCardClick(card, cardEl));
 
-    // Make draggable for Record mode (move cards to table)
+    // Make draggable for Record mode (move cards between zones)
     cardEl.draggable = true;
     cardEl.addEventListener('dragstart', (e) => {
         e.dataTransfer.setData('text/plain', card.id);
         e.dataTransfer.effectAllowed = 'move';
         cardEl.classList.add('dragging');
+        // Highlight all zones as potential drop targets
+        playerZones.forEach(zone => zone.classList.add('drag-target'));
     });
     cardEl.addEventListener('dragend', () => {
         cardEl.classList.remove('dragging');
+        // Remove highlight from all zones
+        playerZones.forEach(zone => zone.classList.remove('drag-target', 'drag-over'));
     });
 
     zoneCardsContainer.appendChild(cardEl);
