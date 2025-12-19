@@ -134,7 +134,7 @@
                         <div class="table-border-ring"></div>
 
                         <!-- Community Cards Area (center of table) -->
-                        <div id="communityZone" class="community-zone">
+                        <div id="communityZone" class="community-zone" data-zone="community" data-rotation="0">
                             <div class="zone-label">Community Cards</div>
                             <div class="zone-cards"></div>
                         </div>
@@ -164,6 +164,28 @@
                     <div id="zoneBottom" class="player-zone zone-bottom" data-zone="bottom" data-rotation="0">
                         <div class="zone-label">Player 3 (Bottom)</div>
                         <div class="zone-cards"></div>
+                    </div>
+
+                    <!-- Auto-Step Popup -->
+                    <div id="autoStepPopup" class="auto-step-popup hidden">
+                        <div class="popup-content">
+                            <span class="popup-icon">📝</span>
+                            <span class="popup-text">New Step?</span>
+                            <div class="popup-actions">
+                                <button id="autoStepYes" class="btn btn-sm btn-success">✓ Yes</button>
+                                <button id="autoStepNo" class="btn btn-sm btn-danger">✗ No</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Inline Card Context Menu -->
+                    <div id="cardContextMenu" class="card-context-menu hidden">
+                        <button id="ctxFlipBtn" class="ctx-btn" title="Flip Animation">
+                            🔄 Flip
+                        </button>
+                        <button id="ctxSlamBtn" class="ctx-btn" title="Slam Effect">
+                            💥 Slam
+                        </button>
                     </div>
                 </div>
             </div>
@@ -259,6 +281,17 @@
                 </div>
             </div>
 
+            <!-- Replay Section -->
+            <div class="director-section replay-section" id="replaySection">
+                <button id="replayBtn" class="btn btn-secondary btn-block" disabled>
+                    ▶️ Replay Steps
+                </button>
+                <div class="replay-controls hidden" id="replayControls">
+                    <span id="replayProgress">Step 0/0</span>
+                    <button id="stopReplayBtn" class="btn btn-sm btn-danger">⏹️ Stop</button>
+                </div>
+            </div>
+
             <!-- Export -->
             <div class="director-section export-section">
                 <button id="exportJsonBtn" class="btn btn-export">
@@ -269,6 +302,19 @@
                 </button>
             </div>
         </aside>
+    </div>
+
+    <!-- Warning Modal -->
+    <div id="warningModal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <h3>⚠️ Warning</h3>
+            <p id="warningMessage">Editing this step will delete all subsequent steps. Continue?</p>
+            <div class="modal-actions">
+                <button id="cancelWarningBtn" class="btn btn-secondary">Cancel</button>
+                <button id="confirmWarningBtn" class="btn btn-danger">Confirm</button>
+            </div>
+        </div>
     </div>
 
     <!-- Hidden inputs -->

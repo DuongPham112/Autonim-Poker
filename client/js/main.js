@@ -103,8 +103,27 @@ let flipCardCheck, slamEffectCheck;
 let cardPosX, cardPosY, cardRot;
 let exportJsonBtn, exportToAEBtn;
 
+// Replay Elements
+let replayBtn, replayControls, replayProgress, stopReplayBtn;
+
+// Modal Elements
+let warningModal, warningMessage, confirmWarningBtn, cancelWarningBtn;
+
+// Auto-Step Popup Elements
+let autoStepPopup, autoStepYes, autoStepNo;
+
+// Context Menu Elements
+let cardContextMenu, ctxFlipBtn, ctxSlamBtn;
+
 // Status
 let statusMessage;
+
+// Step snapshots for replay and restore
+let stepSnapshots = [];
+
+// Pending change for auto-step (stores snapshot before change)
+let pendingChangeSnapshot = null;
+let pendingChangeCard = null;
 
 // ============================================
 // INITIALIZATION
@@ -179,6 +198,28 @@ function getDOMElements() {
     exportJsonBtn = document.getElementById('exportJsonBtn');
     exportToAEBtn = document.getElementById('exportToAEBtn');
 
+    // Replay Elements
+    replayBtn = document.getElementById('replayBtn');
+    replayControls = document.getElementById('replayControls');
+    replayProgress = document.getElementById('replayProgress');
+    stopReplayBtn = document.getElementById('stopReplayBtn');
+
+    // Modal Elements
+    warningModal = document.getElementById('warningModal');
+    warningMessage = document.getElementById('warningMessage');
+    confirmWarningBtn = document.getElementById('confirmWarningBtn');
+    cancelWarningBtn = document.getElementById('cancelWarningBtn');
+
+    // Auto-Step Popup Elements
+    autoStepPopup = document.getElementById('autoStepPopup');
+    autoStepYes = document.getElementById('autoStepYes');
+    autoStepNo = document.getElementById('autoStepNo');
+
+    // Context Menu Elements
+    cardContextMenu = document.getElementById('cardContextMenu');
+    ctxFlipBtn = document.getElementById('ctxFlipBtn');
+    ctxSlamBtn = document.getElementById('ctxSlamBtn');
+
     // Status
     statusMessage = document.getElementById('statusMessage');
 }
@@ -221,6 +262,22 @@ function bindEvents() {
     // Export
     exportJsonBtn.addEventListener('click', handleExportJSON);
     exportToAEBtn.addEventListener('click', handleExportToAE);
+
+    // Replay
+    if (replayBtn) replayBtn.addEventListener('click', handleReplay);
+    if (stopReplayBtn) stopReplayBtn.addEventListener('click', stopReplay);
+
+    // Modal
+    if (confirmWarningBtn) confirmWarningBtn.addEventListener('click', confirmWarning);
+    if (cancelWarningBtn) cancelWarningBtn.addEventListener('click', hideWarningModal);
+
+    // Auto-Step Popup
+    if (autoStepYes) autoStepYes.addEventListener('click', handleAutoStepYes);
+    if (autoStepNo) autoStepNo.addEventListener('click', handleAutoStepNo);
+
+    // Context Menu
+    if (ctxFlipBtn) ctxFlipBtn.addEventListener('click', toggleCtxFlip);
+    if (ctxSlamBtn) ctxSlamBtn.addEventListener('click', toggleCtxSlam);
 
     // Zone drop targets
     setupZoneDropTargets();
@@ -696,6 +753,9 @@ function handleZoneDrop(e, zone) {
  * Move a card from one zone to another (used in Record mode)
  */
 function moveCardToZone(card, newZoneName, newRotation, newZoneElement) {
+    // Take snapshot BEFORE the move for auto-step feature
+    const snapshotBeforeMove = (appState.phase === 'record' && !appState.isEditingStep) ? takeSnapshot() : null;
+
     // Remove card element from old zone
     if (card.element) {
         card.element.remove();
@@ -706,10 +766,15 @@ function moveCardToZone(card, newZoneName, newRotation, newZoneElement) {
     card.zone = newZoneName;
     card.rotation = newRotation;
 
-    // Check if new zone should show face-up
-    const flipCheckbox = document.querySelector(`#flip${newZoneName.charAt(0).toUpperCase() + newZoneName.slice(1)}`);
-    if (flipCheckbox) {
-        card.isFaceUp = flipCheckbox.checked;
+    // In Record mode with flipAction: start face-down, then animate flip
+    if (appState.phase === 'record' && card.flipAction) {
+        card.isFaceUp = false; // Start face-down for animation
+    } else {
+        // Setup mode or no flipAction: use zone checkbox
+        const flipCheckbox = document.querySelector(`#flip${newZoneName.charAt(0).toUpperCase() + newZoneName.slice(1)}`);
+        if (flipCheckbox) {
+            card.isFaceUp = flipCheckbox.checked;
+        }
     }
 
     // Recalculate zone positions for old zone (fill gaps)
@@ -732,6 +797,13 @@ function moveCardToZone(card, newZoneName, newRotation, newZoneElement) {
     // Create visual card in new zone
     createZoneCardElement(card, newZoneElement);
 
+    // Animate flip after element is created (Record mode with flipAction)
+    if (appState.phase === 'record' && card.flipAction) {
+        setTimeout(() => {
+            flipCard(card);
+        }, 150); // Small delay for visual effect
+    }
+
     // Mark as having changes for recording
     if (appState.phase === 'record') {
         card.hasChanges = true;
@@ -739,6 +811,13 @@ function moveCardToZone(card, newZoneName, newRotation, newZoneElement) {
 
     updateUI();
     setStatus(`Moved ${card.displayName || card.name} to ${newZoneName} zone`);
+
+    // Show auto-step popup in Record mode (if not manually editing a step)
+    if (snapshotBeforeMove && appState.phase === 'record' && !appState.isEditingStep) {
+        // Select the card so context menu appears next to it
+        selectCard(card);
+        showAutoStepPopup(card, snapshotBeforeMove);
+    }
 }
 
 /**
@@ -1014,6 +1093,9 @@ function selectCard(card) {
     slamEffectCheck.checked = card.slamEffect || false;
 
     updateCardPosDisplay(card);
+
+    // Show inline context menu next to card (Record mode only)
+    showCardContextMenu(card);
 }
 
 function deselectCard() {
@@ -1024,6 +1106,9 @@ function deselectCard() {
 
     noCardSelected.classList.remove('hidden');
     cardProperties.classList.add('hidden');
+
+    // Hide context menu
+    hideCardContextMenu();
 }
 
 function flipCard(card) {
@@ -1226,6 +1311,9 @@ function handleFinishStep() {
 
     scenarioData.scenario.push(currentStep);
 
+    // Save snapshot for replay and edit restore
+    stepSnapshots.push(JSON.parse(JSON.stringify(endSnapshot)));
+
     appState.isEditingStep = false;
     currentStep = null;
     startSnapshot = null;
@@ -1241,6 +1329,32 @@ function handleFinishStep() {
     updateUI();
 }
 
+/**
+ * Save the initial state of all cards when entering Record mode
+ * This is used for replay and restore functionality
+ */
+function saveInitialState() {
+    scenarioData.initialState = {};
+
+    appState.tableCards.forEach(card => {
+        scenarioData.initialState[card.id] = {
+            x: card.x || 0,
+            y: card.y || 0,
+            rotation: card.rotation || 0,
+            isFaceUp: card.isFaceUp,
+            zone: card.zone,
+            zonePosition: card.zonePosition || 0,
+            flipAction: card.flipAction || false,
+            slamEffect: card.slamEffect || false
+        };
+    });
+
+    // Reset step snapshots when entering record mode
+    stepSnapshots = [];
+
+    console.log('Initial state saved:', scenarioData.initialState);
+}
+
 function takeSnapshot() {
     const snapshot = {};
     appState.tableCards.forEach(card => {
@@ -1248,7 +1362,11 @@ function takeSnapshot() {
             x: card.x || 0,
             y: card.y || 0,
             rotation: card.rotation || 0,
-            isFaceUp: card.isFaceUp
+            isFaceUp: card.isFaceUp,
+            zone: card.zone,
+            zonePosition: card.zonePosition || 0,
+            flipAction: card.flipAction || false,
+            slamEffect: card.slamEffect || false
         };
     });
     return snapshot;
@@ -1299,8 +1417,9 @@ function handlePropertyChange() {
 // INITIAL STATE & EXPORT
 // ============================================
 
-function saveInitialState() {
-    scenarioData.initialState = {};
+function saveInitialStateForExport() {
+    // This version calculates positions for AE export
+    const exportState = {};
 
     // Calculate card scale for AE (web cards displayed at 60x84, target ~120px height in 1080p)
     // This gives assets a scale factor to render at appropriate size
@@ -1326,7 +1445,7 @@ function saveInitialState() {
             posY = zonePos.y;
         }
 
-        scenarioData.initialState[card.id] = {
+        exportState[card.id] = {
             name: card.name,
             filename: card.filename,
             frontImage: card.filename,
@@ -1336,9 +1455,12 @@ function saveInitialState() {
             rotation: card.rotation || 0,
             scale: aeCardScale,
             zone: card.zone,
+            zonePosition: card.zonePosition || 0,
             isFaceUp: card.isFaceUp
         };
     });
+
+    return exportState;
 }
 
 function handleExportJSON() {
@@ -1347,9 +1469,13 @@ function handleExportJSON() {
         return;
     }
 
-    saveInitialState();
+    // Use export version with AE-calculated positions
+    const exportData = {
+        ...scenarioData,
+        initialState: saveInitialStateForExport()
+    };
 
-    const jsonString = JSON.stringify(scenarioData, null, 2);
+    const jsonString = JSON.stringify(exportData, null, 2);
     const blob = new Blob([jsonString], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
 
@@ -1380,11 +1506,15 @@ function handleExportToAE() {
         return;
     }
 
-    saveInitialState();
+    // Use export version with AE-calculated positions
+    const exportData = {
+        ...scenarioData,
+        initialState: saveInitialStateForExport()
+    };
 
     setStatus('Sending to After Effects...', 'recording');
 
-    const jsonString = JSON.stringify(scenarioData);
+    const jsonString = JSON.stringify(exportData);
     const assetsPath = escapeForScript(appState.assetsRootPath);
 
     csInterface.evalScript(
@@ -1456,14 +1586,51 @@ function updateAssetsDisplay() {
 function renderTimeline() {
     timelinePreview.innerHTML = '';
 
-    scenarioData.scenario.forEach(step => {
+    scenarioData.scenario.forEach((step, index) => {
         const el = document.createElement('div');
         el.className = 'timeline-step';
         if (step.actions.length > 0) el.classList.add('has-actions');
-        el.textContent = step.stepId;
+
+        // Step number
+        const stepNum = document.createElement('span');
+        stepNum.textContent = step.stepId;
+        el.appendChild(stepNum);
+
+        // Action buttons container
+        const actions = document.createElement('div');
+        actions.className = 'step-actions';
+
+        // Edit button
+        const editBtn = document.createElement('button');
+        editBtn.className = 'step-action-btn edit-btn';
+        editBtn.innerHTML = '✏️';
+        editBtn.title = 'Edit step';
+        editBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            handleEditStep(index);
+        });
+        actions.appendChild(editBtn);
+
+        // Delete button
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'step-action-btn delete-btn';
+        deleteBtn.innerHTML = '🗑️';
+        deleteBtn.title = 'Delete step';
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            handleDeleteStep(index);
+        });
+        actions.appendChild(deleteBtn);
+
+        el.appendChild(actions);
         el.title = `Step ${step.stepId}: ${step.actions.length} actions, ${step.duration}s`;
         timelinePreview.appendChild(el);
     });
+
+    // Update replay button state
+    if (replayBtn) {
+        replayBtn.disabled = scenarioData.scenario.length === 0;
+    }
 }
 
 // ============================================
@@ -1488,4 +1655,476 @@ function hideInstructions() {
 
 function showInstructions() {
     tableInstructions.classList.remove('hidden');
+}
+
+// ============================================
+// REPLAY FUNCTIONALITY
+// ============================================
+
+let replayTimer = null;
+let isReplaying = false;
+let currentReplayStep = 0;
+
+function handleReplay() {
+    if (scenarioData.scenario.length === 0) {
+        setStatus('No steps to replay', 'error');
+        return;
+    }
+
+    if (isReplaying) {
+        stopReplay();
+        return;
+    }
+
+    // Save current state for restore after replay
+    const savedState = JSON.stringify(scenarioData.initialState);
+
+    isReplaying = true;
+    currentReplayStep = 0;
+
+    // Update UI
+    replayBtn.textContent = '⏸️ Pause';
+    replayControls.classList.remove('hidden');
+    replayProgress.textContent = `Step 0/${scenarioData.scenario.length}`;
+
+    // Start replay from initial state
+    restoreToInitialState();
+
+    // Start stepping through
+    setTimeout(() => {
+        replayNextStep();
+    }, 500);
+
+    setStatus('Replaying steps...', 'recording');
+}
+
+function replayNextStep() {
+    if (!isReplaying || currentReplayStep >= scenarioData.scenario.length) {
+        stopReplay();
+        return;
+    }
+
+    const step = scenarioData.scenario[currentReplayStep];
+    replayProgress.textContent = `Step ${currentReplayStep + 1}/${scenarioData.scenario.length}`;
+
+    // Use stepSnapshots to restore state (more reliable for zone cards)
+    if (stepSnapshots[currentReplayStep]) {
+        restoreFromSnapshot(stepSnapshots[currentReplayStep]);
+    }
+
+    currentReplayStep++;
+
+    // Schedule next step
+    const duration = (step.duration || 1) * 1000;
+    replayTimer = setTimeout(() => {
+        replayNextStep();
+    }, duration);
+}
+
+function stopReplay() {
+    isReplaying = false;
+
+    if (replayTimer) {
+        clearTimeout(replayTimer);
+        replayTimer = null;
+    }
+
+    // Reset UI
+    replayBtn.textContent = '▶️ Replay Steps';
+    replayControls.classList.add('hidden');
+
+    setStatus(`Replay finished at step ${currentReplayStep}/${scenarioData.scenario.length}`, 'success');
+}
+
+function restoreToInitialState() {
+    // First, remove all card elements from zones
+    playerZones.forEach(zone => {
+        const container = zone.querySelector('.zone-cards');
+        if (container) container.innerHTML = '';
+    });
+    cardArea.innerHTML = '';
+
+    // Apply initial state to all cards
+    Object.entries(scenarioData.initialState).forEach(([cardId, state]) => {
+        const card = appState.tableCards.find(c => c.id === cardId);
+        if (!card) return;
+
+        card.x = state.x;
+        card.y = state.y;
+        card.rotation = state.rotation;
+        card.isFaceUp = state.isFaceUp;
+        card.zone = state.zone;
+        card.zonePosition = card.zonePosition || 0;
+        card.element = null;
+    });
+
+    // Re-create elements for all cards in their zones
+    appState.tableCards.forEach(card => {
+        if (card.zone && card.zone !== 'table') {
+            const zoneElement = document.querySelector(`[data-zone="${card.zone}"]`);
+            if (zoneElement) {
+                createZoneCardElement(card, zoneElement);
+            }
+        } else if (card.zone === 'table') {
+            createTableCardElement(card);
+        }
+    });
+
+    updateUI();
+}
+
+// ============================================
+// EDIT/DELETE STEPS
+// ============================================
+
+let pendingWarningCallback = null;
+
+function handleDeleteStep(stepIndex) {
+    if (stepIndex < 0 || stepIndex >= scenarioData.scenario.length) return;
+
+    const isLastStep = stepIndex === scenarioData.scenario.length - 1;
+
+    if (!isLastStep) {
+        // Deleting middle step - warn about subsequent steps
+        showWarningModal(
+            `Deleting step ${stepIndex + 1} will also delete all ${scenarioData.scenario.length - stepIndex - 1} subsequent steps. Continue?`,
+            () => {
+                // Delete this step and all after it
+                scenarioData.scenario = scenarioData.scenario.slice(0, stepIndex);
+                stepSnapshots = stepSnapshots.slice(0, stepIndex);
+                renumberSteps();
+                renderTimeline();
+                updateUI();
+                setStatus(`Deleted step ${stepIndex + 1} and subsequent steps`, 'success');
+            }
+        );
+    } else {
+        // Deleting last step - just remove it
+        scenarioData.scenario.pop();
+        stepSnapshots.pop();
+        renderTimeline();
+        updateUI();
+        setStatus(`Deleted step ${stepIndex + 1}`, 'success');
+    }
+}
+
+function handleEditStep(stepIndex) {
+    if (stepIndex < 0 || stepIndex >= scenarioData.scenario.length) return;
+
+    const isLastStep = stepIndex === scenarioData.scenario.length - 1;
+
+    if (!isLastStep) {
+        // Editing middle step - warn about subsequent steps
+        showWarningModal(
+            `Editing step ${stepIndex + 1} will delete all ${scenarioData.scenario.length - stepIndex - 1} subsequent steps. Continue?`,
+            () => {
+                // Delete steps after this one
+                scenarioData.scenario = scenarioData.scenario.slice(0, stepIndex);
+                stepSnapshots = stepSnapshots.slice(0, stepIndex);
+                renumberSteps();
+
+                // Restore to state before this step
+                if (stepIndex === 0) {
+                    restoreToInitialState();
+                } else if (stepSnapshots[stepIndex - 1]) {
+                    restoreFromSnapshot(stepSnapshots[stepIndex - 1]);
+                }
+
+                renderTimeline();
+                updateUI();
+                setStatus(`Ready to re-record step ${stepIndex + 1}. Click "Add Step" to start.`, 'success');
+            }
+        );
+    } else {
+        // Editing last step - just remove it and restore
+        scenarioData.scenario.pop();
+
+        if (stepSnapshots.length > 0) {
+            const prevSnapshot = stepSnapshots[stepSnapshots.length - 1];
+            stepSnapshots.pop();
+
+            if (prevSnapshot) {
+                restoreFromSnapshot(prevSnapshot);
+            } else if (scenarioData.initialState) {
+                restoreToInitialState();
+            }
+        } else {
+            restoreToInitialState();
+        }
+
+        renderTimeline();
+        updateUI();
+        setStatus(`Ready to re-record last step. Click "Add Step" to start.`, 'success');
+    }
+}
+
+function renumberSteps() {
+    scenarioData.scenario.forEach((step, idx) => {
+        step.stepId = idx + 1;
+    });
+}
+
+function restoreFromSnapshot(snapshot) {
+    // First, remove all card elements from zones
+    playerZones.forEach(zone => {
+        const container = zone.querySelector('.zone-cards');
+        if (container) container.innerHTML = '';
+    });
+    cardArea.innerHTML = '';
+
+    // Restore each card to its saved state
+    Object.entries(snapshot).forEach(([cardId, state]) => {
+        const card = appState.tableCards.find(c => c.id === cardId);
+        if (!card) return;
+
+        // Restore all properties
+        card.x = state.x || 0;
+        card.y = state.y || 0;
+        card.rotation = state.rotation || 0;
+        card.isFaceUp = state.isFaceUp;
+        card.zone = state.zone;
+        card.zonePosition = state.zonePosition || 0;
+        card.flipAction = state.flipAction || false;
+        card.slamEffect = state.slamEffect || false;
+        card.element = null;
+    });
+
+    // Re-create elements for all cards in their zones
+    appState.tableCards.forEach(card => {
+        if (card.zone && card.zone !== 'table') {
+            const zoneElement = document.querySelector(`[data-zone="${card.zone}"]`);
+            if (zoneElement) {
+                createZoneCardElement(card, zoneElement);
+            }
+        } else if (card.zone === 'table') {
+            createTableCardElement(card);
+        }
+    });
+
+    updateUI();
+}
+
+// ============================================
+// WARNING MODAL
+// ============================================
+
+function showWarningModal(message, onConfirm) {
+    if (!warningModal) return;
+
+    warningMessage.textContent = message;
+    pendingWarningCallback = onConfirm;
+    warningModal.classList.remove('hidden');
+}
+
+function hideWarningModal() {
+    if (!warningModal) return;
+
+    warningModal.classList.add('hidden');
+    pendingWarningCallback = null;
+}
+
+function confirmWarning() {
+    if (pendingWarningCallback) {
+        pendingWarningCallback();
+    }
+    hideWarningModal();
+}
+
+// ============================================
+// AUTO-STEP POPUP
+// ============================================
+
+/**
+ * Show auto-step popup when card is moved in Record mode
+ */
+function showAutoStepPopup(card, previousSnapshot) {
+    if (!autoStepPopup) return;
+
+    pendingChangeSnapshot = previousSnapshot;
+    pendingChangeCard = card;
+
+    autoStepPopup.classList.remove('hidden');
+}
+
+/**
+ * Hide auto-step popup
+ */
+function hideAutoStepPopup() {
+    if (!autoStepPopup) return;
+
+    autoStepPopup.classList.add('hidden');
+    pendingChangeSnapshot = null;
+    pendingChangeCard = null;
+}
+
+/**
+ * Handle Yes button - create new step automatically
+ */
+function handleAutoStepYes() {
+    if (!pendingChangeSnapshot) {
+        hideAutoStepPopup();
+        return;
+    }
+
+    // Create step automatically
+    const endSnapshot = takeSnapshot();
+    const actions = computeActions(pendingChangeSnapshot, endSnapshot);
+
+    if (actions.length > 0) {
+        const newStep = {
+            stepId: scenarioData.scenario.length + 1,
+            duration: parseFloat(stepDuration.value) || 1.0,
+            actions: actions
+        };
+
+        scenarioData.scenario.push(newStep);
+
+        // Save snapshot for replay and edit restore
+        stepSnapshots.push(JSON.parse(JSON.stringify(endSnapshot)));
+
+        totalSteps.textContent = scenarioData.scenario.length;
+        renderTimeline();
+        updateUI();
+        setStatus(`Step ${scenarioData.scenario.length} auto-created with ${actions.length} actions`, 'success');
+    } else {
+        setStatus('No changes detected', 'info');
+    }
+
+    hideAutoStepPopup();
+}
+
+/**
+ * Handle No button - revert card to previous position
+ */
+function handleAutoStepNo() {
+    if (!pendingChangeSnapshot) {
+        hideAutoStepPopup();
+        return;
+    }
+
+    // Revert all cards to previous snapshot
+    restoreFromSnapshot(pendingChangeSnapshot);
+
+    setStatus('Changes reverted', 'info');
+    hideAutoStepPopup();
+}
+
+/**
+ * Trigger auto-step popup when card movement is detected in Record mode
+ * Called from moveCardToZone
+ */
+function triggerAutoStepCheck() {
+    if (appState.phase !== 'record') return;
+    if (appState.isEditingStep) return; // Don't trigger if manually editing a step
+
+    // Take snapshot before showing popup (this becomes the "before" state)
+    // Note: The snapshot was taken BEFORE the move in moveCardToZone
+}
+
+// ============================================
+// INLINE CARD CONTEXT MENU
+// ============================================
+
+/**
+ * Show context menu next to selected card (Record mode only)
+ */
+function showCardContextMenu(card) {
+    if (!cardContextMenu || !card.element) return;
+
+    // Only show in Record mode
+    if (appState.phase !== 'record') {
+        hideCardContextMenu();
+        return;
+    }
+
+    // Position menu next to card
+    const cardRect = card.element.getBoundingClientRect();
+    const containerRect = gameContainer.getBoundingClientRect();
+
+    // Position to the right of the card
+    let left = cardRect.right - containerRect.left + 5;
+    let top = cardRect.top - containerRect.top;
+
+    // Keep within bounds
+    if (left + 150 > containerRect.width) {
+        left = cardRect.left - containerRect.left - 155;
+    }
+
+    cardContextMenu.style.left = `${left}px`;
+    cardContextMenu.style.top = `${top}px`;
+
+    // Update button states
+    updateContextMenuState(card);
+
+    cardContextMenu.classList.remove('hidden');
+}
+
+/**
+ * Hide context menu
+ */
+function hideCardContextMenu() {
+    if (!cardContextMenu) return;
+    cardContextMenu.classList.add('hidden');
+}
+
+/**
+ * Update context menu button active states
+ */
+function updateContextMenuState(card) {
+    if (!card) return;
+
+    if (ctxFlipBtn) {
+        ctxFlipBtn.classList.toggle('active', card.flipAction || false);
+    }
+    if (ctxSlamBtn) {
+        ctxSlamBtn.classList.toggle('active', card.slamEffect || false);
+    }
+}
+
+/**
+ * Toggle flip action on selected card
+ */
+function toggleCtxFlip() {
+    if (!appState.selectedCard) return;
+
+    appState.selectedCard.flipAction = !appState.selectedCard.flipAction;
+
+    // Sync with properties panel
+    flipCardCheck.checked = appState.selectedCard.flipAction;
+
+    // Update button state
+    if (ctxFlipBtn) {
+        ctxFlipBtn.classList.toggle('active', appState.selectedCard.flipAction);
+    }
+
+    setStatus(appState.selectedCard.flipAction ? 'Flip animation enabled' : 'Flip animation disabled');
+
+    // Auto-hide menu after selection (with brief delay to show state change)
+    setTimeout(() => {
+        hideCardContextMenu();
+    }, 300);
+}
+
+/**
+ * Toggle slam effect on selected card
+ */
+function toggleCtxSlam() {
+    if (!appState.selectedCard) return;
+
+    appState.selectedCard.slamEffect = !appState.selectedCard.slamEffect;
+
+    // Sync with properties panel
+    slamEffectCheck.checked = appState.selectedCard.slamEffect;
+
+    // Update button state
+    if (ctxSlamBtn) {
+        ctxSlamBtn.classList.toggle('active', appState.selectedCard.slamEffect);
+    }
+
+    setStatus(appState.selectedCard.slamEffect ? 'Slam effect enabled' : 'Slam effect disabled');
+
+    // Auto-hide menu after selection (with brief delay to show state change)
+    setTimeout(() => {
+        hideCardContextMenu();
+    }, 300);
 }

@@ -1150,3 +1150,276 @@ body {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--border-light);
 }
+
+/* ============================================
+   REPLAY SECTION
+   ============================================ */
+.replay-section {
+    margin-bottom: 15px;
+}
+
+.replay-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 10px;
+    padding: 8px;
+    background: var(--bg-primary);
+    border-radius: 4px;
+}
+
+#replayProgress {
+    font-size: 12px;
+    color: var(--accent-green);
+    font-weight: 600;
+}
+
+/* ============================================
+   WARNING MODAL
+   ============================================ */
+.modal {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal.hidden {
+    display: none !important;
+}
+
+.modal-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+}
+
+.modal-content {
+    position: relative;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 20px 25px;
+    min-width: 320px;
+    max-width: 450px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.modal-content h3 {
+    font-size: 16px;
+    margin-bottom: 12px;
+    color: var(--accent-orange);
+}
+
+.modal-content p {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin-bottom: 20px;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+/* ============================================
+   TIMELINE STEP ACTIONS
+   ============================================ */
+.timeline-step {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    margin-right: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+}
+
+.timeline-step:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-blue);
+}
+
+.timeline-step.has-actions {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: white;
+}
+
+.timeline-step.active {
+    outline: 2px solid var(--accent-green);
+    outline-offset: 2px;
+}
+
+.timeline-step .step-actions {
+    position: absolute;
+    top: -28px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: none;
+    gap: 4px;
+    background: var(--bg-secondary);
+    padding: 4px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.timeline-step:hover .step-actions {
+    display: flex;
+}
+
+.step-action-btn {
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-tertiary);
+    transition: all 0.15s;
+}
+
+.step-action-btn:hover {
+    background: var(--bg-hover);
+}
+
+.step-action-btn.edit-btn:hover {
+    background: var(--accent-blue);
+    color: white;
+}
+
+.step-action-btn.delete-btn:hover {
+    background: var(--accent-red);
+    color: white;
+}
+
+/* ============================================
+   AUTO-STEP POPUP
+   ============================================ */
+.auto-step-popup {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    z-index: 200;
+    animation: slideUp 0.3s ease;
+}
+
+.auto-step-popup.hidden {
+    display: none !important;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.auto-step-popup .popup-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--bg-secondary);
+    border: 2px solid var(--accent-green);
+    border-radius: 10px;
+    padding: 12px 16px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.auto-step-popup .popup-icon {
+    font-size: 20px;
+}
+
+.auto-step-popup .popup-text {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.auto-step-popup .popup-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.auto-step-popup .btn {
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* ============================================
+   INLINE CARD CONTEXT MENU
+   ============================================ */
+.card-context-menu {
+    position: absolute;
+    z-index: 300;
+    display: flex;
+    gap: 4px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--accent-blue);
+    border-radius: 6px;
+    padding: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    animation: fadeIn 0.15s ease;
+}
+
+.card-context-menu.hidden {
+    display: none !important;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.ctx-btn {
+    padding: 6px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+}
+
+.ctx-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-blue);
+}
+
+.ctx-btn.active {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: white;
+}
