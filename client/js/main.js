@@ -125,6 +125,65 @@ let stepSnapshots = [];
 let pendingChangeSnapshot = null;
 let pendingChangeCard = null;
 
+// Debug logging system
+let debugLogs = [];
+let debugOverlay, debugContent, toggleDebugBtn, copyDebugBtn, clearDebugBtn, closeDebugBtn;
+
+// Custom debug log function
+function debugLog(...args) {
+    const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ');
+    const timestamp = new Date().toLocaleTimeString();
+    debugLogs.push(`[${timestamp}] ${msg}`);
+    if (debugContent) {
+        debugContent.textContent = debugLogs.join('\n');
+        debugContent.scrollTop = debugContent.scrollHeight;
+    }
+    console.log(...args);
+}
+
+function debugWarn(...args) {
+    const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ');
+    const timestamp = new Date().toLocaleTimeString();
+    debugLogs.push(`[${timestamp}] ⚠️ ${msg}`);
+    if (debugContent) {
+        debugContent.textContent = debugLogs.join('\n');
+        debugContent.scrollTop = debugContent.scrollHeight;
+    }
+    console.warn(...args);
+}
+
+// Fallback copy function for CEP environment
+function fallbackCopyText(text) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.top = '0';
+    textarea.style.left = '0';
+    textarea.style.width = '2em';
+    textarea.style.height = '2em';
+    textarea.style.padding = '0';
+    textarea.style.border = 'none';
+    textarea.style.outline = 'none';
+    textarea.style.boxShadow = 'none';
+    textarea.style.background = 'transparent';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+            setStatus('Debug log copied to clipboard!', 'success');
+        } else {
+            setStatus('Copy failed - please select text manually', 'error');
+        }
+    } catch (err) {
+        setStatus('Copy failed - please select text manually', 'error');
+    }
+    document.body.removeChild(textarea);
+}
+
+
+
 // ============================================
 // INITIALIZATION
 // ============================================
@@ -222,7 +281,16 @@ function getDOMElements() {
 
     // Status
     statusMessage = document.getElementById('statusMessage');
+
+    // Debug Overlay Elements
+    debugOverlay = document.getElementById('debugOverlay');
+    debugContent = document.getElementById('debugContent');
+    toggleDebugBtn = document.getElementById('toggleDebugBtn');
+    copyDebugBtn = document.getElementById('copyDebugBtn');
+    clearDebugBtn = document.getElementById('clearDebugBtn');
+    closeDebugBtn = document.getElementById('closeDebugBtn');
 }
+
 
 function bindEvents() {
     // Deck loading
@@ -288,7 +356,36 @@ function bindEvents() {
             deselectCard();
         }
     });
+
+    // Debug Overlay
+    if (toggleDebugBtn) toggleDebugBtn.addEventListener('click', () => {
+        debugOverlay.classList.toggle('hidden');
+    });
+    if (copyDebugBtn) copyDebugBtn.addEventListener('click', () => {
+        const textToCopy = debugLogs.join('\n');
+        // Try modern clipboard API first
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                setStatus('Debug log copied to clipboard!', 'success');
+            }).catch(() => {
+                // Fallback: use textarea method
+                fallbackCopyText(textToCopy);
+            });
+        } else {
+            // Fallback for CEP environment
+            fallbackCopyText(textToCopy);
+        }
+    });
+
+    if (clearDebugBtn) clearDebugBtn.addEventListener('click', () => {
+        debugLogs = [];
+        if (debugContent) debugContent.textContent = '';
+    });
+    if (closeDebugBtn) closeDebugBtn.addEventListener('click', () => {
+        debugOverlay.classList.add('hidden');
+    });
 }
+
 
 // ============================================
 // PHASE MANAGEMENT
@@ -784,7 +881,7 @@ function moveCardToZone(card, newZoneName, newRotation, newZoneElement) {
             c.zonePosition = idx;
         });
         // Re-render old zone cards
-        const oldZoneElement = document.querySelector(`[data-zone="${oldZone}"]`);
+        const oldZoneElement = document.querySelector(`.player-zone[data-zone="${oldZone}"], .community-zone[data-zone="${oldZone}"]`);
         if (oldZoneElement) {
             rerenderZoneCards(oldZone, oldZoneElement);
         }
@@ -839,6 +936,9 @@ function rerenderZoneCards(zoneName, zoneElement) {
 
 
 function placeCardInZone(card, zoneName, rotation, zoneElement) {
+    // Take snapshot BEFORE placing card (for auto-step feature)
+    const snapshotBeforePlace = (appState.phase === 'record' && !appState.isEditingStep) ? takeSnapshot() : null;
+
     // Mark as not in tray
     card.inTray = false;
     card.zone = zoneName;
@@ -861,13 +961,25 @@ function placeCardInZone(card, zoneName, rotation, zoneElement) {
     // Create visual card in zone
     createZoneCardElement(card, zoneElement);
 
+    // Mark as having changes for recording
+    if (appState.phase === 'record') {
+        card.hasChanges = true;
+    }
+
     // Update tray
     renderCardTray();
     hideInstructions();
     updateUI();
 
     setStatus(`Placed ${card.displayName || card.name} in ${zoneName} zone`);
+
+    // Show auto-step popup in Record mode (if not manually editing a step)
+    if (snapshotBeforePlace && appState.phase === 'record' && !appState.isEditingStep) {
+        selectCard(card);
+        showAutoStepPopup(card, snapshotBeforePlace);
+    }
 }
+
 
 function placeCardOnTable(card, x, y) {
     card.inTray = false;
@@ -923,7 +1035,15 @@ function moveCardToPosition(card, x, y) {
 
 function createZoneCardElement(card, zoneElement) {
     const zoneCardsContainer = zoneElement.querySelector('.zone-cards');
+
+    // Safety check - if container not found, log and skip
+    if (!zoneCardsContainer) {
+        debugWarn(`Zone container not found! zone: ${zoneElement?.dataset?.zone}, id: ${zoneElement?.id}`);
+        return;
+    }
+
     const zoneName = zoneElement.dataset.zone;
+
 
     const cardEl = document.createElement('div');
     cardEl.className = `zone-card ${card.isFaceUp ? 'face-up' : 'face-down'}`;
@@ -1679,12 +1799,13 @@ function handleReplay() {
     // Check if we have snapshots for replay
     if (stepSnapshots.length === 0) {
         setStatus('No snapshots recorded - please record some steps first', 'error');
-        console.warn('stepSnapshots is empty:', stepSnapshots);
+        debugWarn('stepSnapshots is empty:', stepSnapshots);
         return;
     }
 
-    console.log('Starting replay with', scenarioData.scenario.length, 'steps');
-    console.log('stepSnapshots:', stepSnapshots);
+    debugLog('Starting replay with', scenarioData.scenario.length, 'steps');
+    debugLog('stepSnapshots:', stepSnapshots);
+
 
     isReplaying = true;
     currentReplayStep = 0;
@@ -1710,26 +1831,38 @@ function handleReplay() {
 
 
 function replayNextStep() {
+    debugLog('=== replayNextStep ===');
+    debugLog('isReplaying:', isReplaying);
+    debugLog('currentReplayStep:', currentReplayStep);
+    debugLog('scenario.length:', scenarioData.scenario.length);
+
     if (!isReplaying || currentReplayStep >= scenarioData.scenario.length) {
+        debugLog('Stopping replay - condition met');
         stopReplay();
         return;
     }
 
     const step = scenarioData.scenario[currentReplayStep];
+    debugLog('Playing step:', currentReplayStep + 1, 'duration:', step.duration);
     replayProgress.textContent = `Step ${currentReplayStep + 1}/${scenarioData.scenario.length}`;
 
     // Use stepSnapshots to restore state (more reliable for zone cards)
     if (stepSnapshots[currentReplayStep]) {
+        debugLog('Restoring from stepSnapshot', currentReplayStep);
         restoreFromSnapshot(stepSnapshots[currentReplayStep]);
+    } else {
+        debugWarn('No stepSnapshot at index', currentReplayStep);
     }
 
     currentReplayStep++;
 
     // Schedule next step
     const duration = (step.duration || 1) * 1000;
+    debugLog('Scheduling next step in', duration, 'ms');
     replayTimer = setTimeout(() => {
         replayNextStep();
     }, duration);
+
 }
 
 function stopReplay() {
@@ -1748,6 +1881,10 @@ function stopReplay() {
 }
 
 function restoreToInitialState() {
+    debugLog('=== restoreToInitialState ===');
+    debugLog('initialState:', scenarioData.initialState);
+    debugLog('tableCards:', appState.tableCards);
+
     // First, remove all card elements from zones
     playerZones.forEach(zone => {
         const container = zone.querySelector('.zone-cards');
@@ -1758,8 +1895,12 @@ function restoreToInitialState() {
     // Apply initial state to all cards
     Object.entries(scenarioData.initialState).forEach(([cardId, state]) => {
         const card = appState.tableCards.find(c => c.id === cardId);
-        if (!card) return;
+        if (!card) {
+            debugWarn('Card not found in tableCards:', cardId);
+            return;
+        }
 
+        debugLog(`Restoring card ${cardId} to zone: ${state.zone}`);
         card.x = state.x;
         card.y = state.y;
         card.rotation = state.rotation;
@@ -1775,19 +1916,35 @@ function restoreToInitialState() {
         if (a.zone !== b.zone) return (a.zone || '').localeCompare(b.zone || '');
         return (a.zonePosition || 0) - (b.zonePosition || 0);
     });
+
+    debugLog('sortedCards for rendering:', sortedCards.map(c => ({ id: c.id, zone: c.zone })));
+
     sortedCards.forEach(card => {
-        if (card.zone && card.zone !== 'table') {
-            const zoneElement = document.querySelector(`[data-zone="${card.zone}"]`);
-            if (zoneElement) {
-                createZoneCardElement(card, zoneElement);
+        try {
+            if (card.zone && card.zone !== 'table') {
+                // Use specific selectors to target zone divs, not checkboxes
+                const zoneElement = document.querySelector(`.player-zone[data-zone="${card.zone}"], .community-zone[data-zone="${card.zone}"]`);
+                debugLog(`Creating zone card ${card.id} in zone ${card.zone}, element found:`, !!zoneElement);
+                if (zoneElement) {
+                    createZoneCardElement(card, zoneElement);
+                }
+            } else if (card.zone === 'table') {
+                debugLog(`Creating table card ${card.id}`);
+                createTableCardElement(card);
+            } else {
+                debugWarn(`Card ${card.id} has no valid zone:`, card.zone);
             }
-        } else if (card.zone === 'table') {
-            createTableCardElement(card);
+        } catch (err) {
+            debugWarn(`ERROR creating card ${card.id}:`, err.message);
+            console.error('Full error:', err);
         }
     });
 
+    debugLog('=== restoreToInitialState COMPLETE ===');
     updateUI();
 }
+
+
 
 // ============================================
 // EDIT/DELETE STEPS
@@ -1881,6 +2038,9 @@ function renumberSteps() {
 }
 
 function restoreFromSnapshot(snapshot) {
+    debugLog('=== restoreFromSnapshot ===');
+    debugLog('snapshot:', snapshot);
+
     // First, remove all card elements from zones
     playerZones.forEach(zone => {
         const container = zone.querySelector('.zone-cards');
@@ -1891,8 +2051,12 @@ function restoreFromSnapshot(snapshot) {
     // Restore each card to its saved state
     Object.entries(snapshot).forEach(([cardId, state]) => {
         const card = appState.tableCards.find(c => c.id === cardId);
-        if (!card) return;
+        if (!card) {
+            debugWarn('Card not found in tableCards:', cardId);
+            return;
+        }
 
+        debugLog(`Restoring card ${cardId} to zone: ${state.zone}`);
         // Restore all properties
         card.x = state.x || 0;
         card.y = state.y || 0;
@@ -1906,19 +2070,33 @@ function restoreFromSnapshot(snapshot) {
     });
 
     // Re-create elements for all cards in their zones
-    appState.tableCards.forEach(card => {
+    // Sort by zone and zonePosition to ensure correct order
+    const sortedCards = [...appState.tableCards].sort((a, b) => {
+        if (a.zone !== b.zone) return (a.zone || '').localeCompare(b.zone || '');
+        return (a.zonePosition || 0) - (b.zonePosition || 0);
+    });
+
+    debugLog('sortedCards for rendering:', sortedCards.map(c => ({ id: c.id, zone: c.zone })));
+
+    sortedCards.forEach(card => {
         if (card.zone && card.zone !== 'table') {
-            const zoneElement = document.querySelector(`[data-zone="${card.zone}"]`);
+            // Use specific selectors to target zone divs, not checkboxes
+            const zoneElement = document.querySelector(`.player-zone[data-zone="${card.zone}"], .community-zone[data-zone="${card.zone}"]`);
+            debugLog(`Creating zone card ${card.id} in zone ${card.zone}, element found:`, !!zoneElement);
             if (zoneElement) {
                 createZoneCardElement(card, zoneElement);
             }
         } else if (card.zone === 'table') {
+            debugLog(`Creating table card ${card.id}`);
             createTableCardElement(card);
+        } else {
+            debugWarn(`Card ${card.id} has no valid zone:`, card.zone);
         }
     });
 
     updateUI();
 }
+
 
 // ============================================
 // WARNING MODAL
