@@ -1676,8 +1676,15 @@ function handleReplay() {
         return;
     }
 
-    // Save current state for restore after replay
-    const savedState = JSON.stringify(scenarioData.initialState);
+    // Check if we have snapshots for replay
+    if (stepSnapshots.length === 0) {
+        setStatus('No snapshots recorded - please record some steps first', 'error');
+        console.warn('stepSnapshots is empty:', stepSnapshots);
+        return;
+    }
+
+    console.log('Starting replay with', scenarioData.scenario.length, 'steps');
+    console.log('stepSnapshots:', stepSnapshots);
 
     isReplaying = true;
     currentReplayStep = 0;
@@ -1685,18 +1692,22 @@ function handleReplay() {
     // Update UI
     replayBtn.textContent = '⏸️ Pause';
     replayControls.classList.remove('hidden');
-    replayProgress.textContent = `Step 0/${scenarioData.scenario.length}`;
+    replayProgress.textContent = `Initial / ${scenarioData.scenario.length} steps`;
 
     // Start replay from initial state
     restoreToInitialState();
 
-    // Start stepping through
-    setTimeout(() => {
-        replayNextStep();
-    }, 500);
+    setStatus('Showing initial state...', 'recording');
 
-    setStatus('Replaying steps...', 'recording');
+    // Give user time to see initial state before stepping
+    setTimeout(() => {
+        if (isReplaying) {
+            setStatus('Replaying steps...', 'recording');
+            replayNextStep();
+        }
+    }, 1000);
 }
+
 
 function replayNextStep() {
     if (!isReplaying || currentReplayStep >= scenarioData.scenario.length) {
@@ -1754,12 +1765,17 @@ function restoreToInitialState() {
         card.rotation = state.rotation;
         card.isFaceUp = state.isFaceUp;
         card.zone = state.zone;
-        card.zonePosition = card.zonePosition || 0;
+        card.zonePosition = state.zonePosition || 0;
         card.element = null;
     });
 
     // Re-create elements for all cards in their zones
-    appState.tableCards.forEach(card => {
+    // Sort by zone and zonePosition to ensure correct order
+    const sortedCards = [...appState.tableCards].sort((a, b) => {
+        if (a.zone !== b.zone) return (a.zone || '').localeCompare(b.zone || '');
+        return (a.zonePosition || 0) - (b.zonePosition || 0);
+    });
+    sortedCards.forEach(card => {
         if (card.zone && card.zone !== 'table') {
             const zoneElement = document.querySelector(`[data-zone="${card.zone}"]`);
             if (zoneElement) {
