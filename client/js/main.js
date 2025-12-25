@@ -34,9 +34,17 @@ const PROJECT_INFO = {
     fps: 30
 };
 
-// Card dimensions
+// Coordinate System: UI (1280x720) → AE (1920x1080)
+const UI_WIDTH = 1280;
+const UI_HEIGHT = 720;
+const AE_WIDTH = 1920;
+const AE_HEIGHT = 1080;
+const COORD_SCALE = AE_WIDTH / UI_WIDTH; // 1.5x scale factor
+
+// Card dimensions (in UI pixels)
 const CARD_WIDTH = 60;
 const CARD_HEIGHT = 84;
+
 
 // Standard 52-card deck
 const RANKS = ['ace', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'jack', 'queen', 'king'];
@@ -1567,32 +1575,65 @@ function handlePropertyChange() {
     appState.selectedCard.slamEffect = slamEffectCheck.checked;
 }
 
-/**
- * Get zone position for AE export (1920x1080 coordinates)
- * @param {string} zone - Zone name
- * @param {number} zonePosition - Position within zone
- * @returns {object} {x, y} position for AE
- */
-function getAEZonePosition(zone, zonePosition = 0) {
-    const CARD_SPACING = 100; // Spacing between cards in same zone
+// ============================================
+// COORDINATE TRANSFORMATION SYSTEM
+// UI (1280x720) ↔ AE (1920x1080)
+// ============================================
 
+/**
+ * Transform UI coordinates to AE coordinates
+ * @param {number} uiX - X position in UI (1280x720)
+ * @param {number} uiY - Y position in UI (1280x720)
+ * @returns {object} {x, y} position for AE (1920x1080)
+ */
+function uiToAEPosition(uiX, uiY) {
+    return {
+        x: Math.round(uiX * COORD_SCALE),
+        y: Math.round(uiY * COORD_SCALE)
+    };
+}
+
+/**
+ * Transform AE coordinates to UI coordinates
+ * @param {number} aeX - X position in AE (1920x1080)
+ * @param {number} aeY - Y position in AE (1920x1080)
+ * @returns {object} {x, y} position for UI (1280x720)
+ */
+function aeToUIPosition(aeX, aeY) {
+    return {
+        x: Math.round(aeX / COORD_SCALE),
+        y: Math.round(aeY / COORD_SCALE)
+    };
+}
+
+/**
+ * Get zone position in UI coordinates (relative to poker table)
+ * @param {string} zoneName - Zone name
+ * @param {number} zonePosition - Position within zone
+ * @returns {object} {x, y} position in UI coordinates
+ */
+function getUIZonePosition(zoneName, zonePosition = 0) {
+    const CARD_SPACING_UI = 45; // Card spacing in UI pixels
+
+    // Zone base positions in UI coordinates (1280x720)
+    // These match the visual layout of the web tool
     const zonePositions = {
-        'top': { x: PROJECT_INFO.width / 2 - 150, y: 150 },
-        'bottom': { x: PROJECT_INFO.width / 2 - 150, y: PROJECT_INFO.height - 150 },
-        'left': { x: 200, y: PROJECT_INFO.height / 2 - 100 },
-        'right': { x: PROJECT_INFO.width - 200, y: PROJECT_INFO.height / 2 - 100 },
-        'community': { x: PROJECT_INFO.width / 2 - 200, y: PROJECT_INFO.height / 2 }
+        'top': { x: UI_WIDTH / 2 - 50, y: 80 },
+        'bottom': { x: UI_WIDTH / 2 - 50, y: UI_HEIGHT - 80 },
+        'left': { x: 120, y: UI_HEIGHT / 2 },
+        'right': { x: UI_WIDTH - 120, y: UI_HEIGHT / 2 },
+        'community': { x: UI_WIDTH / 2 - 80, y: UI_HEIGHT / 2 }
     };
 
-    const basePos = zonePositions[zone] || { x: PROJECT_INFO.width / 2, y: PROJECT_INFO.height / 2 };
+    const basePos = zonePositions[zoneName] || { x: UI_WIDTH / 2, y: UI_HEIGHT / 2 };
 
-    // Adjust for multiple cards in same zone
-    let offsetX = (zonePosition || 0) * CARD_SPACING;
+    // Calculate offset for multiple cards
+    let offsetX = (zonePosition || 0) * CARD_SPACING_UI;
     let offsetY = 0;
 
-    // Vertical zones use Y offset
-    if (zone === 'left' || zone === 'right') {
-        offsetY = (zonePosition || 0) * CARD_SPACING;
+    // Vertical zones (left/right) use Y offset
+    if (zoneName === 'left' || zoneName === 'right') {
+        offsetY = (zonePosition || 0) * CARD_SPACING_UI;
         offsetX = 0;
     }
 
@@ -1601,6 +1642,18 @@ function getAEZonePosition(zone, zonePosition = 0) {
         y: Math.round(basePos.y + offsetY)
     };
 }
+
+/**
+ * Get zone position for AE export (transformed from UI to AE coordinates)
+ * @param {string} zone - Zone name
+ * @param {number} zonePosition - Position within zone
+ * @returns {object} {x, y} position for AE (1920x1080)
+ */
+function getAEZonePosition(zone, zonePosition = 0) {
+    const uiPos = getUIZonePosition(zone, zonePosition);
+    return uiToAEPosition(uiPos.x, uiPos.y);
+}
+
 
 function saveInitialStateForExport() {
     // This version calculates positions for AE export

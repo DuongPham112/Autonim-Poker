@@ -382,15 +382,26 @@ function processTransformAction(layer, action, startTime, duration) {
     var positionProp = layer.property("Position");
     var rotationProp = layer.property("Rotation");
 
-    // Get start values (current state at startTime)
-    var startPos = positionProp.valueAtTime(startTime, false);
-    var startRot = rotationProp.valueAtTime(startTime, false);
+    // Get current values (fallback)
+    var currentPos = positionProp.valueAtTime(startTime, false);
+    var currentRot = rotationProp.valueAtTime(startTime, false);
+
+    // Determine start values - prefer action data over current state
+    var startPos = currentPos;
+    var startRot = currentRot;
+
+    if (action.startPosition && action.startPosition.x !== undefined) {
+        startPos = [action.startPosition.x, action.startPosition.y];
+    }
+    if (action.startRotation !== undefined) {
+        startRot = action.startRotation;
+    }
 
     // Determine end values
     var endPos = startPos;
     var endRot = startRot;
 
-    if (action.endPosition) {
+    if (action.endPosition && action.endPosition.x !== undefined) {
         endPos = [action.endPosition.x, action.endPosition.y];
     }
     if (action.endRotation !== undefined) {
@@ -408,6 +419,7 @@ function processTransformAction(layer, action, startTime, duration) {
     applyBezierEasing(positionProp);
     applyBezierEasing(rotationProp);
 }
+
 
 /**
  * Process FLIP effect using Pre-Comp Opacity Toggle
