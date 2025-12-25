@@ -1499,13 +1499,22 @@ function computeActions(startSnap, endSnap) {
         const start = startSnap[card.id];
         const end = endSnap[card.id];
 
+        // Calculate AE positions for zones (since zone cards use x/y = 0 in UI)
+        const getAEPosition = (state) => {
+            if (state.zone && state.zone !== 'table') {
+                return getAEZonePosition(state.zone, state.zonePosition);
+            }
+            return { x: Math.round(state.x || 0), y: Math.round(state.y || 0) };
+        };
+
         // New card placed from tray (not in start snapshot)
         if (!start && end) {
+            const endPos = getAEPosition(end);
             actions.push({
                 targetId: card.id,
                 type: 'PLACE',
-                startPosition: { x: 0, y: 0 },
-                endPosition: { x: Math.round(end.x || 0), y: Math.round(end.y || 0) },
+                startPosition: { x: PROJECT_INFO.width / 2, y: -100 }, // Start from outside top
+                endPosition: endPos,
                 startRotation: 0,
                 endRotation: Math.round(end.rotation || 0),
                 zone: end.zone,
@@ -1518,8 +1527,11 @@ function computeActions(startSnap, endSnap) {
 
         if (!start || !end) return;
 
-        const posChanged = Math.abs((end.x || 0) - (start.x || 0)) > 1 ||
-            Math.abs((end.y || 0) - (start.y || 0)) > 1;
+        const startPos = getAEPosition(start);
+        const endPos = getAEPosition(end);
+
+        const posChanged = Math.abs(endPos.x - startPos.x) > 1 ||
+            Math.abs(endPos.y - startPos.y) > 1;
         const rotChanged = Math.abs((end.rotation || 0) - (start.rotation || 0)) > 0.5;
         const flipChanged = end.isFaceUp !== start.isFaceUp;
         const zoneChanged = end.zone !== start.zone;
@@ -1530,8 +1542,8 @@ function computeActions(startSnap, endSnap) {
             actions.push({
                 targetId: card.id,
                 type: 'TRANSFORM',
-                startPosition: { x: Math.round(start.x || 0), y: Math.round(start.y || 0) },
-                endPosition: { x: Math.round(end.x || 0), y: Math.round(end.y || 0) },
+                startPosition: startPos,
+                endPosition: endPos,
                 startRotation: Math.round(start.rotation || 0),
                 endRotation: Math.round(end.rotation || 0),
                 startZone: start.zone,
@@ -1547,6 +1559,7 @@ function computeActions(startSnap, endSnap) {
 }
 
 
+
 function handlePropertyChange() {
     if (!appState.selectedCard) return;
 
@@ -1554,36 +1567,58 @@ function handlePropertyChange() {
     appState.selectedCard.slamEffect = slamEffectCheck.checked;
 }
 
-// ============================================
-// INITIAL STATE & EXPORT
-// ============================================
+/**
+ * Get zone position for AE export (1920x1080 coordinates)
+ * @param {string} zone - Zone name
+ * @param {number} zonePosition - Position within zone
+ * @returns {object} {x, y} position for AE
+ */
+function getAEZonePosition(zone, zonePosition = 0) {
+    const CARD_SPACING = 100; // Spacing between cards in same zone
+
+    const zonePositions = {
+        'top': { x: PROJECT_INFO.width / 2 - 150, y: 150 },
+        'bottom': { x: PROJECT_INFO.width / 2 - 150, y: PROJECT_INFO.height - 150 },
+        'left': { x: 200, y: PROJECT_INFO.height / 2 - 100 },
+        'right': { x: PROJECT_INFO.width - 200, y: PROJECT_INFO.height / 2 - 100 },
+        'community': { x: PROJECT_INFO.width / 2 - 200, y: PROJECT_INFO.height / 2 }
+    };
+
+    const basePos = zonePositions[zone] || { x: PROJECT_INFO.width / 2, y: PROJECT_INFO.height / 2 };
+
+    // Adjust for multiple cards in same zone
+    let offsetX = (zonePosition || 0) * CARD_SPACING;
+    let offsetY = 0;
+
+    // Vertical zones use Y offset
+    if (zone === 'left' || zone === 'right') {
+        offsetY = (zonePosition || 0) * CARD_SPACING;
+        offsetX = 0;
+    }
+
+    return {
+        x: Math.round(basePos.x + offsetX),
+        y: Math.round(basePos.y + offsetY)
+    };
+}
 
 function saveInitialStateForExport() {
     // This version calculates positions for AE export
     const exportState = {};
 
-    // Calculate card scale for AE (web cards displayed at 60x84, target ~120px height in 1080p)
-    // This gives assets a scale factor to render at appropriate size
-    const targetCardHeight = 150; // Target card height in 1080p composition
-    const aeCardScale = targetCardHeight / 1080; // ~0.139 - about 14% scale
+    // Card scale for AE - 50% gives good visibility on 1080p
+    const aeCardScale = 0.5;
 
     appState.tableCards.forEach(card => {
-        // Calculate position based on zone if not directly on table
+        // Calculate position based on zone
         let posX = card.x || 0;
         let posY = card.y || 0;
 
-        // For zone cards, calculate approximate center position
-        if (card.zone !== 'table' && (!card.x && !card.y)) {
-            const zonePositions = {
-                'top': { x: PROJECT_INFO.width / 2, y: 100 },
-                'bottom': { x: PROJECT_INFO.width / 2, y: PROJECT_INFO.height - 100 },
-                'left': { x: 150, y: PROJECT_INFO.height / 2 },
-                'right': { x: PROJECT_INFO.width - 150, y: PROJECT_INFO.height / 2 },
-                'community': { x: PROJECT_INFO.width / 2, y: PROJECT_INFO.height / 2 }
-            };
-            const zonePos = zonePositions[card.zone] || { x: PROJECT_INFO.width / 2, y: PROJECT_INFO.height / 2 };
-            posX = zonePos.x + (card.zonePosition || 0) * 40; // Offset for multiple cards
-            posY = zonePos.y;
+        // For zone cards, use calculated AE position
+        if (card.zone && card.zone !== 'table') {
+            const aePos = getAEZonePosition(card.zone, card.zonePosition);
+            posX = aePos.x;
+            posY = aePos.y;
         }
 
         exportState[card.id] = {
@@ -1603,6 +1638,7 @@ function saveInitialStateForExport() {
 
     return exportState;
 }
+
 
 function handleExportJSON() {
     if (appState.tableCards.length === 0) {
