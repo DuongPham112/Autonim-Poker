@@ -1499,16 +1499,34 @@ function computeActions(startSnap, endSnap) {
         const start = startSnap[card.id];
         const end = endSnap[card.id];
 
+        // New card placed from tray (not in start snapshot)
+        if (!start && end) {
+            actions.push({
+                targetId: card.id,
+                type: 'PLACE',
+                startPosition: { x: 0, y: 0 },
+                endPosition: { x: Math.round(end.x || 0), y: Math.round(end.y || 0) },
+                startRotation: 0,
+                endRotation: Math.round(end.rotation || 0),
+                zone: end.zone,
+                flip: card.flipAction,
+                flipToFaceUp: end.isFaceUp,
+                effect: card.slamEffect ? 'SLAM' : null
+            });
+            return;
+        }
+
         if (!start || !end) return;
 
         const posChanged = Math.abs((end.x || 0) - (start.x || 0)) > 1 ||
             Math.abs((end.y || 0) - (start.y || 0)) > 1;
         const rotChanged = Math.abs((end.rotation || 0) - (start.rotation || 0)) > 0.5;
         const flipChanged = end.isFaceUp !== start.isFaceUp;
+        const zoneChanged = end.zone !== start.zone;
         const hasFlipAction = card.flipAction;
         const hasSlam = card.slamEffect;
 
-        if (posChanged || rotChanged || flipChanged || hasFlipAction || hasSlam) {
+        if (posChanged || rotChanged || flipChanged || zoneChanged || hasFlipAction || hasSlam) {
             actions.push({
                 targetId: card.id,
                 type: 'TRANSFORM',
@@ -1516,6 +1534,8 @@ function computeActions(startSnap, endSnap) {
                 endPosition: { x: Math.round(end.x || 0), y: Math.round(end.y || 0) },
                 startRotation: Math.round(start.rotation || 0),
                 endRotation: Math.round(end.rotation || 0),
+                startZone: start.zone,
+                endZone: end.zone,
                 flip: hasFlipAction || flipChanged,
                 flipToFaceUp: end.isFaceUp,
                 effect: hasSlam ? 'SLAM' : null
@@ -1525,6 +1545,7 @@ function computeActions(startSnap, endSnap) {
 
     return actions;
 }
+
 
 function handlePropertyChange() {
     if (!appState.selectedCard) return;
@@ -2155,7 +2176,11 @@ function hideAutoStepPopup() {
  * Handle Yes button - create new step automatically
  */
 function handleAutoStepYes() {
+    debugLog('=== handleAutoStepYes ===');
+    debugLog('pendingChangeSnapshot:', !!pendingChangeSnapshot);
+
     if (!pendingChangeSnapshot) {
+        debugWarn('No pendingChangeSnapshot, aborting');
         hideAutoStepPopup();
         return;
     }
@@ -2163,6 +2188,10 @@ function handleAutoStepYes() {
     // Create step automatically
     const endSnapshot = takeSnapshot();
     const actions = computeActions(pendingChangeSnapshot, endSnapshot);
+
+    debugLog('pendingChangeSnapshot keys:', Object.keys(pendingChangeSnapshot || {}));
+    debugLog('endSnapshot keys:', Object.keys(endSnapshot || {}));
+    debugLog('actions computed:', actions.length, actions);
 
     if (actions.length > 0) {
         const newStep = {
@@ -2179,13 +2208,16 @@ function handleAutoStepYes() {
         totalSteps.textContent = scenarioData.scenario.length;
         renderTimeline();
         updateUI();
+        debugLog('Step created:', newStep.stepId, 'Total steps:', scenarioData.scenario.length);
         setStatus(`Step ${scenarioData.scenario.length} auto-created with ${actions.length} actions`, 'success');
     } else {
+        debugWarn('No actions detected between snapshots');
         setStatus('No changes detected', 'info');
     }
 
     hideAutoStepPopup();
 }
+
 
 /**
  * Handle No button - revert card to previous position
