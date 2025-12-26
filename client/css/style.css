@@ -1761,9 +1761,9 @@ body {
     background: radial-gradient(ellipse at center, #2a4a3a 0%, #1d3d28 70%, #153020 100%);
 }
 
-/* Hide zones in board-setting mode for grid layout */
-.game-container.board-setting-mode.grid-mode .player-zone,
-.game-container.board-setting-mode.grid-mode .community-zone {
+/* Hide zones in grid mode (applies to all phases) */
+.game-container.grid-mode .player-zone,
+.game-container.grid-mode .community-zone {
     display: none;
 }
 
