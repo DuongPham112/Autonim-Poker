@@ -528,9 +528,10 @@ function setPhase(phase) {
         // Clear card place markers
         clearCardPlaceMarkers();
 
-        // Keep grid-mode if layout is grid type
+        // Render card drop zones for grid mode (same as setup)
         if (appState.boardLayout.type === 'grid') {
             gameContainer.classList.add('grid-mode');
+            renderCardDropZones();
         }
 
         // Save initial state when entering record phase
@@ -1020,12 +1021,110 @@ function handleZoneDrop(e, zone) {
     const zoneName = zone.dataset.zone;
     const rotation = parseInt(zone.dataset.rotation) || 0;
 
+    // Check if this is a grid zone with existing cards (for swap/stack logic)
+    if (zoneName.startsWith('grid-') && appState.phase === 'record') {
+        const existingCards = appState.tableCards.filter(c => c.zone === zoneName && c.id !== cardId);
+
+        if (existingCards.length > 0 && !fromTray) {
+            // Show swap/stack popup for grid zones with existing cards
+            showSwapStackPopup(card, existingCards[0], zoneName, rotation, zone);
+            return;
+        }
+    }
+
     if (fromTray) {
         // From tray - place new card in zone
         placeCardInZone(card, zoneName, rotation, zone);
     } else {
         // Moving card between zones (Record mode)
         moveCardToZone(card, zoneName, rotation, zone);
+    }
+}
+
+/**
+ * Show popup to choose between swap or stack when dropping card on occupied grid zone
+ */
+function showSwapStackPopup(movingCard, existingCard, zoneName, rotation, zoneElement) {
+    // Remove any existing popup
+    const oldPopup = document.querySelector('.swap-stack-popup');
+    if (oldPopup) oldPopup.remove();
+
+    const popup = document.createElement('div');
+    popup.className = 'swap-stack-popup';
+    popup.innerHTML = `
+        <div class="popup-title">Zone has a card</div>
+        <div class="popup-buttons">
+            <button class="btn btn-sm btn-swap" title="Swap positions with existing card">🔄 Swap</button>
+            <button class="btn btn-sm btn-stack" title="Stack on top of existing card">📚 Stack</button>
+            <button class="btn btn-sm btn-cancel">✕</button>
+        </div>
+    `;
+
+    // Position near the zone
+    const zoneRect = zoneElement.getBoundingClientRect();
+    const containerRect = gameContainer.getBoundingClientRect();
+    popup.style.left = `${zoneRect.left - containerRect.left + zoneRect.width / 2}px`;
+    popup.style.top = `${zoneRect.top - containerRect.top - 50}px`;
+
+    // Event handlers
+    popup.querySelector('.btn-swap').addEventListener('click', () => {
+        popup.remove();
+        swapCards(movingCard, existingCard);
+    });
+
+    popup.querySelector('.btn-stack').addEventListener('click', () => {
+        popup.remove();
+        moveCardToZone(movingCard, zoneName, rotation, zoneElement);
+    });
+
+    popup.querySelector('.btn-cancel').addEventListener('click', () => {
+        popup.remove();
+    });
+
+    gameContainer.appendChild(popup);
+}
+
+/**
+ * Swap two cards between their zones (used in Record mode for grid)
+ */
+function swapCards(card1, card2) {
+    // Take snapshot BEFORE the swap
+    const snapshotBeforeSwap = (appState.phase === 'record' && !appState.isEditingStep) ? takeSnapshot() : null;
+
+    // Store original positions
+    const zone1 = card1.zone;
+    const zone2 = card2.zone;
+    const pos1 = card1.zonePosition;
+    const pos2 = card2.zonePosition;
+
+    // Remove card elements
+    if (card1.element) card1.element.remove();
+    if (card2.element) card2.element.remove();
+
+    // Swap zone assignments
+    card1.zone = zone2;
+    card1.zonePosition = pos2;
+    card2.zone = zone1;
+    card2.zonePosition = pos1;
+
+    // Re-create card elements in new zones
+    const zone1Element = document.querySelector(`.card-drop-zone[data-zone="${zone1}"], .player-zone[data-zone="${zone1}"]`);
+    const zone2Element = document.querySelector(`.card-drop-zone[data-zone="${zone2}"], .player-zone[data-zone="${zone2}"]`);
+
+    if (zone1Element) createZoneCardElement(card2, zone1Element);
+    if (zone2Element) createZoneCardElement(card1, zone2Element);
+
+    // Mark as having changes for recording
+    card1.hasChanges = true;
+    card2.hasChanges = true;
+
+    updateUI();
+    setStatus(`Swapped ${card1.displayName || card1.name} with ${card2.displayName || card2.name}`);
+
+    // Show auto-step popup if in Record mode
+    if (snapshotBeforeSwap && appState.phase === 'record' && !appState.isEditingStep) {
+        selectCard(card1);
+        showAutoStepPopup(card1, snapshotBeforeSwap);
     }
 }
 
@@ -2943,6 +3042,23 @@ function renderCardDropZones() {
         zone.addEventListener('drop', (e) => handleZoneDrop(e, zone));
 
         gameContainer.appendChild(zone);
+    });
+
+    // Restore existing cards in grid zones
+    restoreGridCards();
+}
+
+/**
+ * Restore cards that are already in grid zones after re-rendering drop zones
+ */
+function restoreGridCards() {
+    const gridCards = appState.tableCards.filter(c => c.zone && c.zone.startsWith('grid-'));
+
+    gridCards.forEach(card => {
+        const zoneElement = document.querySelector(`.card-drop-zone[data-zone="${card.zone}"]`);
+        if (zoneElement) {
+            createZoneCardElement(card, zoneElement);
+        }
     });
 }
 

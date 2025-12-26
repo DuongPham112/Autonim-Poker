@@ -1840,3 +1840,59 @@ body {
     align-items: center;
     justify-content: center;
 }
+
+/* ============================================
+   SWAP/STACK POPUP
+   ============================================ */
+.swap-stack-popup {
+    position: absolute;
+    z-index: 1000;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    transform: translateX(-50%);
+    animation: popup-fade-in 0.15s ease-out;
+}
+
+@keyframes popup-fade-in {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
+.swap-stack-popup .popup-title {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    text-align: center;
+}
+
+.swap-stack-popup .popup-buttons {
+    display: flex;
+    gap: 6px;
+}
+
+.swap-stack-popup .btn-swap {
+    background: var(--accent-blue);
+    color: white;
+}
+
+.swap-stack-popup .btn-stack {
+    background: var(--accent-yellow);
+    color: #1a1a1a;
+}
+
+.swap-stack-popup .btn-cancel {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 4px 8px;
+}
