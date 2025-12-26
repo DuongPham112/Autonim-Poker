@@ -2711,15 +2711,28 @@ function renderCardPlaceMarkers() {
         return;
     }
 
+    // Render markers in gameContainer (not pokerTable) so they appear above the table
+    if (!gameContainer) return;
+
+    // Get poker table position for offset calculation
     const pokerTable = document.getElementById('pokerTable');
     if (!pokerTable) return;
+
+    const tableRect = pokerTable.getBoundingClientRect();
+    const containerRect = gameContainer.getBoundingClientRect();
+
+    // Calculate offset from gameContainer to pokerTable
+    const offsetX = tableRect.left - containerRect.left;
+    const offsetY = tableRect.top - containerRect.top;
 
     appState.boardLayout.cardPlaces.forEach((place, index) => {
         const marker = document.createElement('div');
         marker.className = 'card-place-marker';
         marker.dataset.placeId = place.id;
-        marker.style.left = `${place.x - CARD_WIDTH / 2}px`;
-        marker.style.top = `${place.y - CARD_HEIGHT / 2}px`;
+
+        // Position relative to gameContainer (add pokerTable offset)
+        marker.style.left = `${offsetX + place.x - CARD_WIDTH / 2}px`;
+        marker.style.top = `${offsetY + place.y - CARD_HEIGHT / 2}px`;
 
         // Place number
         const number = document.createElement('span');
@@ -2743,7 +2756,7 @@ function renderCardPlaceMarkers() {
         // Click to select
         marker.addEventListener('click', () => selectCardPlace(place, marker));
 
-        pokerTable.appendChild(marker);
+        gameContainer.appendChild(marker);
     });
 }
 
@@ -2795,6 +2808,11 @@ function startDragMarker(e, place, marker) {
 
     const pokerTable = document.getElementById('pokerTable');
     const tableRect = pokerTable.getBoundingClientRect();
+    const containerRect = gameContainer.getBoundingClientRect();
+
+    // Calculate offset from gameContainer to pokerTable
+    const offsetX = tableRect.left - containerRect.left;
+    const offsetY = tableRect.top - containerRect.top;
 
     const startX = e.clientX;
     const startY = e.clientY;
@@ -2805,11 +2823,13 @@ function startDragMarker(e, place, marker) {
         const dx = moveE.clientX - startX;
         const dy = moveE.clientY - startY;
 
+        // Constrain to poker table bounds
         place.x = Math.max(CARD_WIDTH / 2, Math.min(tableRect.width - CARD_WIDTH / 2, startPlaceX + dx));
         place.y = Math.max(CARD_HEIGHT / 2, Math.min(tableRect.height - CARD_HEIGHT / 2, startPlaceY + dy));
 
-        marker.style.left = `${place.x - CARD_WIDTH / 2}px`;
-        marker.style.top = `${place.y - CARD_HEIGHT / 2}px`;
+        // Update marker position (add offset for gameContainer)
+        marker.style.left = `${offsetX + place.x - CARD_WIDTH / 2}px`;
+        marker.style.top = `${offsetY + place.y - CARD_HEIGHT / 2}px`;
     }
 
     function onMouseUp() {
