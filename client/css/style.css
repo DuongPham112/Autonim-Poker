@@ -1772,3 +1772,48 @@ body {
     background: var(--accent-yellow);
     color: #1a1a1a;
 }
+
+/* ============================================
+   CARD DROP ZONES (for grid mode in setup/record)
+   ============================================ */
+.card-drop-zone {
+    position: absolute;
+    width: var(--card-width);
+    height: var(--card-height);
+    border: 2px dashed rgba(78, 201, 176, 0.5);
+    border-radius: var(--card-radius);
+    background: rgba(78, 201, 176, 0.08);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    transition: all 0.15s;
+}
+
+.card-drop-zone:hover {
+    border-color: rgba(78, 201, 176, 0.8);
+    background: rgba(78, 201, 176, 0.15);
+}
+
+.card-drop-zone.drag-over {
+    border-color: var(--accent-green);
+    border-style: solid;
+    background: rgba(78, 201, 176, 0.25);
+    box-shadow: 0 0 15px rgba(78, 201, 176, 0.4);
+}
+
+.card-drop-zone .zone-number {
+    font-size: 14px;
+    font-weight: 600;
+    color: rgba(78, 201, 176, 0.6);
+    user-select: none;
+}
+
+.card-drop-zone .zone-cards {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}

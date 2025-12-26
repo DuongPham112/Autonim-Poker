@@ -462,6 +462,7 @@ function setPhase(phase) {
     if (boardLayoutInfo) boardLayoutInfo.classList.remove('visible');
     if (stepControlsSection) stepControlsSection.classList.add('hidden');
     gameContainer.classList.remove('board-setting-mode');
+    clearCardDropZones(); // Clear drop zones when switching phases
     // Note: Don't remove grid-mode here - preserve it across phases
 
     if (phase === 'board-setting') {
@@ -489,12 +490,13 @@ function setPhase(phase) {
         if (boardLayoutInfo) boardLayoutInfo.classList.add('visible');
         updateLayoutInfoDisplay();
 
-        // Clear card place markers (keep the layout data and grid-mode)
+        // Clear editable markers, render drop zones instead
         clearCardPlaceMarkers();
 
-        // Keep grid-mode if layout is grid type
+        // Render card drop zones for grid mode
         if (appState.boardLayout.type === 'grid') {
             gameContainer.classList.add('grid-mode');
+            renderCardDropZones();
         }
 
         setStatus('Setup - Drag cards to the table');
@@ -2812,6 +2814,62 @@ function renderCardPlaceMarkers() {
 function clearCardPlaceMarkers() {
     const markers = document.querySelectorAll('.card-place-marker');
     markers.forEach(m => m.remove());
+}
+
+/**
+ * Render card drop zones for Setup mode (non-editable)
+ */
+function renderCardDropZones() {
+    // Clear existing drop zones
+    clearCardDropZones();
+
+    if (appState.boardLayout.type !== 'grid' || appState.boardLayout.cardPlaces.length === 0) {
+        return;
+    }
+
+    if (!gameContainer) return;
+
+    // Get poker table position for offset calculation
+    const pokerTable = document.getElementById('pokerTable');
+    if (!pokerTable) return;
+
+    const tableRect = pokerTable.getBoundingClientRect();
+    const containerRect = gameContainer.getBoundingClientRect();
+
+    const offsetX = tableRect.left - containerRect.left;
+    const offsetY = tableRect.top - containerRect.top;
+
+    appState.boardLayout.cardPlaces.forEach((place, index) => {
+        const zone = document.createElement('div');
+        zone.className = 'card-drop-zone';
+        zone.dataset.placeId = place.id;
+        zone.dataset.zone = `grid-${place.id}`;
+
+        // Position relative to gameContainer
+        zone.style.left = `${offsetX + place.x - CARD_WIDTH / 2}px`;
+        zone.style.top = `${offsetY + place.y - CARD_HEIGHT / 2}px`;
+
+        // Zone label
+        const label = document.createElement('span');
+        label.className = 'zone-number';
+        label.textContent = place.label || String(index + 1);
+        zone.appendChild(label);
+
+        // Cards container
+        const cardsContainer = document.createElement('div');
+        cardsContainer.className = 'zone-cards';
+        zone.appendChild(cardsContainer);
+
+        gameContainer.appendChild(zone);
+    });
+}
+
+/**
+ * Clear all card drop zones from DOM
+ */
+function clearCardDropZones() {
+    const zones = document.querySelectorAll('.card-drop-zone');
+    zones.forEach(z => z.remove());
 }
 
 /**
