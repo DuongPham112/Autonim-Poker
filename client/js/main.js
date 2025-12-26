@@ -1895,6 +1895,33 @@ function aeToUIPosition(aeX, aeY) {
 function getUIZonePosition(zoneName, zonePosition = 0) {
     const CARD_SPACING_UI = 45; // Card spacing in UI pixels
 
+    // Handle grid zones (grid-place-X)
+    if (zoneName && zoneName.startsWith('grid-')) {
+        const placeId = zoneName.replace('grid-', '');
+
+        // Try to get position from boardLayout.cardPlaces
+        const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
+        if (place) {
+            return { x: place.x, y: place.y };
+        }
+
+        // Fallback: get position from DOM element
+        const zoneEl = document.querySelector(`.card-drop-zone[data-zone="${zoneName}"]`);
+        if (zoneEl) {
+            const pokerTable = document.getElementById('pokerTable');
+            if (pokerTable) {
+                const tableRect = pokerTable.getBoundingClientRect();
+                const zoneRect = zoneEl.getBoundingClientRect();
+                return {
+                    x: zoneRect.left - tableRect.left + CARD_WIDTH / 2,
+                    y: zoneRect.top - tableRect.top + CARD_HEIGHT / 2
+                };
+            }
+        }
+
+        return { x: UI_WIDTH / 2, y: UI_HEIGHT / 2 };
+    }
+
     // Zone base positions in UI coordinates (1280x720)
     // These match the visual layout of the web tool
     const zonePositions = {
@@ -2236,23 +2263,113 @@ function replayNextStep() {
     debugLog('Playing step:', currentReplayStep + 1, 'duration:', step.duration);
     replayProgress.textContent = `Step ${currentReplayStep + 1}/${scenarioData.scenario.length}`;
 
-    // Use stepSnapshots to restore state (more reliable for zone cards)
-    if (stepSnapshots[currentReplayStep]) {
-        debugLog('Restoring from stepSnapshot', currentReplayStep);
-        restoreFromSnapshot(stepSnapshots[currentReplayStep]);
+    // Get previous snapshot for start positions
+    const prevSnapshot = currentReplayStep > 0 ? stepSnapshots[currentReplayStep - 1] : scenarioData.initialState;
+    const targetSnapshot = stepSnapshots[currentReplayStep];
+
+    if (targetSnapshot) {
+        debugLog('Animating step from snapshot', currentReplayStep);
+
+        // Find cards that changed position (zone changed)
+        const movingCards = [];
+        Object.entries(targetSnapshot).forEach(([cardId, targetState]) => {
+            const prevState = prevSnapshot[cardId];
+            if (prevState && prevState.zone !== targetState.zone) {
+                movingCards.push({
+                    cardId,
+                    fromZone: prevState.zone,
+                    toZone: targetState.zone,
+                    targetState
+                });
+            }
+        });
+
+        debugLog('Moving cards:', movingCards.length);
+
+        if (movingCards.length > 0) {
+            // Animate cards sequentially
+            animateCardsSequentially(movingCards, targetSnapshot, () => {
+                currentReplayStep++;
+                // Schedule next step
+                const duration = (step.duration || 1) * 1000;
+                debugLog('Scheduling next step in', duration, 'ms');
+                replayTimer = setTimeout(() => replayNextStep(), duration);
+            });
+        } else {
+            // No movement, just restore and continue
+            restoreFromSnapshot(targetSnapshot);
+            currentReplayStep++;
+            const duration = (step.duration || 1) * 1000;
+            replayTimer = setTimeout(() => replayNextStep(), duration);
+        }
     } else {
         debugWarn('No stepSnapshot at index', currentReplayStep);
+        currentReplayStep++;
+        replayTimer = setTimeout(() => replayNextStep(), 1000);
+    }
+}
+
+/**
+ * Animate cards moving to new positions sequentially
+ */
+function animateCardsSequentially(movingCards, targetSnapshot, onComplete) {
+    const ANIMATION_DURATION = 400; // ms per card
+    let index = 0;
+
+    function animateNext() {
+        if (index >= movingCards.length) {
+            // All animations complete, restore final state
+            restoreFromSnapshot(targetSnapshot);
+            onComplete();
+            return;
+        }
+
+        const move = movingCards[index];
+        const card = appState.tableCards.find(c => c.id === move.cardId);
+
+        if (card && card.element) {
+            // Get start and end positions
+            const startPos = getUIZonePosition(move.fromZone);
+            const endPos = getUIZonePosition(move.toZone);
+
+            // Get poker table offset
+            const pokerTable = document.getElementById('pokerTable');
+            const containerRect = gameContainer.getBoundingClientRect();
+            const tableRect = pokerTable ? pokerTable.getBoundingClientRect() : containerRect;
+            const offsetX = tableRect.left - containerRect.left;
+            const offsetY = tableRect.top - containerRect.top;
+
+            // Remove from zone container, add to gameContainer for free movement
+            const cardEl = card.element;
+            cardEl.style.position = 'absolute';
+            cardEl.style.left = `${offsetX + startPos.x - CARD_WIDTH / 2}px`;
+            cardEl.style.top = `${offsetY + startPos.y - CARD_HEIGHT / 2}px`;
+            cardEl.style.zIndex = '200';
+            cardEl.style.transition = `left ${ANIMATION_DURATION}ms ease, top ${ANIMATION_DURATION}ms ease`;
+
+            // Move to gameContainer if not already there
+            if (cardEl.parentElement !== gameContainer) {
+                gameContainer.appendChild(cardEl);
+            }
+
+            // Trigger animation
+            requestAnimationFrame(() => {
+                cardEl.style.left = `${offsetX + endPos.x - CARD_WIDTH / 2}px`;
+                cardEl.style.top = `${offsetY + endPos.y - CARD_HEIGHT / 2}px`;
+            });
+
+            // Wait for animation, then animate next
+            setTimeout(() => {
+                index++;
+                animateNext();
+            }, ANIMATION_DURATION + 50);
+        } else {
+            index++;
+            animateNext();
+        }
     }
 
-    currentReplayStep++;
-
-    // Schedule next step
-    const duration = (step.duration || 1) * 1000;
-    debugLog('Scheduling next step in', duration, 'ms');
-    replayTimer = setTimeout(() => {
-        replayNextStep();
-    }, duration);
-
+    animateNext();
 }
 
 function stopReplay() {
