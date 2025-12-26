@@ -910,16 +910,19 @@ function handleTrayCardDragStart(e, card) {
     e.dataTransfer.effectAllowed = 'move';
     e.target.classList.add('dragging');
 
-    // Highlight drop zones
+    // Highlight drop zones (both player zones and grid drop zones)
     playerZones.forEach(zone => zone.classList.add('drag-target'));
+    document.querySelectorAll('.card-drop-zone').forEach(zone => zone.classList.add('drag-target'));
 }
 
 function handleTrayCardDragEnd(e) {
     e.target.classList.remove('dragging');
     playerZones.forEach(zone => zone.classList.remove('drag-target', 'drag-over'));
+    document.querySelectorAll('.card-drop-zone').forEach(zone => zone.classList.remove('drag-target', 'drag-over'));
 }
 
 function setupZoneDropTargets() {
+    // Setup player zones (for poker layout)
     playerZones.forEach(zone => {
         zone.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -934,8 +937,8 @@ function setupZoneDropTargets() {
         zone.addEventListener('drop', (e) => handleZoneDrop(e, zone));
     });
 
-    // Note: Removed cardArea and pokerTable drop handlers
-    // Cards can only be dropped into defined zones (player zones + community zone)
+    // Setup grid drop zones (for grid layout) - handled dynamically in renderCardDropZones
+    // Note: Grid zones are created dynamically when entering setup mode
 }
 
 function handleZoneDrop(e, zone) {
@@ -2844,6 +2847,7 @@ function renderCardDropZones() {
         zone.className = 'card-drop-zone';
         zone.dataset.placeId = place.id;
         zone.dataset.zone = `grid-${place.id}`;
+        zone.dataset.rotation = '0';
 
         // Position relative to gameContainer
         zone.style.left = `${offsetX + place.x - CARD_WIDTH / 2}px`;
@@ -2859,6 +2863,19 @@ function renderCardDropZones() {
         const cardsContainer = document.createElement('div');
         cardsContainer.className = 'zone-cards';
         zone.appendChild(cardsContainer);
+
+        // Add drop event handlers
+        zone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            zone.classList.add('drag-over');
+        });
+
+        zone.addEventListener('dragleave', () => {
+            zone.classList.remove('drag-over');
+        });
+
+        zone.addEventListener('drop', (e) => handleZoneDrop(e, zone));
 
         gameContainer.appendChild(zone);
     });
