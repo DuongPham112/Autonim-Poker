@@ -420,6 +420,29 @@ body {
     color: var(--accent-green);
 }
 
+/* Grid Flip Controls */
+.grid-flip-controls {
+    display: flex;
+    gap: 8px;
+    margin-left: 15px;
+    padding-left: 15px;
+    border-left: 1px solid var(--border-color);
+}
+
+.grid-flip-controls.hidden {
+    display: none;
+}
+
+.grid-flip-controls .btn-xs {
+    padding: 4px 8px;
+    font-size: 10px;
+}
+
+/* Hide poker controls when in grid mode */
+.zone-flip-controls.hidden {
+    display: none;
+}
+
 .overlap-control {
     display: flex;
     align-items: center;

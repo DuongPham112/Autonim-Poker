@@ -114,6 +114,10 @@ let presetName, savePresetBtn, cardPlacesList;
 
 // Board Layout Info (for setup/record phases)
 let boardLayoutInfo, currentLayoutName, editLayoutBtn;
+
+// Flip Controls
+let pokerFlipControls, gridFlipControls;
+let flipAllFaceUp, flipAllFaceDown, gridDefaultFaceUp;
 let overlapSlider, overlapValue;
 
 // Player Zones
@@ -272,6 +276,13 @@ function getDOMElements() {
     currentLayoutName = document.getElementById('currentLayoutName');
     editLayoutBtn = document.getElementById('editLayoutBtn');
 
+    // Flip Controls
+    pokerFlipControls = document.getElementById('pokerFlipControls');
+    gridFlipControls = document.getElementById('gridFlipControls');
+    flipAllFaceUp = document.getElementById('flipAllFaceUp');
+    flipAllFaceDown = document.getElementById('flipAllFaceDown');
+    gridDefaultFaceUp = document.getElementById('gridDefaultFaceUp');
+
     // Player Zones
     zoneTop = document.getElementById('zoneTop');
     zoneBottom = document.getElementById('zoneBottom');
@@ -368,10 +379,14 @@ function bindEvents() {
     resetTableBtn.addEventListener('click', handleResetTable);
     overlapSlider.addEventListener('input', handleOverlapChange);
 
-    // Per-zone flip controls
-    document.querySelectorAll('.zone-flip-controls input[type="checkbox"]').forEach(checkbox => {
+    // Per-zone flip controls (Poker layout)
+    document.querySelectorAll('#pokerFlipControls input[type="checkbox"]').forEach(checkbox => {
         checkbox.addEventListener('change', handleZoneFlipChange);
     });
+
+    // Grid flip controls
+    if (flipAllFaceUp) flipAllFaceUp.addEventListener('click', () => handleFlipAllCards(true));
+    if (flipAllFaceDown) flipAllFaceDown.addEventListener('click', () => handleFlipAllCards(false));
 
     // Assets folder
     selectAssetsFolderBtn.addEventListener('click', handleSelectAssetsFolder);
@@ -533,6 +548,50 @@ function updateLayoutInfoDisplay() {
     if (currentLayoutName) {
         currentLayoutName.textContent = appState.boardLayout.name || 'Poker (4 Players)';
     }
+
+    // Toggle flip controls visibility based on layout type
+    updateFlipControlsVisibility();
+}
+
+/**
+ * Update flip controls visibility based on board layout type
+ */
+function updateFlipControlsVisibility() {
+    if (appState.boardLayout.type === 'grid') {
+        // Show grid controls, hide poker controls
+        if (pokerFlipControls) pokerFlipControls.classList.add('hidden');
+        if (gridFlipControls) gridFlipControls.classList.remove('hidden');
+    } else {
+        // Show poker controls, hide grid controls
+        if (pokerFlipControls) pokerFlipControls.classList.remove('hidden');
+        if (gridFlipControls) gridFlipControls.classList.add('hidden');
+    }
+}
+
+/**
+ * Flip all table cards face up or face down
+ */
+function handleFlipAllCards(faceUp) {
+    appState.tableCards.forEach(card => {
+        card.isFaceUp = faceUp;
+        // Update visual representation
+        const cardEl = document.querySelector(`.card[data-card-id="${card.id}"]`);
+        if (cardEl) {
+            if (faceUp) {
+                cardEl.classList.add('face-up');
+            } else {
+                cardEl.classList.remove('face-up');
+            }
+            // Update card image
+            const img = cardEl.querySelector('img');
+            if (img) {
+                img.src = faceUp ? (card.frontImageUrl || '') : (card.backImageUrl || '');
+            }
+        }
+    });
+
+    setStatus(faceUp ? 'All cards flipped face up' : 'All cards flipped face down');
+    updateUI();
 }
 
 // ============================================
@@ -1068,9 +1127,15 @@ function placeCardInZone(card, zoneName, rotation, zoneElement) {
     card.zone = zoneName;
     card.rotation = rotation;
 
-    // Check if zone should show face-up (based on checkbox)
-    const flipCheckbox = document.querySelector(`#flip${zoneName.charAt(0).toUpperCase() + zoneName.slice(1)}`);
-    card.isFaceUp = flipCheckbox ? flipCheckbox.checked : false;
+    // Determine face up/down state based on layout type
+    if (zoneName.startsWith('grid-')) {
+        // Grid layout: use gridDefaultFaceUp checkbox
+        card.isFaceUp = gridDefaultFaceUp ? gridDefaultFaceUp.checked : false;
+    } else {
+        // Poker layout: use zone-specific checkbox
+        const flipCheckbox = document.querySelector(`#flip${zoneName.charAt(0).toUpperCase() + zoneName.slice(1)}`);
+        card.isFaceUp = flipCheckbox ? flipCheckbox.checked : false;
+    }
 
     // Get existing cards in zone
     const zoneCards = appState.tableCards.filter(c => c.zone === zoneName);

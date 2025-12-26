@@ -88,8 +88,8 @@
                         <span class="separator">|</span>
                         <span id="stepCount">Steps: 0</span>
                     </div>
-                    <!-- Per-zone flip toggles -->
-                    <div class="zone-flip-controls">
+                    <!-- Per-zone flip toggles (for Poker layout) -->
+                    <div class="zone-flip-controls" id="pokerFlipControls">
                         <label class="flip-toggle" title="Flip cards face-up for Player 1">
                             <input type="checkbox" id="flipTop" data-zone="top"> Top
                         </label>
@@ -101,6 +101,18 @@
                         </label>
                         <label class="flip-toggle" title="Flip cards face-up for Player 2">
                             <input type="checkbox" id="flipRight" data-zone="right"> Right
+                        </label>
+                    </div>
+                    <!-- Grid flip controls (for Grid layout) -->
+                    <div class="grid-flip-controls hidden" id="gridFlipControls">
+                        <button id="flipAllFaceUp" class="btn btn-xs" title="All cards face up">
+                            🔼 Face Up
+                        </button>
+                        <button id="flipAllFaceDown" class="btn btn-xs" title="All cards face down">
+                            🔽 Face Down
+                        </button>
+                        <label class="flip-toggle" title="Default flip state for new cards">
+                            <input type="checkbox" id="gridDefaultFaceUp"> Default: Up
                         </label>
                     </div>
                 </div>
