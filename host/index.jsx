@@ -61,6 +61,13 @@ var CARD_HEIGHT = 112;  // Base height
 var SLAM_OVERSHOOT_SCALE = 130;  // 130% of original
 var SLAM_DURATION_FRAMES = 5;    // 5 frames for slam bounce
 
+// Folder organization
+var FOLDER_CARD_IMG = "Card_IMG";
+var FOLDER_COMP = "Comp";
+
+// Session tracking for unique naming
+var sessionFolders = {}; // Store created folder references for current session
+
 // ============================================
 // MAIN ENTRY POINT
 // ============================================
@@ -93,13 +100,23 @@ function generateSequence(jsonString, assetsRootPath) {
         // Start undo group
         app.beginUndoGroup("Autonim-Poker: Generate Sequence");
 
+        // Setup folder organization
+        // Get board type from data (default to 'poker')
+        var boardType = data.boardType || "poker";
+        var folderInfo = setupProjectFolders(boardType);
+
+        // Store folder info for use in other functions
+        sessionFolders = folderInfo;
+
         // Calculate total duration from scenario
         var totalDuration = calculateTotalDuration(data.scenario);
         totalDuration = Math.max(totalDuration + 0.5, 2.0); // Add buffer, minimum 2 seconds
 
-        // Create new composition
-        var timestamp = new Date().getTime();
-        var compName = "Poker_Render_" + timestamp;
+        // Create new composition with organized naming
+        // Name format: PokerBoard_01, GridBoard_01, etc.
+        var boardTypeName = boardType.charAt(0).toUpperCase() + boardType.slice(1);
+        var compName = boardTypeName + "Board_" + folderInfo.sessionId.split("_")[1];
+
         var comp = app.project.items.addComp(
             compName,
             data.projectInfo.width || COMP_WIDTH,
@@ -109,11 +126,13 @@ function generateSequence(jsonString, assetsRootPath) {
             data.projectInfo.fps || FRAME_RATE
         );
 
+        // Main comp stays at root (not in folder) for easy access
+
         // Store layer references by ID
         var layerMap = {};
 
-        // Setup initial scene state (Create Pre-Comps)
-        var setupResult = setupInitialScene(comp, data.initialState, assetsRootPath, layerMap);
+        // Setup initial scene state (Create Pre-Comps in organized folders)
+        var setupResult = setupInitialScene(comp, data.initialState, assetsRootPath, layerMap, folderInfo);
         if (!setupResult.success) {
             app.endUndoGroup();
             return createErrorResponse(setupResult.message);
@@ -162,9 +181,10 @@ function generateSequence(jsonString, assetsRootPath) {
  * @param {object} initialState - Initial state data from JSON
  * @param {string} assetsRootPath - Root path for assets
  * @param {object} layerMap - Object to store layer references by ID
+ * @param {object} folderInfo - Folder organization info
  * @returns {object} Result with success status
  */
-function setupInitialScene(comp, initialState, assetsRootPath, layerMap) {
+function setupInitialScene(comp, initialState, assetsRootPath, layerMap, folderInfo) {
     var layerIndex = 1;
     var importErrors = [];
 
@@ -176,7 +196,7 @@ function setupInitialScene(comp, initialState, assetsRootPath, layerMap) {
 
         try {
             // Create Pre-Comp for this card (contains Front and Back layers)
-            layer = createCardPrecomp(comp, assetId, assetInfo, assetsRootPath);
+            layer = createCardPrecomp(comp, assetId, assetInfo, assetsRootPath, folderInfo);
 
             if (!layer) {
                 importErrors.push(assetId + " (failed to create pre-comp)");
@@ -208,9 +228,10 @@ function setupInitialScene(comp, initialState, assetsRootPath, layerMap) {
  * @param {string} cardId - Unique Card ID
  * @param {object} cardInfo - Card info structure
  * @param {string} assetsPath - Assets root path
+ * @param {object} folderInfo - Folder organization info
  * @returns {Layer} The layer instance of the pre-comp in the main comp
  */
-function createCardPrecomp(mainComp, cardId, cardInfo, assetsPath) {
+function createCardPrecomp(mainComp, cardId, cardInfo, assetsPath, folderInfo) {
     // 1. Create the Pre-Comp
     var preCompName = "Card_" + cardInfo.name + "_" + cardId.split("-")[1]; // Add index to name unique
     var cardWidth = CARD_WIDTH;
@@ -225,6 +246,11 @@ function createCardPrecomp(mainComp, cardId, cardInfo, assetsPath) {
         mainComp.duration,
         mainComp.frameRate
     );
+
+    // Move pre-comp to Comp folder
+    if (folderInfo && folderInfo.compFolder) {
+        preComp.parentFolder = folderInfo.compFolder;
+    }
 
     // 2. Import Front Image
     var frontLayer = importAndAddLayer(preComp, cardInfo.filename, assetsPath, "Front");
@@ -279,6 +305,12 @@ function importAndAddLayer(comp, filename, rootPath, layerName) {
 
     var importOptions = new ImportOptions(file);
     var footage = app.project.importFile(importOptions);
+
+    // Move footage to Card_IMG folder
+    if (sessionFolders && sessionFolders.cardImgFolder) {
+        footage.parentFolder = sessionFolders.cardImgFolder;
+    }
+
     var layer = comp.layers.add(footage);
     layer.name = layerName;
 
@@ -588,6 +620,93 @@ function calculateTotalDuration(scenario) {
         total += scenario[i].duration || 1.0;
     }
     return total;
+}
+
+// ============================================
+// FOLDER ORGANIZATION FUNCTIONS
+// ============================================
+
+/**
+ * Get or create a folder in the project
+ * @param {string} folderName - Name of the folder
+ * @param {FolderItem} parentFolder - Optional parent folder (null for root)
+ * @returns {FolderItem} The folder item
+ */
+function getOrCreateFolder(folderName, parentFolder) {
+    // Search for existing folder
+    for (var i = 1; i <= app.project.numItems; i++) {
+        var item = app.project.item(i);
+        if (item instanceof FolderItem && item.name === folderName) {
+            // Check parent match
+            if (parentFolder === null && item.parentFolder === app.project.rootFolder) {
+                return item;
+            } else if (parentFolder && item.parentFolder === parentFolder) {
+                return item;
+            }
+        }
+    }
+
+    // Create new folder
+    var newFolder = app.project.items.addFolder(folderName);
+    if (parentFolder) {
+        newFolder.parentFolder = parentFolder;
+    }
+    return newFolder;
+}
+
+/**
+ * Generate unique session ID based on board type
+ * @param {string} boardType - Type of board (poker, grid, etc.)
+ * @returns {string} Session ID like "poker_01", "poker_02", etc.
+ */
+function generateSessionId(boardType) {
+    var baseName = boardType || "poker";
+    var counter = 1;
+
+    // Find existing folders with this prefix to determine next number
+    var cardImgFolder = getOrCreateFolder(FOLDER_CARD_IMG, null);
+
+    for (var i = 1; i <= app.project.numItems; i++) {
+        var item = app.project.item(i);
+        if (item instanceof FolderItem && item.parentFolder === cardImgFolder) {
+            // Check if name matches pattern: baseName_XX
+            var name = item.name;
+            if (name.indexOf(baseName + "_") === 0) {
+                var numPart = name.substring((baseName + "_").length);
+                var num = parseInt(numPart, 10);
+                if (!isNaN(num) && num >= counter) {
+                    counter = num + 1;
+                }
+            }
+        }
+    }
+
+    // Format with leading zero
+    var numStr = counter < 10 ? "0" + counter : "" + counter;
+    return baseName + "_" + numStr;
+}
+
+/**
+ * Setup project folders for a new session
+ * @param {string} boardType - Type of board layout
+ * @returns {object} Object containing folder references and session info
+ */
+function setupProjectFolders(boardType) {
+    var sessionId = generateSessionId(boardType);
+
+    // Create main folders if not exist
+    var cardImgFolder = getOrCreateFolder(FOLDER_CARD_IMG, null);
+    var compFolder = getOrCreateFolder(FOLDER_COMP, null);
+
+    // Create session subfolders
+    var sessionCardImgFolder = getOrCreateFolder(sessionId, cardImgFolder);
+    var sessionCompFolder = getOrCreateFolder(sessionId, compFolder);
+
+    return {
+        sessionId: sessionId,
+        cardImgFolder: sessionCardImgFolder,
+        compFolder: sessionCompFolder
+    };
 }
 
 function normalizeAssetPath(path) {

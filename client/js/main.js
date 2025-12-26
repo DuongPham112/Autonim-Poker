@@ -2046,7 +2046,8 @@ function handleExportToAE() {
     // Use export version with AE-calculated positions
     const exportData = {
         ...scenarioData,
-        initialState: saveInitialStateForExport()
+        initialState: saveInitialStateForExport(),
+        boardType: appState.boardLayout.type || 'poker'
     };
 
     setStatus('Sending to After Effects...', 'recording');
