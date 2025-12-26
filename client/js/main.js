@@ -2271,6 +2271,10 @@ function replayNextStep() {
     if (targetSnapshot) {
         debugLog('Animating step from snapshot', currentReplayStep);
 
+        // IMPORTANT: First restore cards to previous snapshot position
+        // This ensures correct start positions on subsequent replays
+        restoreFromSnapshot(prevSnapshot);
+
         // Find cards that changed position (zone changed)
         const movingCards = [];
         Object.entries(targetSnapshot).forEach(([cardId, targetState]) => {
@@ -2288,14 +2292,16 @@ function replayNextStep() {
         debugLog('Moving cards:', movingCards.length);
 
         if (movingCards.length > 0) {
-            // Animate cards sequentially
-            animateCardsSequentially(movingCards, targetSnapshot, () => {
-                currentReplayStep++;
-                // Schedule next step
-                const duration = (step.duration || 1) * 1000;
-                debugLog('Scheduling next step in', duration, 'ms');
-                replayTimer = setTimeout(() => replayNextStep(), duration);
-            });
+            // Small delay to let DOM settle after restore, then animate
+            setTimeout(() => {
+                animateCardsSequentially(movingCards, targetSnapshot, () => {
+                    currentReplayStep++;
+                    // Schedule next step
+                    const duration = (step.duration || 1) * 1000;
+                    debugLog('Scheduling next step in', duration, 'ms');
+                    replayTimer = setTimeout(() => replayNextStep(), duration);
+                });
+            }, 50);
         } else {
             // No movement, just restore and continue
             restoreFromSnapshot(targetSnapshot);
