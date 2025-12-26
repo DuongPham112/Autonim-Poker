@@ -111,6 +111,9 @@ let boardSettingSection, presetSelect, loadPresetBtn;
 let gridCols, gridRows, applyGridBtn;
 let addCardPlaceBtn, clearBoardBtn;
 let presetName, savePresetBtn, cardPlacesList;
+
+// Board Layout Info (for setup/record phases)
+let boardLayoutInfo, currentLayoutName, editLayoutBtn;
 let overlapSlider, overlapValue;
 
 // Player Zones
@@ -264,6 +267,11 @@ function getDOMElements() {
     savePresetBtn = document.getElementById('savePresetBtn');
     cardPlacesList = document.getElementById('cardPlacesList');
 
+    // Board Layout Info
+    boardLayoutInfo = document.getElementById('boardLayoutInfo');
+    currentLayoutName = document.getElementById('currentLayoutName');
+    editLayoutBtn = document.getElementById('editLayoutBtn');
+
     // Player Zones
     zoneTop = document.getElementById('zoneTop');
     zoneBottom = document.getElementById('zoneBottom');
@@ -352,6 +360,9 @@ function bindEvents() {
     if (addCardPlaceBtn) addCardPlaceBtn.addEventListener('click', handleAddCardPlace);
     if (clearBoardBtn) clearBoardBtn.addEventListener('click', handleClearBoard);
     if (savePresetBtn) savePresetBtn.addEventListener('click', handleSavePreset);
+
+    // Edit Layout button (in setup/record mode)
+    if (editLayoutBtn) editLayoutBtn.addEventListener('click', () => setPhase('board-setting'));
 
     // Table controls
     resetTableBtn.addEventListener('click', handleResetTable);
@@ -448,6 +459,7 @@ function setPhase(phase) {
 
     // Hide all phase-specific sections
     if (boardSettingSection) boardSettingSection.classList.remove('visible');
+    if (boardLayoutInfo) boardLayoutInfo.classList.remove('visible');
     if (stepControlsSection) stepControlsSection.classList.add('hidden');
     gameContainer.classList.remove('board-setting-mode');
     // Note: Don't remove grid-mode here - preserve it across phases
@@ -473,6 +485,10 @@ function setPhase(phase) {
         setupPhaseBtn.classList.add('active');
         modeBadge.textContent = 'SETUP';
 
+        // Show board layout info
+        if (boardLayoutInfo) boardLayoutInfo.classList.add('visible');
+        updateLayoutInfoDisplay();
+
         // Clear card place markers (keep the layout data and grid-mode)
         clearCardPlaceMarkers();
 
@@ -488,6 +504,10 @@ function setPhase(phase) {
         modeBadge.classList.add('recording');
         if (stepControlsSection) stepControlsSection.classList.remove('hidden');
 
+        // Show board layout info
+        if (boardLayoutInfo) boardLayoutInfo.classList.add('visible');
+        updateLayoutInfoDisplay();
+
         // Clear card place markers
         clearCardPlaceMarkers();
 
@@ -502,6 +522,15 @@ function setPhase(phase) {
     }
 
     updateUI();
+}
+
+/**
+ * Update the layout info display in setup/record modes
+ */
+function updateLayoutInfoDisplay() {
+    if (currentLayoutName) {
+        currentLayoutName.textContent = appState.boardLayout.name || 'Poker (4 Players)';
+    }
 }
 
 // ============================================

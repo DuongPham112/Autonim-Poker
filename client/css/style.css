@@ -1515,6 +1515,28 @@ body {
    BOARD SETTING MODE
    ============================================ */
 
+/* Board Layout Info (visible in setup/record) */
+.board-layout-info {
+    display: none;
+}
+
+.board-layout-info.visible {
+    display: block;
+}
+
+.layout-info-display {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+}
+
+.layout-info-display .layout-name {
+    font-weight: 600;
+    color: var(--accent-green);
+}
+
 /* Board Setting Section */
 .board-setting-controls {
     display: none;
