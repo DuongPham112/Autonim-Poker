@@ -449,7 +449,8 @@ function setPhase(phase) {
     // Hide all phase-specific sections
     if (boardSettingSection) boardSettingSection.classList.remove('visible');
     if (stepControlsSection) stepControlsSection.classList.add('hidden');
-    gameContainer.classList.remove('board-setting-mode', 'grid-mode');
+    gameContainer.classList.remove('board-setting-mode');
+    // Note: Don't remove grid-mode here - preserve it across phases
 
     if (phase === 'board-setting') {
         boardSettingBtn.classList.add('active');
@@ -461,6 +462,8 @@ function setPhase(phase) {
         // Add grid-mode if layout type is grid
         if (appState.boardLayout.type === 'grid') {
             gameContainer.classList.add('grid-mode');
+        } else {
+            gameContainer.classList.remove('grid-mode');
         }
 
         // Render card place markers
@@ -470,8 +473,14 @@ function setPhase(phase) {
         setupPhaseBtn.classList.add('active');
         modeBadge.textContent = 'SETUP';
 
-        // Clear card place markers (keep the layout data)
+        // Clear card place markers (keep the layout data and grid-mode)
         clearCardPlaceMarkers();
+
+        // Keep grid-mode if layout is grid type
+        if (appState.boardLayout.type === 'grid') {
+            gameContainer.classList.add('grid-mode');
+        }
+
         setStatus('Setup - Drag cards to the table');
     } else if (phase === 'record') {
         recordPhaseBtn.classList.add('active');
@@ -481,6 +490,11 @@ function setPhase(phase) {
 
         // Clear card place markers
         clearCardPlaceMarkers();
+
+        // Keep grid-mode if layout is grid type
+        if (appState.boardLayout.type === 'grid') {
+            gameContainer.classList.add('grid-mode');
+        }
 
         // Save initial state when entering record phase
         saveInitialState();
@@ -2556,14 +2570,17 @@ function loadPokerLayout() {
  */
 function loadGridLayout(cols, rows) {
     const places = [];
-    const containerWidth = gameContainer.offsetWidth || 800;
-    const containerHeight = gameContainer.offsetHeight || 450;
 
-    // Calculate spacing based on card dimensions and container size
+    // Use pokerTable dimensions (same reference as drag handler)
+    const pokerTable = document.getElementById('pokerTable');
+    const tableWidth = pokerTable ? pokerTable.offsetWidth : 600;
+    const tableHeight = pokerTable ? pokerTable.offsetHeight : 400;
+
+    // Calculate spacing based on card dimensions and table size
     const spacingX = 80;
     const spacingY = 100;
-    const startX = (containerWidth - (cols * spacingX)) / 2 + CARD_WIDTH / 2;
-    const startY = (containerHeight - (rows * spacingY)) / 2 + CARD_HEIGHT / 2;
+    const startX = (tableWidth - (cols * spacingX)) / 2 + CARD_WIDTH / 2;
+    const startY = (tableHeight - (rows * spacingY)) / 2 + CARD_HEIGHT / 2;
 
     let placeId = 0;
     for (let row = 0; row < rows; row++) {
