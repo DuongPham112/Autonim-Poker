@@ -2280,6 +2280,10 @@ function restoreToInitialState() {
         const container = zone.querySelector('.zone-cards');
         if (container) container.innerHTML = '';
     });
+    // Also clear grid drop zones
+    document.querySelectorAll('.card-drop-zone .zone-cards').forEach(container => {
+        container.innerHTML = '';
+    });
     cardArea.innerHTML = '';
 
     // Apply initial state to all cards
@@ -2312,8 +2316,8 @@ function restoreToInitialState() {
     sortedCards.forEach(card => {
         try {
             if (card.zone && card.zone !== 'table') {
-                // Use specific selectors to target zone divs, not checkboxes
-                const zoneElement = document.querySelector(`.player-zone[data-zone="${card.zone}"], .community-zone[data-zone="${card.zone}"]`);
+                // Use specific selectors to target zone divs (including grid drop zones)
+                const zoneElement = document.querySelector(`.player-zone[data-zone="${card.zone}"], .community-zone[data-zone="${card.zone}"], .card-drop-zone[data-zone="${card.zone}"]`);
                 debugLog(`Creating zone card ${card.id} in zone ${card.zone}, element found:`, !!zoneElement);
                 if (zoneElement) {
                     createZoneCardElement(card, zoneElement);
@@ -2436,6 +2440,10 @@ function restoreFromSnapshot(snapshot) {
         const container = zone.querySelector('.zone-cards');
         if (container) container.innerHTML = '';
     });
+    // Also clear grid drop zones
+    document.querySelectorAll('.card-drop-zone .zone-cards').forEach(container => {
+        container.innerHTML = '';
+    });
     cardArea.innerHTML = '';
 
     // Restore each card to its saved state
@@ -2470,8 +2478,8 @@ function restoreFromSnapshot(snapshot) {
 
     sortedCards.forEach(card => {
         if (card.zone && card.zone !== 'table') {
-            // Use specific selectors to target zone divs, not checkboxes
-            const zoneElement = document.querySelector(`.player-zone[data-zone="${card.zone}"], .community-zone[data-zone="${card.zone}"]`);
+            // Use specific selectors to target zone divs (including grid drop zones)
+            const zoneElement = document.querySelector(`.player-zone[data-zone="${card.zone}"], .community-zone[data-zone="${card.zone}"], .card-drop-zone[data-zone="${card.zone}"]`);
             debugLog(`Creating zone card ${card.id} in zone ${card.zone}, element found:`, !!zoneElement);
             if (zoneElement) {
                 createZoneCardElement(card, zoneElement);
