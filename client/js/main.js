@@ -1760,6 +1760,10 @@ function saveInitialState() {
     // Reset step snapshots when entering record mode
     stepSnapshots = [];
 
+    // Save initial state as stepSnapshots[0] - this is "step 0" (before any actions)
+    // This ensures replay can properly reset to initial positions on subsequent plays
+    stepSnapshots.push(JSON.parse(JSON.stringify(scenarioData.initialState)));
+
     console.log('Initial state saved:', scenarioData.initialState);
 }
 
@@ -2265,8 +2269,9 @@ function replayNextStep() {
     replayProgress.textContent = `Step ${currentReplayStep + 1}/${scenarioData.scenario.length}`;
 
     // Get previous snapshot for start positions
-    const prevSnapshot = currentReplayStep > 0 ? stepSnapshots[currentReplayStep - 1] : scenarioData.initialState;
-    const targetSnapshot = stepSnapshots[currentReplayStep];
+    // stepSnapshots[0] = initial state, stepSnapshots[1] = after step 1, etc.
+    const prevSnapshot = stepSnapshots[currentReplayStep];  // Start position
+    const targetSnapshot = stepSnapshots[currentReplayStep + 1];  // End position
 
     if (targetSnapshot) {
         debugLog('Animating step from snapshot', currentReplayStep);
