@@ -52,7 +52,7 @@ const SUITS = ['spades', 'hearts', 'diamonds', 'clubs'];
 
 // Application State
 const appState = {
-    phase: 'setup',               // 'setup' or 'record'
+    phase: 'setup',               // 'board-setting', 'setup' or 'record'
     deckPath: null,               // Path to deck folder
     assetsRootPath: null,         // Assets folder for AE
     backImagePath: null,          // Path to back.png
@@ -69,7 +69,17 @@ const appState = {
     currentStepIndex: -1,
 
     // Settings
-    cardOverlap: 25               // Overlap in pixels
+    cardOverlap: 25,              // Overlap in pixels
+
+    // Board Layout
+    boardLayout: {
+        type: 'poker',            // 'poker' or 'grid'
+        name: 'Poker (4 Players)',
+        gridCols: 4,
+        gridRows: 3,
+        cardPlaces: []            // For grid mode: [{id, x, y, label}, ...]
+    },
+    selectedCardPlace: null       // Currently selected card place marker
 };
 
 // Scenario Data (for export)
@@ -93,8 +103,14 @@ let suitFilterBtns;
 
 // Main Content
 let gameContainer, cardArea, tableInstructions;
-let setupPhaseBtn, recordPhaseBtn, recordingIndicator, modeBadge;
+let boardSettingBtn, setupPhaseBtn, recordPhaseBtn, recordingIndicator, modeBadge;
 let flipAllBtn, resetTableBtn, tableCardCount, stepCount;
+
+// Board Setting Controls
+let boardSettingSection, presetSelect, loadPresetBtn;
+let gridCols, gridRows, applyGridBtn;
+let addCardPlaceBtn, clearBoardBtn;
+let presetName, savePresetBtn, cardPlacesList;
 let overlapSlider, overlapValue;
 
 // Player Zones
@@ -223,6 +239,7 @@ function getDOMElements() {
     gameContainer = document.getElementById('gameContainer');
     cardArea = document.getElementById('cardArea');
     tableInstructions = document.getElementById('tableInstructions');
+    boardSettingBtn = document.getElementById('boardSettingBtn');
     setupPhaseBtn = document.getElementById('setupPhaseBtn');
     recordPhaseBtn = document.getElementById('recordPhaseBtn');
     recordingIndicator = document.getElementById('recordingIndicator');
@@ -233,6 +250,19 @@ function getDOMElements() {
     stepCount = document.getElementById('stepCount');
     overlapSlider = document.getElementById('overlapSlider');
     overlapValue = document.getElementById('overlapValue');
+
+    // Board Setting Controls
+    boardSettingSection = document.getElementById('boardSettingSection');
+    presetSelect = document.getElementById('presetSelect');
+    loadPresetBtn = document.getElementById('loadPresetBtn');
+    gridCols = document.getElementById('gridCols');
+    gridRows = document.getElementById('gridRows');
+    applyGridBtn = document.getElementById('applyGridBtn');
+    addCardPlaceBtn = document.getElementById('addCardPlaceBtn');
+    clearBoardBtn = document.getElementById('clearBoardBtn');
+    presetName = document.getElementById('presetName');
+    savePresetBtn = document.getElementById('savePresetBtn');
+    cardPlacesList = document.getElementById('cardPlacesList');
 
     // Player Zones
     zoneTop = document.getElementById('zoneTop');
@@ -312,8 +342,16 @@ function bindEvents() {
     });
 
     // Phase switching
+    boardSettingBtn.addEventListener('click', () => setPhase('board-setting'));
     setupPhaseBtn.addEventListener('click', () => setPhase('setup'));
     recordPhaseBtn.addEventListener('click', () => setPhase('record'));
+
+    // Board Setting Controls
+    if (loadPresetBtn) loadPresetBtn.addEventListener('click', handleLoadPreset);
+    if (applyGridBtn) applyGridBtn.addEventListener('click', handleApplyGrid);
+    if (addCardPlaceBtn) addCardPlaceBtn.addEventListener('click', handleAddCardPlace);
+    if (clearBoardBtn) clearBoardBtn.addEventListener('click', handleClearBoard);
+    if (savePresetBtn) savePresetBtn.addEventListener('click', handleSavePreset);
 
     // Table controls
     resetTableBtn.addEventListener('click', handleResetTable);
@@ -402,21 +440,51 @@ function bindEvents() {
 function setPhase(phase) {
     appState.phase = phase;
 
-    if (phase === 'setup') {
+    // Reset all phase button states
+    boardSettingBtn.classList.remove('active');
+    setupPhaseBtn.classList.remove('active');
+    recordPhaseBtn.classList.remove('active');
+    modeBadge.classList.remove('recording', 'board-setting');
+
+    // Hide all phase-specific sections
+    if (boardSettingSection) boardSettingSection.classList.remove('visible');
+    if (stepControlsSection) stepControlsSection.classList.add('hidden');
+    gameContainer.classList.remove('board-setting-mode', 'grid-mode');
+
+    if (phase === 'board-setting') {
+        boardSettingBtn.classList.add('active');
+        modeBadge.textContent = 'BOARD';
+        modeBadge.classList.add('board-setting');
+        if (boardSettingSection) boardSettingSection.classList.add('visible');
+        gameContainer.classList.add('board-setting-mode');
+
+        // Add grid-mode if layout type is grid
+        if (appState.boardLayout.type === 'grid') {
+            gameContainer.classList.add('grid-mode');
+        }
+
+        // Render card place markers
+        renderCardPlaceMarkers();
+        setStatus('Board Setting - Customize card positions');
+    } else if (phase === 'setup') {
         setupPhaseBtn.classList.add('active');
-        recordPhaseBtn.classList.remove('active');
         modeBadge.textContent = 'SETUP';
-        modeBadge.classList.remove('recording');
-        stepControlsSection.classList.add('hidden');
-    } else {
+
+        // Clear card place markers (keep the layout data)
+        clearCardPlaceMarkers();
+        setStatus('Setup - Drag cards to the table');
+    } else if (phase === 'record') {
         recordPhaseBtn.classList.add('active');
-        setupPhaseBtn.classList.remove('active');
         modeBadge.textContent = 'RECORD';
         modeBadge.classList.add('recording');
-        stepControlsSection.classList.remove('hidden');
+        if (stepControlsSection) stepControlsSection.classList.remove('hidden');
+
+        // Clear card place markers
+        clearCardPlaceMarkers();
 
         // Save initial state when entering record phase
         saveInitialState();
+        setStatus('Record - Create animation steps');
     }
 
     updateUI();
@@ -2442,4 +2510,342 @@ function toggleCtxSlam() {
     setTimeout(() => {
         hideCardContextMenu();
     }, 300);
+}
+
+// ============================================
+// BOARD SETTING FUNCTIONS
+// ============================================
+
+/**
+ * Load preset from file or predefined presets
+ */
+function handleLoadPreset() {
+    const presetValue = presetSelect.value;
+
+    if (presetValue === 'poker') {
+        loadPokerLayout();
+    } else if (presetValue === 'card-sorting') {
+        loadGridLayout(4, 3);
+    } else if (presetValue === 'custom') {
+        // Keep current custom layout
+        setStatus('Custom layout - modify as needed');
+    }
+
+    updateCardPlacesList();
+    renderCardPlaceMarkers();
+}
+
+/**
+ * Load default poker layout
+ */
+function loadPokerLayout() {
+    appState.boardLayout = {
+        type: 'poker',
+        name: 'Poker (4 Players)',
+        gridCols: 0,
+        gridRows: 0,
+        cardPlaces: []
+    };
+
+    gameContainer.classList.remove('grid-mode');
+    setStatus('Loaded Poker layout (4 player zones + community)');
+}
+
+/**
+ * Load grid layout with specified columns and rows
+ */
+function loadGridLayout(cols, rows) {
+    const places = [];
+    const containerWidth = gameContainer.offsetWidth || 800;
+    const containerHeight = gameContainer.offsetHeight || 450;
+
+    // Calculate spacing based on card dimensions and container size
+    const spacingX = 80;
+    const spacingY = 100;
+    const startX = (containerWidth - (cols * spacingX)) / 2 + CARD_WIDTH / 2;
+    const startY = (containerHeight - (rows * spacingY)) / 2 + CARD_HEIGHT / 2;
+
+    let placeId = 0;
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+            places.push({
+                id: `place-${placeId}`,
+                x: startX + col * spacingX,
+                y: startY + row * spacingY,
+                col: col,
+                row: row,
+                label: String(placeId + 1)
+            });
+            placeId++;
+        }
+    }
+
+    appState.boardLayout = {
+        type: 'grid',
+        name: `Card Sorting (${cols}x${rows})`,
+        gridCols: cols,
+        gridRows: rows,
+        cardPlaces: places
+    };
+
+    gameContainer.classList.add('grid-mode');
+    setStatus(`Loaded ${cols}x${rows} grid layout`);
+}
+
+/**
+ * Apply grid size from input fields
+ */
+function handleApplyGrid() {
+    const cols = parseInt(gridCols.value) || 4;
+    const rows = parseInt(gridRows.value) || 3;
+
+    loadGridLayout(cols, rows);
+    updateCardPlacesList();
+    renderCardPlaceMarkers();
+}
+
+/**
+ * Add a single card place at center
+ */
+function handleAddCardPlace() {
+    const containerWidth = gameContainer.offsetWidth || 800;
+    const containerHeight = gameContainer.offsetHeight || 450;
+
+    const newId = appState.boardLayout.cardPlaces.length;
+    const newPlace = {
+        id: `place-${newId}`,
+        x: containerWidth / 2,
+        y: containerHeight / 2,
+        label: String(newId + 1)
+    };
+
+    appState.boardLayout.cardPlaces.push(newPlace);
+    appState.boardLayout.type = 'grid';
+
+    updateCardPlacesList();
+    renderCardPlaceMarkers();
+    setStatus(`Added card place #${newId + 1}`);
+}
+
+/**
+ * Clear all card places
+ */
+function handleClearBoard() {
+    appState.boardLayout.cardPlaces = [];
+    updateCardPlacesList();
+    renderCardPlaceMarkers();
+    setStatus('Cleared all card places');
+}
+
+/**
+ * Save current layout as preset JSON
+ */
+function handleSavePreset() {
+    const name = presetName.value.trim() || 'Custom Layout';
+
+    const presetData = {
+        name: name,
+        type: appState.boardLayout.type,
+        description: `Saved preset: ${name}`,
+        gridCols: appState.boardLayout.gridCols,
+        gridRows: appState.boardLayout.gridRows,
+        cardPlaces: appState.boardLayout.cardPlaces.map(p => ({
+            id: p.id,
+            x: Math.round(p.x),
+            y: Math.round(p.y),
+            label: p.label
+        }))
+    };
+
+    // Try to save to file system (CEP mode)
+    if (fs && appState.decksFolder) {
+        const presetsFolder = appState.decksFolder.replace('/decks', '/presets');
+        const filename = name.toLowerCase().replace(/\s+/g, '-') + '.json';
+        const filepath = presetsFolder + '/' + filename;
+
+        try {
+            // Ensure presets folder exists
+            if (!fs.existsSync(presetsFolder)) {
+                fs.mkdirSync(presetsFolder, { recursive: true });
+            }
+
+            fs.writeFileSync(filepath, JSON.stringify(presetData, null, 2));
+            setStatus(`Preset saved: ${filename}`, 'success');
+        } catch (e) {
+            console.error('Error saving preset:', e);
+            // Fallback: download as file
+            downloadPresetJSON(presetData, filename);
+        }
+    } else {
+        // Browser mode: download as file
+        const filename = name.toLowerCase().replace(/\s+/g, '-') + '.json';
+        downloadPresetJSON(presetData, filename);
+    }
+}
+
+/**
+ * Download preset as JSON file (browser fallback)
+ */
+function downloadPresetJSON(data, filename) {
+    const jsonStr = JSON.stringify(data, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+
+    URL.revokeObjectURL(url);
+    setStatus(`Preset downloaded: ${filename}`, 'success');
+}
+
+/**
+ * Render card place markers on the game container
+ */
+function renderCardPlaceMarkers() {
+    // Clear existing markers
+    clearCardPlaceMarkers();
+
+    if (appState.boardLayout.type !== 'grid' || appState.boardLayout.cardPlaces.length === 0) {
+        return;
+    }
+
+    const pokerTable = document.getElementById('pokerTable');
+    if (!pokerTable) return;
+
+    appState.boardLayout.cardPlaces.forEach((place, index) => {
+        const marker = document.createElement('div');
+        marker.className = 'card-place-marker';
+        marker.dataset.placeId = place.id;
+        marker.style.left = `${place.x - CARD_WIDTH / 2}px`;
+        marker.style.top = `${place.y - CARD_HEIGHT / 2}px`;
+
+        // Place number
+        const number = document.createElement('span');
+        number.className = 'place-number';
+        number.textContent = place.label || String(index + 1);
+        marker.appendChild(number);
+
+        // Delete button
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'marker-delete';
+        deleteBtn.textContent = '✕';
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteCardPlace(place.id);
+        });
+        marker.appendChild(deleteBtn);
+
+        // Make draggable
+        marker.addEventListener('mousedown', (e) => startDragMarker(e, place, marker));
+
+        // Click to select
+        marker.addEventListener('click', () => selectCardPlace(place, marker));
+
+        pokerTable.appendChild(marker);
+    });
+}
+
+/**
+ * Clear all card place markers from DOM
+ */
+function clearCardPlaceMarkers() {
+    const markers = document.querySelectorAll('.card-place-marker');
+    markers.forEach(m => m.remove());
+}
+
+/**
+ * Delete a card place by ID
+ */
+function deleteCardPlace(placeId) {
+    appState.boardLayout.cardPlaces = appState.boardLayout.cardPlaces.filter(p => p.id !== placeId);
+
+    // Re-label remaining places
+    appState.boardLayout.cardPlaces.forEach((p, idx) => {
+        p.label = String(idx + 1);
+    });
+
+    updateCardPlacesList();
+    renderCardPlaceMarkers();
+    setStatus('Card place deleted');
+}
+
+/**
+ * Select a card place marker
+ */
+function selectCardPlace(place, markerElement) {
+    // Deselect previous
+    document.querySelectorAll('.card-place-marker.selected').forEach(m => m.classList.remove('selected'));
+
+    appState.selectedCardPlace = place;
+    if (markerElement) {
+        markerElement.classList.add('selected');
+    }
+}
+
+/**
+ * Start dragging a marker
+ */
+function startDragMarker(e, place, marker) {
+    if (e.button !== 0) return; // Left click only
+
+    e.preventDefault();
+    marker.classList.add('dragging');
+
+    const pokerTable = document.getElementById('pokerTable');
+    const tableRect = pokerTable.getBoundingClientRect();
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startPlaceX = place.x;
+    const startPlaceY = place.y;
+
+    function onMouseMove(moveE) {
+        const dx = moveE.clientX - startX;
+        const dy = moveE.clientY - startY;
+
+        place.x = Math.max(CARD_WIDTH / 2, Math.min(tableRect.width - CARD_WIDTH / 2, startPlaceX + dx));
+        place.y = Math.max(CARD_HEIGHT / 2, Math.min(tableRect.height - CARD_HEIGHT / 2, startPlaceY + dy));
+
+        marker.style.left = `${place.x - CARD_WIDTH / 2}px`;
+        marker.style.top = `${place.y - CARD_HEIGHT / 2}px`;
+    }
+
+    function onMouseUp() {
+        marker.classList.remove('dragging');
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        updateCardPlacesList();
+    }
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+}
+
+/**
+ * Update the card places list in the director panel
+ */
+function updateCardPlacesList() {
+    if (!cardPlacesList) return;
+
+    const count = appState.boardLayout.cardPlaces.length;
+    cardPlacesList.innerHTML = `<div class="list-header">Card Places (${count})</div>`;
+
+    appState.boardLayout.cardPlaces.forEach((place, index) => {
+        const item = document.createElement('div');
+        item.className = 'card-place-item';
+        item.innerHTML = `
+            <span class="place-label">${place.label || index + 1}</span>
+            <span class="place-coords">(${Math.round(place.x)}, ${Math.round(place.y)})</span>
+            <button class="delete-place-btn" data-place-id="${place.id}">✕</button>
+        `;
+
+        // Delete button handler
+        item.querySelector('.delete-place-btn').addEventListener('click', () => {
+            deleteCardPlace(place.id);
+        });
+
+        cardPlacesList.appendChild(item);
+    });
 }

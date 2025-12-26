@@ -1,0 +1,12 @@
+{
+  "name": "Poker (4 Players)",
+  "type": "poker",
+  "description": "Standard poker layout with 4 player zones and community cards",
+  "zones": [
+    { "id": "top", "type": "player", "label": "Player 1 (Top)", "position": { "x": 50, "y": 8 }},
+    { "id": "bottom", "type": "player", "label": "Player 3 (Bottom)", "position": { "x": 50, "y": 92 }},
+    { "id": "left", "type": "player", "label": "Player 4 (Left)", "position": { "x": 8, "y": 50 }},
+    { "id": "right", "type": "player", "label": "Player 2 (Right)", "position": { "x": 92, "y": 50 }},
+    { "id": "community", "type": "community", "label": "Community Cards", "position": { "x": 50, "y": 50 }}
+  ]
+}

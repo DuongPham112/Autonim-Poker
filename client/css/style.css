@@ -1504,3 +1504,241 @@ body {
     -webkit-user-select: text !important;
     cursor: text;
 }
+
+/* ============================================
+   BOARD SETTING MODE
+   ============================================ */
+
+/* Board Setting Section */
+.board-setting-controls {
+    display: none;
+}
+
+.board-setting-controls.visible {
+    display: block;
+}
+
+/* Preset Selector */
+.preset-selector {
+    display: flex;
+    gap: 8px;
+}
+
+.preset-selector select {
+    flex: 1;
+    padding: 6px 10px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 12px;
+}
+
+/* Grid Controls */
+.grid-controls {
+    margin-top: 10px;
+}
+
+.grid-inputs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 6px 0;
+}
+
+.grid-inputs input[type="number"] {
+    width: 50px;
+    padding: 5px 8px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 12px;
+    text-align: center;
+}
+
+.grid-inputs span {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+/* Board Actions */
+.board-actions {
+    display: flex;
+    gap: 8px;
+    margin: 10px 0;
+}
+
+.board-actions .btn {
+    flex: 1;
+}
+
+/* Save Preset Group */
+.save-preset-group {
+    display: flex;
+    gap: 8px;
+}
+
+.save-preset-group input[type="text"] {
+    flex: 1;
+    padding: 6px 10px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 12px;
+}
+
+/* Card Places List */
+.card-places-list {
+    margin-top: 10px;
+    max-height: 150px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-primary);
+}
+
+.card-places-list .list-header {
+    padding: 8px 10px;
+    background: var(--bg-tertiary);
+    font-size: 11px;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
+    position: sticky;
+    top: 0;
+}
+
+.card-place-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 11px;
+}
+
+.card-place-item:last-child {
+    border-bottom: none;
+}
+
+.card-place-item:hover {
+    background: var(--bg-hover);
+}
+
+.card-place-item .place-label {
+    color: var(--text-primary);
+}
+
+.card-place-item .place-coords {
+    color: var(--text-muted);
+    font-size: 10px;
+}
+
+.card-place-item .delete-place-btn {
+    background: none;
+    border: none;
+    color: var(--accent-red);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 3px;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+}
+
+.card-place-item .delete-place-btn:hover {
+    opacity: 1;
+    background: rgba(241, 76, 76, 0.15);
+}
+
+/* ============================================
+   CARD PLACE MARKERS (on table)
+   ============================================ */
+.card-place-marker {
+    position: absolute;
+    width: var(--card-width);
+    height: var(--card-height);
+    border: 2px dashed rgba(255, 215, 0, 0.5);
+    border-radius: var(--card-radius);
+    background: rgba(255, 215, 0, 0.08);
+    cursor: move;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+/* Only interactive in board-setting mode */
+.game-container.board-setting-mode .card-place-marker {
+    pointer-events: auto;
+}
+
+.card-place-marker:hover {
+    border-color: rgba(255, 215, 0, 0.8);
+    background: rgba(255, 215, 0, 0.15);
+}
+
+.card-place-marker.selected {
+    border-color: var(--accent-blue);
+    border-style: solid;
+    box-shadow: 0 0 10px rgba(14, 99, 156, 0.5);
+}
+
+.card-place-marker.dragging {
+    opacity: 0.7;
+    cursor: grabbing;
+}
+
+.card-place-marker .place-number {
+    font-size: 16px;
+    font-weight: 700;
+    color: rgba(255, 215, 0, 0.7);
+    user-select: none;
+}
+
+/* Delete button on marker */
+.card-place-marker .marker-delete {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 18px;
+    height: 18px;
+    background: var(--accent-red);
+    border: 2px solid var(--bg-primary);
+    border-radius: 50%;
+    color: white;
+    font-size: 10px;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+.card-place-marker:hover .marker-delete,
+.card-place-marker.selected .marker-delete {
+    display: flex;
+}
+
+/* Board Setting Mode Indicator */
+.game-container.board-setting-mode {
+    outline: 2px dashed var(--accent-yellow);
+    outline-offset: -2px;
+}
+
+.game-container.board-setting-mode .poker-table {
+    background: radial-gradient(ellipse at center, #2a4a3a 0%, #1d3d28 70%, #153020 100%);
+}
+
+/* Hide zones in board-setting mode for grid layout */
+.game-container.board-setting-mode.grid-mode .player-zone,
+.game-container.board-setting-mode.grid-mode .community-zone {
+    display: none;
+}
+
+/* Mode Badge variants */
+.mode-badge.board-setting {
+    background: var(--accent-yellow);
+    color: #1a1a1a;
+}

@@ -62,6 +62,7 @@
                 </div>
                 <div class="header-center">
                     <div class="phase-indicator">
+                        <button id="boardSettingBtn" class="phase-btn">⚙️ Board</button>
                         <button id="setupPhaseBtn" class="phase-btn active">📐 Setup</button>
                         <button id="recordPhaseBtn" class="phase-btn">🎬 Record</button>
                     </div>
@@ -215,6 +216,60 @@
                     <div id="assetsPathDisplay" class="assets-path-display">
                         <span class="path-label">Using: default deck</span>
                     </div>
+                </div>
+            </div>
+
+            <!-- Board Setting Section (visible in board-setting phase) -->
+            <div class="director-section board-setting-controls" id="boardSettingSection">
+                <h3>📐 Board Layout</h3>
+
+                <!-- Preset Selection -->
+                <div class="control-group">
+                    <label for="presetSelect">Preset:</label>
+                    <div class="preset-selector">
+                        <select id="presetSelect">
+                            <option value="poker">Poker (4 Players)</option>
+                            <option value="card-sorting">Card Sorting (4x3)</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        <button id="loadPresetBtn" class="btn btn-sm btn-primary">Load</button>
+                    </div>
+                </div>
+
+                <!-- Grid Controls -->
+                <div class="control-group grid-controls">
+                    <label>Grid Size:</label>
+                    <div class="grid-inputs">
+                        <input type="number" id="gridCols" value="4" min="1" max="8">
+                        <span>×</span>
+                        <input type="number" id="gridRows" value="3" min="1" max="6">
+                    </div>
+                    <button id="applyGridBtn" class="btn btn-sm btn-secondary">Apply</button>
+                </div>
+
+                <!-- Card Place Actions -->
+                <div class="board-actions">
+                    <button id="addCardPlaceBtn" class="btn btn-sm btn-success">
+                        ➕ Add Place
+                    </button>
+                    <button id="clearBoardBtn" class="btn btn-sm btn-danger">
+                        🗑️ Clear
+                    </button>
+                </div>
+
+                <!-- Save Preset -->
+                <div class="control-group">
+                    <label for="presetName">Save As:</label>
+                    <div class="save-preset-group">
+                        <input type="text" id="presetName" placeholder="My Layout">
+                        <button id="savePresetBtn" class="btn btn-sm btn-secondary">💾 Save</button>
+                    </div>
+                </div>
+
+                <!-- Card Places List -->
+                <div class="card-places-list" id="cardPlacesList">
+                    <div class="list-header">Card Places (0)</div>
+                    <!-- Card places will be rendered here -->
                 </div>
             </div>
 
