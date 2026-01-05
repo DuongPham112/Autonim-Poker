@@ -2413,6 +2413,15 @@ function restoreToInitialState() {
     document.querySelectorAll('.card-drop-zone .zone-cards').forEach(container => {
         container.innerHTML = '';
     });
+    // Clear community zone
+    const communityZoneContainer = document.querySelector('.community-zone .zone-cards');
+    if (communityZoneContainer) communityZoneContainer.innerHTML = '';
+
+    // Clear animated cards that were moved to gameContainer directly
+    gameContainer.querySelectorAll(':scope > .card').forEach(cardEl => {
+        cardEl.remove();
+    });
+
     cardArea.innerHTML = '';
 
     // Apply initial state to all cards
@@ -2573,6 +2582,16 @@ function restoreFromSnapshot(snapshot) {
     document.querySelectorAll('.card-drop-zone .zone-cards').forEach(container => {
         container.innerHTML = '';
     });
+    // Clear community zone
+    const communityZone = document.querySelector('.community-zone .zone-cards');
+    if (communityZone) communityZone.innerHTML = '';
+
+    // Clear animated cards that were moved to gameContainer directly
+    // These have position:absolute and are direct children of gameContainer
+    gameContainer.querySelectorAll(':scope > .card').forEach(cardEl => {
+        cardEl.remove();
+    });
+
     cardArea.innerHTML = '';
 
     // Restore each card to its saved state
