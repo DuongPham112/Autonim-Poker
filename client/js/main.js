@@ -3255,20 +3255,29 @@ function startDragMarker(e, place, marker) {
 
     const startX = e.clientX;
     const startY = e.clientY;
-    const startPlaceX = place.x;
-    const startPlaceY = place.y;
+    // Store start position in container coordinates (place.x/y are relative to poker table)
+    const startMarkerLeft = offsetX + place.x - CARD_WIDTH / 2;
+    const startMarkerTop = offsetY + place.y - CARD_HEIGHT / 2;
 
     function onMouseMove(moveE) {
         const dx = moveE.clientX - startX;
         const dy = moveE.clientY - startY;
 
-        // Constrain to poker table bounds
-        place.x = Math.max(CARD_WIDTH / 2, Math.min(tableRect.width - CARD_WIDTH / 2, startPlaceX + dx));
-        place.y = Math.max(CARD_HEIGHT / 2, Math.min(tableRect.height - CARD_HEIGHT / 2, startPlaceY + dy));
+        // New position in container coordinates
+        let newLeft = startMarkerLeft + dx;
+        let newTop = startMarkerTop + dy;
 
-        // Update marker position (add offset for gameContainer)
-        marker.style.left = `${offsetX + place.x - CARD_WIDTH / 2}px`;
-        marker.style.top = `${offsetY + place.y - CARD_HEIGHT / 2}px`;
+        // Constrain to game container bounds (not poker table)
+        newLeft = Math.max(0, Math.min(containerRect.width - CARD_WIDTH, newLeft));
+        newTop = Math.max(0, Math.min(containerRect.height - CARD_HEIGHT, newTop));
+
+        // Update marker position
+        marker.style.left = `${newLeft}px`;
+        marker.style.top = `${newTop}px`;
+
+        // Convert back to poker table relative coordinates for storage
+        place.x = newLeft - offsetX + CARD_WIDTH / 2;
+        place.y = newTop - offsetY + CARD_HEIGHT / 2;
     }
 
     function onMouseUp() {
