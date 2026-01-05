@@ -2417,9 +2417,12 @@ function restoreToInitialState() {
     const communityZoneContainer = document.querySelector('.community-zone .zone-cards');
     if (communityZoneContainer) communityZoneContainer.innerHTML = '';
 
-    // Clear animated cards that were moved to gameContainer directly
-    gameContainer.querySelectorAll(':scope > .card').forEach(cardEl => {
-        cardEl.remove();
+    // Clear ALL .card elements that are direct children of gameContainer
+    // Using Array.from and filter since :scope may not work in CEP
+    Array.from(gameContainer.children).forEach(child => {
+        if (child.classList && child.classList.contains('card')) {
+            child.remove();
+        }
     });
 
     cardArea.innerHTML = '';
@@ -2586,10 +2589,12 @@ function restoreFromSnapshot(snapshot) {
     const communityZone = document.querySelector('.community-zone .zone-cards');
     if (communityZone) communityZone.innerHTML = '';
 
-    // Clear animated cards that were moved to gameContainer directly
-    // These have position:absolute and are direct children of gameContainer
-    gameContainer.querySelectorAll(':scope > .card').forEach(cardEl => {
-        cardEl.remove();
+    // Clear ALL .card elements that are direct children of gameContainer
+    // Using Array.from and filter since :scope may not work in CEP
+    Array.from(gameContainer.children).forEach(child => {
+        if (child.classList && child.classList.contains('card')) {
+            child.remove();
+        }
     });
 
     cardArea.innerHTML = '';
