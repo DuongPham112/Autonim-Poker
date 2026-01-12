@@ -2328,6 +2328,15 @@ function animateCardsSequentially(movingCards, targetSnapshot, onComplete) {
     const ANIMATION_DURATION = 400; // ms per card
     let index = 0;
 
+    // Calculate scale factor to convert UI coordinates (1280x720) to actual container size
+    const pokerTable = document.getElementById('pokerTable');
+    const tableWidth = pokerTable ? pokerTable.offsetWidth : gameContainer.offsetWidth;
+    const tableHeight = pokerTable ? pokerTable.offsetHeight : gameContainer.offsetHeight;
+    const scaleX = tableWidth / UI_WIDTH;
+    const scaleY = tableHeight / UI_HEIGHT;
+
+    debugLog('Animation scale factors:', { scaleX, scaleY, tableWidth, tableHeight, UI_WIDTH, UI_HEIGHT });
+
     function animateNext() {
         if (index >= movingCards.length) {
             // All animations complete, restore final state
@@ -2340,22 +2349,26 @@ function animateCardsSequentially(movingCards, targetSnapshot, onComplete) {
         const card = appState.tableCards.find(c => c.id === move.cardId);
 
         if (card && card.element) {
-            // Get start and end positions
+            // Get start and end positions in UI coordinates (1280x720)
             const startPos = getUIZonePosition(move.fromZone);
             const endPos = getUIZonePosition(move.toZone);
 
-            // Get poker table offset
-            const pokerTable = document.getElementById('pokerTable');
+            // Get poker table offset relative to gameContainer
             const containerRect = gameContainer.getBoundingClientRect();
             const tableRect = pokerTable ? pokerTable.getBoundingClientRect() : containerRect;
             const offsetX = tableRect.left - containerRect.left;
             const offsetY = tableRect.top - containerRect.top;
 
+            // Scale card dimensions as well
+            const scaledCardWidth = CARD_WIDTH * scaleX;
+            const scaledCardHeight = CARD_HEIGHT * scaleY;
+
             // Remove from zone container, add to gameContainer for free movement
             const cardEl = card.element;
             cardEl.style.position = 'absolute';
-            cardEl.style.left = `${offsetX + startPos.x - CARD_WIDTH / 2}px`;
-            cardEl.style.top = `${offsetY + startPos.y - CARD_HEIGHT / 2}px`;
+            // Scale UI coordinates to actual container size
+            cardEl.style.left = `${offsetX + (startPos.x * scaleX) - scaledCardWidth / 2}px`;
+            cardEl.style.top = `${offsetY + (startPos.y * scaleY) - scaledCardHeight / 2}px`;
             cardEl.style.zIndex = '200';
             cardEl.style.transition = `left ${ANIMATION_DURATION}ms ease, top ${ANIMATION_DURATION}ms ease`;
 
@@ -2364,10 +2377,12 @@ function animateCardsSequentially(movingCards, targetSnapshot, onComplete) {
                 gameContainer.appendChild(cardEl);
             }
 
+            debugLog(`Animating ${card.id}: from (${startPos.x}, ${startPos.y}) to (${endPos.x}, ${endPos.y})`);
+
             // Trigger animation
             requestAnimationFrame(() => {
-                cardEl.style.left = `${offsetX + endPos.x - CARD_WIDTH / 2}px`;
-                cardEl.style.top = `${offsetY + endPos.y - CARD_HEIGHT / 2}px`;
+                cardEl.style.left = `${offsetX + (endPos.x * scaleX) - scaledCardWidth / 2}px`;
+                cardEl.style.top = `${offsetY + (endPos.y * scaleY) - scaledCardHeight / 2}px`;
             });
 
             // Wait for animation, then animate next
@@ -2383,6 +2398,7 @@ function animateCardsSequentially(movingCards, targetSnapshot, onComplete) {
 
     animateNext();
 }
+
 
 function stopReplay() {
     isReplaying = false;
@@ -2417,9 +2433,10 @@ function restoreToInitialState() {
     const communityZoneContainer = document.querySelector('.community-zone .zone-cards');
     if (communityZoneContainer) communityZoneContainer.innerHTML = '';
 
-    // Clear ALL .card elements ANYWHERE in gameContainer (nuclear cleanup)
+    // Clear ALL card elements ANYWHERE in gameContainer (nuclear cleanup)
     // This ensures animated cards are removed regardless of DOM location
-    gameContainer.querySelectorAll('.card').forEach(cardEl => {
+    // Must include both .card (table cards) and .zone-card (zone cards) classes
+    gameContainer.querySelectorAll('.card, .zone-card').forEach(cardEl => {
         cardEl.remove();
     });
 
@@ -2587,9 +2604,10 @@ function restoreFromSnapshot(snapshot) {
     const communityZone = document.querySelector('.community-zone .zone-cards');
     if (communityZone) communityZone.innerHTML = '';
 
-    // Clear ALL .card elements ANYWHERE in gameContainer (nuclear cleanup)
+    // Clear ALL card elements ANYWHERE in gameContainer (nuclear cleanup)
     // This ensures animated cards are removed regardless of DOM location
-    gameContainer.querySelectorAll('.card').forEach(cardEl => {
+    // Must include both .card (table cards) and .zone-card (zone cards) classes
+    gameContainer.querySelectorAll('.card, .zone-card').forEach(cardEl => {
         cardEl.remove();
     });
 
