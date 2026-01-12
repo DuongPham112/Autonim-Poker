@@ -2859,6 +2859,12 @@ function toggleCtxFlip() {
 
     appState.selectedCard.flipAction = !appState.selectedCard.flipAction;
 
+    // Always flip the card visually when toggle changes
+    // Enable flipAction: shows END state (flipped)
+    // Disable flipAction: flips back to original state
+    flipCard(appState.selectedCard);
+
+
     // Sync with properties panel
     flipCardCheck.checked = appState.selectedCard.flipAction;
 
@@ -2874,6 +2880,7 @@ function toggleCtxFlip() {
         hideCardContextMenu();
     }, 300);
 }
+
 
 /**
  * Toggle slam effect on selected card
