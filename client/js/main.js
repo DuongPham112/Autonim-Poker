@@ -1822,13 +1822,20 @@ function computeActions(startSnap, endSnap) {
         const startPos = getAEPosition(start);
         const endPos = getAEPosition(end);
 
-        const posChanged = Math.abs(endPos.x - startPos.x) > 1 ||
-            Math.abs(endPos.y - startPos.y) > 1;
+        // Only check position change if zone changed
+        // Cards staying in same zone should NOT get new keyframes just from rearrangement
+        const zoneChanged = end.zone !== start.zone;
+        const posChanged = zoneChanged && (
+            Math.abs(endPos.x - startPos.x) > 1 ||
+            Math.abs(endPos.y - startPos.y) > 1
+        );
         const rotChanged = Math.abs((end.rotation || 0) - (start.rotation || 0)) > 0.5;
         const flipChanged = end.isFaceUp !== start.isFaceUp;
-        const zoneChanged = end.zone !== start.zone;
-        const hasFlipAction = card.flipAction;
-        const hasSlam = card.slamEffect;
+
+        // IMPORTANT: Only apply flipAction/slamEffect if card actually moves (zone changed)
+        // These flags are "sticky" on card objects, so we must NOT use them for stationary cards
+        const hasFlipAction = zoneChanged && card.flipAction;
+        const hasSlam = zoneChanged && card.slamEffect;
 
         if (posChanged || rotChanged || flipChanged || zoneChanged || hasFlipAction || hasSlam) {
             actions.push({
