@@ -62,6 +62,8 @@ var SLAM_OVERSHOOT_SCALE = 130;  // 130% of original
 var SLAM_DURATION_FRAMES = 5;    // 5 frames for slam bounce
 var MOVE_DURATION_FRAMES = 10;   // 10 frames (~0.33s) for position animation
 var FLIP_DURATION_FRAMES = 5;    // 5 frames (~0.17s) for rotation/flip animation
+var Z_SPACING = 10;              // Z spacing between cards (3D ordering)
+var INITIAL_Z_OFFSET = 0;        // Initial Z position for all cards
 
 // Folder organization
 var FOLDER_CARD_IMG = "Card_IMG";
@@ -209,12 +211,6 @@ function setupInitialScene(comp, initialState, assetsRootPath, layerMap, folderI
         return a.zonePosition - b.zonePosition;
     });
 
-    // Debug: log the sorted order
-    $.writeln("=== setupInitialScene: Layer creation order ===");
-    for (var d = 0; d < assetArray.length; d++) {
-        $.writeln("  [" + d + "] " + assetArray[d].id + " (zonePosition: " + assetArray[d].zonePosition + ")");
-    }
-    $.writeln("First card → added first → bottom layer. Last card → added last → top layer.");
 
     for (var i = 0; i < assetArray.length; i++) {
         var assetId = assetArray[i].id;
@@ -308,7 +304,8 @@ function createCardPrecomp(mainComp, cardId, cardInfo, assetsPath, folderInfo) {
     var preCompLayer = mainComp.layers.add(preComp);
     preCompLayer.name = cardId;
 
-    // Keep layer as 2D - we use layer stack ordering instead of 3D z-depth
+    // Enable 3D for z-ordering - cards will use Z position to control stacking
+    preCompLayer.threeDLayer = true;
 
     // Collapse Transformations (Continuous Rasterization) - vital for crisp edges if scaled
     preCompLayer.collapseTransformation = true;
@@ -368,28 +365,44 @@ function setAnchorPointToCenter(layer) {
 }
 
 /**
- * Apply initial transform properties to layer (2D)
+ * Apply initial transform properties to layer (3D)
+ * zonePosition determines initial Z: lower zonePosition = more positive Z (further from camera = behind)
  */
 function applyInitialTransform(layer, assetInfo, comp) {
-    // Position (2D: X, Y)
+    // Get zonePosition for Z calculation
+    var zonePosition = assetInfo.zonePosition || 0;
+
+    // Calculate Z: lower zonePosition = more positive Z (behind)
+    // Higher zonePosition = more negative Z (in front)
+    // Cards with zonePosition 0 start at Z=0, each higher position is -Z_SPACING closer
+    var zPos = INITIAL_Z_OFFSET - (zonePosition * Z_SPACING);
+
+    // Position (3D: X, Y, Z)
     var posX = assetInfo.x !== undefined ? assetInfo.x : comp.width / 2;
     var posY = assetInfo.y !== undefined ? assetInfo.y : comp.height / 2;
-    layer.property("Position").setValue([posX, posY]);
+    layer.property("Position").setValue([posX, posY, zPos]);
 
-    // Rotation
+    // Rotation (X Rotation for 3D layers)
     var rotation = assetInfo.rotation !== undefined ? assetInfo.rotation : 0;
-    layer.property("Rotation").setValue(rotation);
+    layer.property("Z Rotation").setValue(rotation);
 
-    // Scale (2D: X, Y)
+    // Scale (3D: X, Y, Z)
     var scale = assetInfo.scale !== undefined ? assetInfo.scale * 100 : 100;
-    layer.property("Scale").setValue([scale, scale]);
+    layer.property("Scale").setValue([scale, scale, 100]);
 }
 
 /**
  * Process all scenario steps and apply animations
+ * Uses Z-position keyframes to control card stacking order over time
  */
 function processScenarioAnimation(comp, scenario, layerMap) {
     var currentTime = 0;
+    var moveCounter = 0;  // Tracks order of card movements for z-ordering
+
+    // Calculate base Z for moving cards - they should always be in front of initial cards
+    // Initial cards have Z from 0 to -(maxZonePosition * Z_SPACING)
+    // Moving cards will start at a more negative Z
+    var baseZForMovingCards = -100;  // Well in front of any initial card positions
 
     for (var s = 0; s < scenario.length; s++) {
         var step = scenario[s];
@@ -405,12 +418,13 @@ function processScenarioAnimation(comp, scenario, layerMap) {
             if (!layer) continue;
 
             try {
-                // Move this layer to TOP of layer stack
-                // Cards that animate later will be above earlier cards
-                layer.moveToBeginning();
+                // Calculate target Z for this card based on move order
+                // Cards that move LATER get MORE NEGATIVE Z (closer to camera = on top)
+                var targetZ = baseZForMovingCards - (moveCounter * Z_SPACING);
+                moveCounter++;
 
-                // Process transform animation (X, Y position)
-                processTransformAction(layer, action, currentTime, stepDuration);
+                // Process transform animation (X, Y, Z position)
+                processTransformAction(layer, action, currentTime, stepDuration, targetZ);
 
                 // Process FLIP effect
                 if (action.flip === true) {
@@ -435,19 +449,23 @@ function processScenarioAnimation(comp, scenario, layerMap) {
 }
 
 /**
- * Process transform (position, rotation) animation (2D)
+ * Process transform (position, rotation) animation (3D)
+ * Includes Z-position animation for stacking order
  */
-function processTransformAction(layer, action, startTime, duration) {
+function processTransformAction(layer, action, startTime, duration, targetZ) {
     var frameDuration = 1 / FRAME_RATE;
     var moveDuration = MOVE_DURATION_FRAMES * frameDuration;  // ~0.33s for movement
     var rotDuration = FLIP_DURATION_FRAMES * frameDuration;   // ~0.17s for rotation
 
     var positionProp = layer.property("Position");
-    var rotationProp = layer.property("Rotation");
+    var rotationProp = layer.property("Z Rotation");  // Use Z Rotation for 3D layers
 
-    // Get current values (fallback)
+    // Get current values (fallback) - 3D position has [X, Y, Z]
     var currentPos = positionProp.valueAtTime(startTime, false);
     var currentRot = rotationProp.valueAtTime(startTime, false);
+
+    // Get current Z position
+    var startZ = currentPos[2] !== undefined ? currentPos[2] : 0;
 
     // Determine start values - prefer action data over current state
     var startX = currentPos[0];
@@ -475,10 +493,10 @@ function processTransformAction(layer, action, startTime, duration) {
         endRot = action.endRotation;
     }
 
-    // Position animation: 10 frames (~0.33s)
+    // Position animation: 10 frames (~0.33s) - includes Z transition
     var posEndTime = startTime + moveDuration;
-    positionProp.setValueAtTime(startTime, [startX, startY]);
-    positionProp.setValueAtTime(posEndTime, [endX, endY]);
+    positionProp.setValueAtTime(startTime, [startX, startY, startZ]);
+    positionProp.setValueAtTime(posEndTime, [endX, endY, targetZ]);
 
     // Rotation animation: 5 frames (~0.17s) - quick and decisive
     var rotEndTime = startTime + rotDuration;
