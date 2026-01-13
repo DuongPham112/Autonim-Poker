@@ -140,9 +140,7 @@ function generateSequence(jsonString, assetsRootPath) {
             return createErrorResponse(setupResult.message);
         }
 
-        // Create parallel camera for 3D z-ordering
-        // Far camera distance = minimal perspective distortion
-        createParallelCamera(comp);
+        // Note: Using layer stack ordering (moveToBeginning) instead of 3D camera
 
         // Process scenario animation steps
         var animResult = processScenarioAnimation(comp, data.scenario, layerMap);
@@ -210,6 +208,13 @@ function setupInitialScene(comp, initialState, assetsRootPath, layerMap, folderI
     assetArray.sort(function (a, b) {
         return a.zonePosition - b.zonePosition;
     });
+
+    // Debug: log the sorted order
+    $.writeln("=== setupInitialScene: Layer creation order ===");
+    for (var d = 0; d < assetArray.length; d++) {
+        $.writeln("  [" + d + "] " + assetArray[d].id + " (zonePosition: " + assetArray[d].zonePosition + ")");
+    }
+    $.writeln("First card → added first → bottom layer. Last card → added last → top layer.");
 
     for (var i = 0; i < assetArray.length; i++) {
         var assetId = assetArray[i].id;
