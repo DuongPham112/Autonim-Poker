@@ -363,18 +363,24 @@ function setAnchorPointToCenter(layer) {
 /**
  * Apply initial transform properties to layer
  * Note: Layer is 3D, so position needs [X, Y, Z]
+ * Z is based on zonePosition: higher zonePosition = more negative Z = on top
  */
 function applyInitialTransform(layer, assetInfo, comp) {
-    // Position (3D: X, Y, Z) - start with Z = 0
+    // Calculate initial Z based on zonePosition
+    // Cards with higher zonePosition (added later to zone) should be on top = more negative Z
+    var zonePosition = assetInfo.zonePosition !== undefined ? assetInfo.zonePosition : 0;
+    var initialZ = -zonePosition * Z_SPACING;
+
+    // Position (3D: X, Y, Z)
     var posX = assetInfo.x !== undefined ? assetInfo.x : comp.width / 2;
     var posY = assetInfo.y !== undefined ? assetInfo.y : comp.height / 2;
-    layer.property("Position").setValue([posX, posY, 0]);
+    layer.property("Position").setValue([posX, posY, initialZ]);
 
     // Rotation
     var rotation = assetInfo.rotation !== undefined ? assetInfo.rotation : 0;
     layer.property("Rotation").setValue(rotation);
 
-    // Scale (3D layers have X, Y, Z scale but we only need X, Y)
+    // Scale (3D layers have X, Y, Z scale)
     var scale = assetInfo.scale !== undefined ? assetInfo.scale * 100 : 100;
     layer.property("Scale").setValue([scale, scale, scale]);
 }
@@ -465,16 +471,20 @@ function processScenarioAnimation(comp, scenario, layerMap) {
 
 /**
  * Process Z-ordering for cards entering community zone
- * Cards played later have smaller (more negative) Z = closer to camera = on top
+ * Cards played later have more negative Z = closer to camera = on top
+ * Community cards are offset to always appear above player zone cards
  */
 function processZOrdering(layer, startTime, playOrder) {
     var frameDuration = 1 / FRAME_RATE;
     var moveDuration = MOVE_DURATION_FRAMES * frameDuration;
     var endTime = startTime + moveDuration;
 
-    // Calculate target Z: first card = 0, second = -10, third = -20, etc.
-    // Negative Z = closer to camera = appears on top
-    var targetZ = -playOrder * Z_SPACING;
+    // Community zone cards get a base offset to be above player zone cards
+    // Player zone cards: Z = -zonePosition * 10 (e.g. 0, -10, -20...)
+    // Community cards: Z = -100 - playOrder * 10 (e.g. -100, -110, -120...)
+    // This ensures community cards are always closer to camera (on top)
+    var COMMUNITY_Z_OFFSET = -100;
+    var targetZ = COMMUNITY_Z_OFFSET - (playOrder * Z_SPACING);
 
     var positionProp = layer.property("Position");
 
@@ -482,8 +492,7 @@ function processZOrdering(layer, startTime, playOrder) {
     var startPos = positionProp.valueAtTime(startTime, false);
     var endPos = positionProp.valueAtTime(endTime, false);
 
-    // Update end position with new Z value
-    // Position is [X, Y, Z] for 3D layers
+    // Keep current Z at start, animate to target Z
     var currentZ = startPos.length > 2 ? startPos[2] : 0;
 
     // Set keyframes with Z animation
@@ -638,27 +647,47 @@ function setHoldInterpolation(property) {
 }
 
 /**
- * Process SLAM effect (overshoot scale bounce)
+ * Process SLAM effect (bounce when card lands)
+ * Starts when position animation ENDS (card lands) with diminishing oscillation
+ * Pattern: base → +8% → -2% → base (over 6 frames)
  */
-function processSlamEffect(layer, startTime, duration, comp) {
+function processSlamEffect(layer, startTime, stepDuration, comp) {
     var scaleProp = layer.property("Scale");
     var frameDuration = 1 / comp.frameRate;
 
-    var slamStartTime = startTime + duration;
-    var slamMidTime = slamStartTime + (SLAM_DURATION_FRAMES * 0.5 * frameDuration);
-    var slamEndTime = slamStartTime + (SLAM_DURATION_FRAMES * frameDuration);
+    // Slam starts when position animation ENDS (card lands)
+    var moveDuration = MOVE_DURATION_FRAMES * frameDuration;
+    var slamStartTime = startTime + moveDuration;
 
+    // Get base scale at land time
     var currentScale = scaleProp.valueAtTime(slamStartTime, false);
-    var baseScaleX = currentScale[0];
-    var baseScaleY = currentScale[1];
+    var baseX = currentScale[0];
+    var baseY = currentScale[1];
+    var baseZ = currentScale.length > 2 ? currentScale[2] : baseX;
 
-    var overshootFactor = SLAM_OVERSHOOT_SCALE / 100;
+    // Bounce pattern: base → +8% → -2% → base
+    // Keyframe 0 (land): base
+    // Keyframe 2 frames: +8% overshoot
+    // Keyframe 4 frames: -2% undershoot
+    // Keyframe 6 frames: back to base
+    var overshootX = baseX * 1.08;
+    var overshootY = baseY * 1.08;
+    var undershootX = baseX * 0.98;
+    var undershootY = baseY * 0.98;
 
-    scaleProp.setValueAtTime(slamStartTime, [baseScaleX, baseScaleY]);
-    scaleProp.setValueAtTime(slamMidTime, [baseScaleX * overshootFactor, baseScaleY * overshootFactor]);
-    scaleProp.setValueAtTime(slamEndTime, [baseScaleX, baseScaleY]);
+    var t0 = slamStartTime;
+    var t1 = slamStartTime + (2 * frameDuration);
+    var t2 = slamStartTime + (4 * frameDuration);
+    var t3 = slamStartTime + (6 * frameDuration);
 
-    applyBounceEasing(scaleProp, slamStartTime);
+    // Set keyframes (3D scale for 3D layers)
+    scaleProp.setValueAtTime(t0, [baseX, baseY, baseZ]);
+    scaleProp.setValueAtTime(t1, [overshootX, overshootY, baseZ]);
+    scaleProp.setValueAtTime(t2, [undershootX, undershootY, baseZ]);
+    scaleProp.setValueAtTime(t3, [baseX, baseY, baseZ]);
+
+    // Apply ease for smooth bounce
+    applyBezierEasing(scaleProp);
     layer.motionBlur = true;
 }
 
