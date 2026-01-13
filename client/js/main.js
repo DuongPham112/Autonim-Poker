@@ -44,6 +44,7 @@ const COORD_SCALE = AE_WIDTH / UI_WIDTH; // 1.5x scale factor
 // Card dimensions (in UI pixels)
 const CARD_WIDTH = 60;
 const CARD_HEIGHT = 84;
+const CARD_SPACING_UI = 68; // Spacing between cards in zones (slightly more than card width)
 
 
 // Standard 52-card deck

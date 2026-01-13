@@ -420,9 +420,9 @@ function createParallelCamera(comp) {
 function processScenarioAnimation(comp, scenario, layerMap) {
     var currentTime = 0;
 
-    // Track play order for community zone - cards played later appear ON TOP
-    // First card = Z 0 (far), second card = Z -10 (closer), etc.
-    var communityPlayOrder = 0;
+    // Global Z counter: every card that moves gets a unique Z
+    // Cards that move later get more negative Z = closer to camera = on top
+    var globalFrontZ = 0;
 
     for (var s = 0; s < scenario.length; s++) {
         var step = scenario[s];
@@ -441,11 +441,10 @@ function processScenarioAnimation(comp, scenario, layerMap) {
                 // Process transform animation (X, Y position)
                 processTransformAction(layer, action, currentTime, stepDuration);
 
-                // Process Z-ordering when card enters community zone
-                if (action.endZone === "community" && action.startZone !== "community") {
-                    processZOrdering(layer, currentTime, communityPlayOrder);
-                    communityPlayOrder++;
-                }
+                // EVERY card that moves gets a new Z value
+                // This ensures cards that move later are always on top
+                globalFrontZ--;
+                processZOrdering(layer, currentTime, globalFrontZ);
 
                 // Process FLIP effect
                 if (action.flip === true) {
@@ -470,21 +469,15 @@ function processScenarioAnimation(comp, scenario, layerMap) {
 }
 
 /**
- * Process Z-ordering for cards entering community zone
- * Cards played later have more negative Z = closer to camera = on top
- * Community cards are offset to always appear above player zone cards
+ * Process Z-ordering when a card moves
+ * @param {Layer} layer - The card layer
+ * @param {number} startTime - Animation start time
+ * @param {number} targetZ - Target Z value (more negative = closer to camera = on top)
  */
-function processZOrdering(layer, startTime, playOrder) {
+function processZOrdering(layer, startTime, targetZ) {
     var frameDuration = 1 / FRAME_RATE;
     var moveDuration = MOVE_DURATION_FRAMES * frameDuration;
     var endTime = startTime + moveDuration;
-
-    // Community zone cards get a base offset to be above player zone cards
-    // Player zone cards: Z = -zonePosition * 10 (e.g. 0, -10, -20...)
-    // Community cards: Z = -100 - playOrder * 10 (e.g. -100, -110, -120...)
-    // This ensures community cards are always closer to camera (on top)
-    var COMMUNITY_Z_OFFSET = -100;
-    var targetZ = COMMUNITY_Z_OFFSET - (playOrder * Z_SPACING);
 
     var positionProp = layer.property("Position");
 
@@ -492,7 +485,7 @@ function processZOrdering(layer, startTime, playOrder) {
     var startPos = positionProp.valueAtTime(startTime, false);
     var endPos = positionProp.valueAtTime(endTime, false);
 
-    // Keep current Z at start, animate to target Z
+    // Keep current Z at start, animate to target Z at end
     var currentZ = startPos.length > 2 ? startPos[2] : 0;
 
     // Set keyframes with Z animation
