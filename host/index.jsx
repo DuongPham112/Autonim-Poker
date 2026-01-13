@@ -193,18 +193,26 @@ function generateSequence(jsonString, assetsRootPath) {
 function setupInitialScene(comp, initialState, assetsRootPath, layerMap, folderInfo) {
     var importErrors = [];
 
-    // Collect asset IDs and reverse order so cards added first are at bottom (higher layer index)
-    // In AE, layers added first appear at TOP. We want cards played first to be BEHIND later cards.
-    var assetIds = [];
+    // Collect asset IDs with their zonePosition for sorting
+    var assetArray = [];
     for (var assetId in initialState) {
         if (initialState.hasOwnProperty(assetId)) {
-            assetIds.push(assetId);
+            assetArray.push({
+                id: assetId,
+                zonePosition: initialState[assetId].zonePosition || 0
+            });
         }
     }
-    assetIds.reverse();  // Reverse: first cards will be added last (at bottom)
 
-    for (var i = 0; i < assetIds.length; i++) {
-        var assetId = assetIds[i];
+    // Sort by zonePosition ASCENDING
+    // Cards with lower zonePosition are added FIRST → end up at BOTTOM of layer stack
+    // Cards with higher zonePosition are added LAST → end up on TOP
+    assetArray.sort(function (a, b) {
+        return a.zonePosition - b.zonePosition;
+    });
+
+    for (var i = 0; i < assetArray.length; i++) {
+        var assetId = assetArray[i].id;
         var assetInfo = initialState[assetId];
         var layer = null;
 
