@@ -211,8 +211,10 @@
                         <button id="replayBtn" class="btn btn-sm btn-secondary" disabled>
                             ▶️ Replay
                         </button>
-                        <span id="replayProgress" class="replay-progress hidden">Step 0/0</span>
-                        <button id="stopReplayBtn" class="btn btn-sm btn-danger hidden">⏹️</button>
+                        <div class="replay-controls hidden" id="replayControls">
+                            <span id="replayProgress">Step 0/0</span>
+                            <button id="stopReplayBtn" class="btn btn-sm btn-danger">⏹️</button>
+                        </div>
                     </div>
                 </div>
                 <div id="timelinePreview" class="timeline-preview">
@@ -382,11 +384,22 @@
 
             <!-- Log Section (simple text) -->
             <div class="director-section log-section">
-                <h3>📋 Log</h3>
+                <div class="log-header">
+                    <h3>📋 Log</h3>
+                    <div class="log-actions">
+                        <button id="copyDebugBtn" class="btn btn-xs btn-primary" title="Copy">📋</button>
+                        <button id="clearDebugBtn" class="btn btn-xs btn-secondary" title="Clear">🗑️</button>
+                    </div>
+                </div>
                 <div id="logContent" class="log-content">
                     <pre id="debugContent" class="log-text"></pre>
                 </div>
             </div>
+
+            <!-- Hidden debug overlay for JS compatibility -->
+            <div id="debugOverlay" class="hidden"></div>
+            <button id="toggleDebugBtn" class="hidden"></button>
+            <button id="closeDebugBtn" class="hidden"></button>
 
 
             <!-- Export -->
