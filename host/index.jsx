@@ -145,7 +145,8 @@ function generateSequence(jsonString, assetsRootPath) {
         // Note: Using layer stack ordering (moveToBeginning) instead of 3D camera
 
         // Process scenario animation steps
-        var animResult = processScenarioAnimation(comp, data.scenario, layerMap);
+        var stepBlending = data.stepBlending || 0;  // Overlap % (0-50)
+        var animResult = processScenarioAnimation(comp, data.scenario, layerMap, stepBlending);
         if (!animResult.success) {
             app.endUndoGroup();
             return createErrorResponse(animResult.message);
@@ -395,8 +396,9 @@ function applyInitialTransform(layer, assetInfo, comp) {
 /**
  * Process all scenario steps and apply animations
  * Uses Z-position keyframes to control card stacking order over time
+ * @param stepBlending - Overlap percentage (0-50) to reduce time between steps
  */
-function processScenarioAnimation(comp, scenario, layerMap) {
+function processScenarioAnimation(comp, scenario, layerMap, stepBlending) {
     var currentTime = 0;
     var moveCounter = 0;  // Tracks order of card movements for z-ordering
 
@@ -404,6 +406,9 @@ function processScenarioAnimation(comp, scenario, layerMap) {
     // Initial cards have Z from 0 to -(maxZonePosition * Z_SPACING)
     // Moving cards will start at a more negative Z
     var baseZForMovingCards = -100;  // Well in front of any initial card positions
+
+    // Calculate blending factor (0 = no overlap, 0.5 = 50% overlap)
+    var blendFactor = (stepBlending || 0) / 100;
 
     for (var s = 0; s < scenario.length; s++) {
         var step = scenario[s];
@@ -442,8 +447,9 @@ function processScenarioAnimation(comp, scenario, layerMap) {
             }
         }
 
-        // Advance current time
-        currentTime += stepDuration;
+        // Advance current time (with blending overlap)
+        var blendedDuration = stepDuration * (1 - blendFactor);
+        currentTime += blendedDuration;
     }
 
     return { success: true, finalTime: currentTime };

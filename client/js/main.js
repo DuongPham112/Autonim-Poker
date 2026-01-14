@@ -71,6 +71,7 @@ const appState = {
 
     // Settings
     cardOverlap: 25,              // Overlap in pixels
+    stepBlending: 0,              // Step blending % for AE export (0-50)
 
     // Board Layout
     boardLayout: {
@@ -417,6 +418,24 @@ function bindEvents() {
             if (stepSpeedValue) stepSpeedValue.textContent = replaySpeed + 'x';
         });
     }
+
+    // Blending slider
+    const stepBlendingSlider = document.getElementById('stepBlendingSlider');
+    const stepBlendingValue = document.getElementById('stepBlendingValue');
+    if (stepBlendingSlider) {
+        stepBlendingSlider.addEventListener('input', () => {
+            appState.stepBlending = parseInt(stepBlendingSlider.value);
+            if (stepBlendingValue) stepBlendingValue.textContent = appState.stepBlending + '%';
+        });
+    }
+
+    // Project Save/Load
+    const saveProjectBtn = document.getElementById('saveProjectBtn');
+    const loadProjectBtn = document.getElementById('loadProjectBtn');
+    const loadProjectInput = document.getElementById('loadProjectInput');
+    if (saveProjectBtn) saveProjectBtn.addEventListener('click', handleSaveProject);
+    if (loadProjectBtn) loadProjectBtn.addEventListener('click', () => loadProjectInput.click());
+    if (loadProjectInput) loadProjectInput.addEventListener('change', handleLoadProject);
 
     // Modal
     if (confirmWarningBtn) confirmWarningBtn.addEventListener('click', confirmWarning);
@@ -2079,7 +2098,8 @@ function handleExportToAE() {
     const exportData = {
         ...scenarioData,
         initialState: saveInitialStateForExport(),
-        boardType: appState.boardLayout.type || 'poker'
+        boardType: appState.boardLayout.type || 'poker',
+        stepBlending: appState.stepBlending || 0  // Overlap % between steps
     };
 
     setStatus('Sending to After Effects...', 'recording');
@@ -2147,6 +2167,127 @@ function updateAssetsDisplay() {
         assetsPathDisplay.innerHTML = `<span class="path-label">✓ .../${shortPath}</span>`;
         assetsPathDisplay.classList.add('has-path');
     }
+}
+
+// ============================================
+// PROJECT SAVE/LOAD
+// ============================================
+
+function handleSaveProject() {
+    const projectData = {
+        version: '1.0',
+        savedAt: new Date().toISOString(),
+        deckPath: appState.deckPath,
+        assetsRootPath: appState.assetsRootPath,
+        stepBlending: appState.stepBlending,
+        boardLayout: appState.boardLayout,
+        // Save card states (without DOM elements)
+        tableCards: appState.tableCards.map(c => ({
+            id: c.id,
+            name: c.name,
+            displayName: c.displayName,
+            filename: c.filename,
+            frontImageUrl: c.frontImageUrl,
+            backImageUrl: c.backImageUrl,
+            suit: c.suit,
+            rank: c.rank,
+            isFaceUp: c.isFaceUp,
+            zone: c.zone,
+            zonePosition: c.zonePosition,
+            rotation: c.rotation,
+            x: c.x,
+            y: c.y
+        })),
+        trayCards: appState.trayCards.map(c => ({
+            id: c.id,
+            name: c.name,
+            displayName: c.displayName,
+            filename: c.filename,
+            frontImageUrl: c.frontImageUrl,
+            backImageUrl: c.backImageUrl,
+            suit: c.suit,
+            rank: c.rank,
+            isFaceUp: c.isFaceUp
+        })),
+        // Save scenario data
+        scenarioData: {
+            initialState: scenarioData.initialState,
+            scenario: scenarioData.scenario
+        },
+        // Save step snapshots
+        stepSnapshots: stepSnapshots
+    };
+
+    const dataStr = JSON.stringify(projectData, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `autonim-poker-project-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    setStatus('Project saved!', 'success');
+}
+
+function handleLoadProject(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        try {
+            const projectData = JSON.parse(event.target.result);
+
+            // Restore app state
+            appState.deckPath = projectData.deckPath || null;
+            appState.assetsRootPath = projectData.assetsRootPath || null;
+            appState.stepBlending = projectData.stepBlending || 0;
+            appState.boardLayout = projectData.boardLayout || appState.boardLayout;
+
+            // Restore cards
+            appState.tableCards = projectData.tableCards || [];
+            appState.trayCards = projectData.trayCards || [];
+
+            // Restore scenario
+            if (projectData.scenarioData) {
+                scenarioData.initialState = projectData.scenarioData.initialState || {};
+                scenarioData.scenario = projectData.scenarioData.scenario || [];
+            }
+
+            // Restore snapshots
+            if (projectData.stepSnapshots) {
+                stepSnapshots.length = 0;
+                projectData.stepSnapshots.forEach(s => stepSnapshots.push(s));
+            }
+
+            // Update UI
+            updateAssetsDisplay();
+            if (projectData.stepBlending) {
+                const slider = document.getElementById('stepBlendingSlider');
+                const value = document.getElementById('stepBlendingValue');
+                if (slider) slider.value = projectData.stepBlending;
+                if (value) value.textContent = projectData.stepBlending + '%';
+            }
+
+            // Re-render cards on table
+            restoreFromSnapshot(stepSnapshots[stepSnapshots.length - 1] || {});
+
+            // Update tray
+            renderCardTray();
+            renderTimeline();
+            updateUI();
+
+            setStatus('Project loaded!', 'success');
+        } catch (err) {
+            setStatus('Failed to load project: ' + err.message, 'error');
+            console.error('Load project error:', err);
+        }
+    };
+    reader.readAsText(file);
+
+    // Reset file input
+    e.target.value = '';
 }
 
 // ============================================

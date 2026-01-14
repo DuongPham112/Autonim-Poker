@@ -2083,6 +2083,46 @@ body {
     font-size: 10px;
 }
 
+/* AE Settings */
+.ae-settings h3 {
+    margin: 0 0 10px 0;
+    font-size: 13px;
+}
+
+.setting-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+}
+
+.setting-row label {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+}
+
+.setting-row input[type="range"] {
+    flex: 1;
+    min-width: 60px;
+}
+
+.setting-row span {
+    min-width: 30px;
+    text-align: right;
+    font-weight: 600;
+}
+
+/* Export row */
+.export-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.export-row .btn-sm {
+    flex: 1;
+}
+
 .replay-controls {
     display: flex;
     align-items: center;
