@@ -387,19 +387,14 @@
                 <div class="log-header">
                     <h3>📋 Log</h3>
                     <div class="log-actions">
-                        <button id="copyDebugBtn" class="btn btn-xs btn-primary" title="Copy">📋</button>
-                        <button id="clearDebugBtn" class="btn btn-xs btn-secondary" title="Clear">🗑️</button>
+                        <button id="logCopyBtn" class="btn btn-xs btn-primary" title="Copy">📋</button>
+                        <button id="logClearBtn" class="btn btn-xs btn-secondary" title="Clear">🗑️</button>
                     </div>
                 </div>
                 <div id="logContent" class="log-content">
-                    <pre id="debugContent" class="log-text"></pre>
+                    <pre id="logText" class="log-text"></pre>
                 </div>
             </div>
-
-            <!-- Hidden debug overlay for JS compatibility -->
-            <div id="debugOverlay" class="hidden"></div>
-            <button id="toggleDebugBtn" class="hidden"></button>
-            <button id="closeDebugBtn" class="hidden"></button>
 
 
             <!-- Export -->
@@ -428,6 +423,20 @@
     </div>
 
 
+
+    <!-- Debug Overlay -->
+    <div id="debugOverlay" class="debug-overlay hidden">
+        <div class="debug-header">
+            <h4>🔍 Debug Log</h4>
+            <div class="debug-actions">
+                <button id="copyDebugBtn" class="btn btn-sm btn-primary">📋 Copy</button>
+                <button id="clearDebugBtn" class="btn btn-sm btn-secondary">🗑️ Clear</button>
+                <button id="closeDebugBtn" class="btn btn-sm btn-danger">✕</button>
+            </div>
+        </div>
+        <pre id="debugContent"></pre>
+    </div>
+    <button id="toggleDebugBtn" class="debug-toggle-btn">🐛</button>
 
     <!-- Hidden inputs -->
     <input type="file" id="folderInput" webkitdirectory directory multiple style="display: none;">
