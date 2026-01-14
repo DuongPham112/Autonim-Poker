@@ -165,10 +165,7 @@ function generateSequence(jsonString, assetsRootPath) {
         var controlLayer = createControlLayer(comp);
         var controlLayerName = controlLayer.name;
 
-        // Create Zone Null layers (parents for cards)
-        var zoneNulls = createZoneNulls(comp, controlLayerName);
-
-        // Parent cards to their zone nulls and apply scale expression
+        // Apply expressions to card layers
         for (var cardId in layerMap) {
             if (layerMap.hasOwnProperty(cardId)) {
                 var layer = layerMap[cardId];
@@ -177,14 +174,9 @@ function generateSequence(jsonString, assetsRootPath) {
                 // Apply Scale expression (links to Card Scale slider)
                 applyScaleExpression(layer, controlLayerName);
 
-                // Parent to zone null if card is in a zone
-                if (cardInfo && cardInfo.zone && zoneNulls[cardInfo.zone]) {
-                    var zoneNull = zoneNulls[cardInfo.zone];
-                    var zoneCenter = ZONE_CENTERS[cardInfo.zone];
-                    var baseX = cardInfo.x || comp.width / 2;
-                    var baseY = cardInfo.y || comp.height / 2;
-
-                    parentCardToZone(layer, zoneNull, baseX, baseY, zoneCenter);
+                // Apply Zone Offset expression if card is in a zone
+                if (cardInfo && cardInfo.zone) {
+                    applyZoneOffsetExpression(layer, controlLayerName, cardInfo.zone);
                 }
             }
         }
@@ -537,23 +529,37 @@ function applyScaleExpression(layer, controlLayerName) {
 }
 
 /**
- * Parent a card layer to its zone null and convert to local position
- * @param {Layer} cardLayer - The card layer to parent
- * @param {Layer} zoneNull - The zone null layer to parent to
- * @param {number} baseX - Original world X position
- * @param {number} baseY - Original world Y position
+ * Apply Zone Offset expression to card layer Position
+ * Adds offset based on card's zone without replacing keyframe values
+ * @param {Layer} cardLayer - The card layer
+ * @param {string} controlLayerName - Name of control layer
+ * @param {string} zoneName - Zone the card belongs to (top, bottom, left, right)
  */
-function parentCardToZone(cardLayer, zoneNull, baseX, baseY, zoneCenter) {
-    // Calculate local position relative to zone center
-    var localX = baseX - zoneCenter.x;
-    var localY = baseY - zoneCenter.y;
+function applyZoneOffsetExpression(cardLayer, controlLayerName, zoneName) {
+    var expr = "";
 
-    // Parent to zone null
-    cardLayer.parent = zoneNull;
+    if (zoneName === "top") {
+        expr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n' +
+            'var offset = ctrl.effect("Top Zone Y")("Slider");\n' +
+            '[value[0], value[1] + offset, value[2]]';
+    } else if (zoneName === "bottom") {
+        expr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n' +
+            'var offset = ctrl.effect("Bottom Zone Y")("Slider");\n' +
+            '[value[0], value[1] + offset, value[2]]';
+    } else if (zoneName === "left") {
+        expr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n' +
+            'var offset = ctrl.effect("Left Zone X")("Slider");\n' +
+            '[value[0] + offset, value[1], value[2]]';
+    } else if (zoneName === "right") {
+        expr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n' +
+            'var offset = ctrl.effect("Right Zone X")("Slider");\n' +
+            '[value[0] + offset, value[1], value[2]]';
+    } else {
+        // No offset expression for other zones
+        return;
+    }
 
-    // Set local position (relative to parent)
-    var currentPos = cardLayer.property("Position").value;
-    cardLayer.property("Position").setValue([localX, localY, currentPos[2]]);
+    cardLayer.property("Position").expression = expr;
 }
 
 
