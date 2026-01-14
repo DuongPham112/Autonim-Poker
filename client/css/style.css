@@ -1948,6 +1948,29 @@ body {
     gap: 8px;
 }
 
+.speed-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.speed-control label {
+    white-space: nowrap;
+}
+
+.speed-control input[type="range"] {
+    width: 60px;
+    height: 4px;
+}
+
+.speed-control span {
+    min-width: 25px;
+    text-align: right;
+    font-weight: 600;
+}
+
 .replay-progress {
     font-size: 11px;
     color: var(--text-secondary);

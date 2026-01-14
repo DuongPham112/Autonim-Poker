@@ -408,6 +408,16 @@ function bindEvents() {
     if (replayBtn) replayBtn.addEventListener('click', handleReplay);
     if (stopReplayBtn) stopReplayBtn.addEventListener('click', stopReplay);
 
+    // Speed slider
+    const stepSpeedSlider = document.getElementById('stepSpeedSlider');
+    const stepSpeedValue = document.getElementById('stepSpeedValue');
+    if (stepSpeedSlider) {
+        stepSpeedSlider.addEventListener('input', () => {
+            replaySpeed = parseFloat(stepSpeedSlider.value);
+            if (stepSpeedValue) stepSpeedValue.textContent = replaySpeed + 'x';
+        });
+    }
+
     // Modal
     if (confirmWarningBtn) confirmWarningBtn.addEventListener('click', confirmWarning);
     if (cancelWarningBtn) cancelWarningBtn.addEventListener('click', hideWarningModal);
@@ -2224,6 +2234,7 @@ function showInstructions() {
 let replayTimer = null;
 let isReplaying = false;
 let currentReplayStep = 0;
+let replaySpeed = 1;  // 1 = normal, 2 = faster, 0.5 = slower
 
 function handleReplay() {
     if (scenarioData.scenario.length === 0) {
@@ -2298,11 +2309,22 @@ function replayNextStep() {
         // This ensures correct start positions on subsequent replays
         restoreFromSnapshot(prevSnapshot);
 
-        // Find cards that changed position (zone changed)
+        // Find cards that changed position (zone changed) or are new
         const movingCards = [];
         Object.entries(targetSnapshot).forEach(([cardId, targetState]) => {
             const prevState = prevSnapshot[cardId];
-            if (prevState && prevState.zone !== targetState.zone) {
+
+            // New card added from tray (not in previous snapshot)
+            if (!prevState) {
+                movingCards.push({
+                    cardId,
+                    fromZone: null,  // Card is new, no previous zone
+                    toZone: targetState.zone,
+                    targetState,
+                    isNew: true
+                });
+            } else if (prevState.zone !== targetState.zone) {
+                // Existing card that moved zones
                 movingCards.push({
                     cardId,
                     fromZone: prevState.zone,
@@ -2320,8 +2342,8 @@ function replayNextStep() {
                 animateCardsSequentially(movingCards, targetSnapshot, () => {
                     currentReplayStep++;
                     // Schedule next step
-                    const duration = (step.duration || 1) * 1000;
-                    debugLog('Scheduling next step in', duration, 'ms');
+                    const duration = ((step.duration || 1) * 1000) / replaySpeed;
+                    debugLog('Scheduling next step in', duration, 'ms (speed:', replaySpeed + 'x)');
                     replayTimer = setTimeout(() => replayNextStep(), duration);
                 });
             }, 50);
@@ -2329,7 +2351,7 @@ function replayNextStep() {
             // No movement, just restore and continue
             restoreFromSnapshot(targetSnapshot);
             currentReplayStep++;
-            const duration = (step.duration || 1) * 1000;
+            const duration = ((step.duration || 1) * 1000) / replaySpeed;
             replayTimer = setTimeout(() => replayNextStep(), duration);
         }
     } else {
@@ -2364,11 +2386,30 @@ function animateCardsSequentially(movingCards, targetSnapshot, onComplete) {
         }
 
         const move = movingCards[index];
-        const card = appState.tableCards.find(c => c.id === move.cardId);
+        let card = appState.tableCards.find(c => c.id === move.cardId);
 
-        if (card && card.element) {
+        // For new cards (from tray), we need to find or create them
+        if (move.isNew && !card) {
+            // Find card in tray
+            card = appState.trayCards.find(c => c.id === move.cardId);
+            if (card) {
+                // Add to table cards
+                appState.tableCards.push(card);
+                appState.trayCards = appState.trayCards.filter(c => c.id !== move.cardId);
+            }
+        }
+
+        if (card) {
+            // Create element if it doesn't exist
+            if (!card.element) {
+                const element = createCardOnTable(card, move.targetState.isFaceUp);
+                card.element = element;
+            }
+
             // Get start and end positions in UI coordinates (1280x720)
-            const startPos = getUIZonePosition(move.fromZone);
+            const startPos = move.isNew
+                ? { x: -100, y: UI_HEIGHT / 2 }  // Start from left edge
+                : getUIZonePosition(move.fromZone);
             const endPos = getUIZonePosition(move.toZone);
 
             // Get poker table offset relative to gameContainer
@@ -2395,7 +2436,7 @@ function animateCardsSequentially(movingCards, targetSnapshot, onComplete) {
                 gameContainer.appendChild(cardEl);
             }
 
-            debugLog(`Animating ${card.id}: from (${startPos.x}, ${startPos.y}) to (${endPos.x}, ${endPos.y})`);
+            debugLog(`Animating ${card.id}: from (${startPos.x}, ${startPos.y}) to (${endPos.x}, ${endPos.y})${move.isNew ? ' [NEW]' : ''}`);
 
             // Trigger animation
             requestAnimationFrame(() => {
