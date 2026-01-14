@@ -537,25 +537,67 @@ function applyScaleExpression(layer, controlLayerName) {
  */
 function applyZoneOffsetExpression(cardLayer, controlLayerName, zoneName) {
     var expr = "";
+    // Expression that only adds offset to FIRST keyframe
+    // After first animation, uses original values
+    var baseExpr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n';
 
     if (zoneName === "top") {
-        expr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n' +
+        expr = baseExpr +
             'var offset = ctrl.effect("Top Zone Y")("Slider");\n' +
-            '[value[0], value[1] + offset, value[2]]';
+            'if (numKeys < 2) { [value[0], value[1] + offset, value[2]] }\n' +
+            'else {\n' +
+            '  var k1 = key(1); var k2 = key(2);\n' +
+            '  if (time <= k1.time) { [k1.value[0], k1.value[1] + offset, k1.value[2]] }\n' +
+            '  else if (time < k2.time) {\n' +
+            '    var t = (time - k1.time) / (k2.time - k1.time);\n' +
+            '    var startY = k1.value[1] + offset;\n' +
+            '    var endY = k2.value[1];\n' +
+            '    [linear(t, 0, 1, k1.value[0], k2.value[0]), linear(t, 0, 1, startY, endY), linear(t, 0, 1, k1.value[2], k2.value[2])]\n' +
+            '  } else { value }\n' +
+            '}';
     } else if (zoneName === "bottom") {
-        expr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n' +
+        expr = baseExpr +
             'var offset = ctrl.effect("Bottom Zone Y")("Slider");\n' +
-            '[value[0], value[1] + offset, value[2]]';
+            'if (numKeys < 2) { [value[0], value[1] + offset, value[2]] }\n' +
+            'else {\n' +
+            '  var k1 = key(1); var k2 = key(2);\n' +
+            '  if (time <= k1.time) { [k1.value[0], k1.value[1] + offset, k1.value[2]] }\n' +
+            '  else if (time < k2.time) {\n' +
+            '    var t = (time - k1.time) / (k2.time - k1.time);\n' +
+            '    var startY = k1.value[1] + offset;\n' +
+            '    var endY = k2.value[1];\n' +
+            '    [linear(t, 0, 1, k1.value[0], k2.value[0]), linear(t, 0, 1, startY, endY), linear(t, 0, 1, k1.value[2], k2.value[2])]\n' +
+            '  } else { value }\n' +
+            '}';
     } else if (zoneName === "left") {
-        expr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n' +
+        expr = baseExpr +
             'var offset = ctrl.effect("Left Zone X")("Slider");\n' +
-            '[value[0] + offset, value[1], value[2]]';
+            'if (numKeys < 2) { [value[0] + offset, value[1], value[2]] }\n' +
+            'else {\n' +
+            '  var k1 = key(1); var k2 = key(2);\n' +
+            '  if (time <= k1.time) { [k1.value[0] + offset, k1.value[1], k1.value[2]] }\n' +
+            '  else if (time < k2.time) {\n' +
+            '    var t = (time - k1.time) / (k2.time - k1.time);\n' +
+            '    var startX = k1.value[0] + offset;\n' +
+            '    var endX = k2.value[0];\n' +
+            '    [linear(t, 0, 1, startX, endX), linear(t, 0, 1, k1.value[1], k2.value[1]), linear(t, 0, 1, k1.value[2], k2.value[2])]\n' +
+            '  } else { value }\n' +
+            '}';
     } else if (zoneName === "right") {
-        expr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n' +
+        expr = baseExpr +
             'var offset = ctrl.effect("Right Zone X")("Slider");\n' +
-            '[value[0] + offset, value[1], value[2]]';
+            'if (numKeys < 2) { [value[0] + offset, value[1], value[2]] }\n' +
+            'else {\n' +
+            '  var k1 = key(1); var k2 = key(2);\n' +
+            '  if (time <= k1.time) { [k1.value[0] + offset, k1.value[1], k1.value[2]] }\n' +
+            '  else if (time < k2.time) {\n' +
+            '    var t = (time - k1.time) / (k2.time - k1.time);\n' +
+            '    var startX = k1.value[0] + offset;\n' +
+            '    var endX = k2.value[0];\n' +
+            '    [linear(t, 0, 1, startX, endX), linear(t, 0, 1, k1.value[1], k2.value[1]), linear(t, 0, 1, k1.value[2], k2.value[2])]\n' +
+            '  } else { value }\n' +
+            '}';
     } else {
-        // No offset expression for other zones
         return;
     }
 
