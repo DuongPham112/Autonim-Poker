@@ -1806,7 +1806,7 @@ function computeActions(startSnap, endSnap) {
             actions.push({
                 targetId: card.id,
                 type: 'PLACE',
-                startPosition: { x: PROJECT_INFO.width / 2, y: -100 }, // Start from outside top
+                startPosition: { x: -500, y: PROJECT_INFO.height / 2 }, // Start from far left
                 endPosition: endPos,
                 startRotation: 0,
                 endRotation: Math.round(end.rotation || 0),
@@ -1981,14 +1981,24 @@ function saveInitialStateForExport() {
     // Card scale for AE - 50% gives good visibility on 1080p
     const aeCardScale = 0.5;
 
+    // Get the initial snapshot (step 0) to check which cards existed at start
+    const initialSnap = stepSnapshots[0] || {};
+
     appState.tableCards.forEach(card => {
+        // Check if card existed in the initial snapshot
+        const wasInInitialSnap = initialSnap[card.id] !== undefined;
+
         // Calculate position based on zone
         let posX = card.x || 0;
         let posY = card.y || 0;
 
-        // For zone cards, use calculated AE position
-        if (card.zone && card.zone !== 'table') {
-            const aePos = getAEZonePosition(card.zone, card.zonePosition);
+        if (!wasInInitialSnap) {
+            // Card was added from tray during recording - start off-screen left
+            posX = -500;
+            posY = PROJECT_INFO.height / 2;
+        } else if (card.zone && card.zone !== 'table') {
+            // For zone cards, use calculated AE position
+            const aePos = getAEZonePosition(card.zone, initialSnap[card.id].zonePosition || 0);
             posX = aePos.x;
             posY = aePos.y;
         }
@@ -2000,11 +2010,11 @@ function saveInitialStateForExport() {
             backImage: 'back.png',
             x: Math.round(posX),
             y: Math.round(posY),
-            rotation: card.rotation || 0,
+            rotation: wasInInitialSnap ? (initialSnap[card.id].rotation || 0) : 0,
             scale: aeCardScale,
-            zone: card.zone,
-            zonePosition: card.zonePosition || 0,
-            isFaceUp: card.isFaceUp
+            zone: wasInInitialSnap ? initialSnap[card.id].zone : 'offscreen',
+            zonePosition: wasInInitialSnap ? (initialSnap[card.id].zonePosition || 0) : 0,
+            isFaceUp: wasInInitialSnap ? initialSnap[card.id].isFaceUp : false
         };
     });
 
