@@ -729,70 +729,60 @@ function processTransformAction(layer, action, startTime, duration, targetZ) {
 
 
 /**
- * Process FLIP effect using Pre-Comp Opacity Toggle
- * Animation:
- * 1. Main Layer: Scale X 100 -> 0 (at mid) -> 100 (at end)
- * 2. Pre-Comp Internals: Swap Opacity of Front/Back at mid time
+ * Process FLIP effect using Y Rotation (3D)
+ * Face down (back) = 0° Y Rotation
+ * Face up (front) = 180° Y Rotation
+ * Switch visibility at 90° (perpendicular to view)
  * 
  * TIMING: Flip starts 1 frame before move ends, so card flips as it lands
  */
 function processFlipEffect(layer, startTime, duration, flipToFaceUp) {
-    var scaleProp = layer.property("Scale");
+    var yRotProp = layer.property("Y Rotation");
 
     var frameDuration = 1 / FRAME_RATE;
     var flipDuration = FLIP_DURATION_FRAMES * frameDuration;
     var moveDuration = MOVE_DURATION_FRAMES * frameDuration;
 
     // Calculate flip start time: start flip 1 frame before move ends
-    // This makes the card flip as it's landing, not while flying
     var flipStartTime = startTime + moveDuration - frameDuration;
     var midTime = flipStartTime + flipDuration * 0.5;
     var endTime = flipStartTime + flipDuration;
 
-    // 1. ANMIATE MAIN LAYER SCALE (Flip effect)
-    var currentScale = scaleProp.valueAtTime(startTime, false);
-    var scaleX = Math.abs(currentScale[0]); // Always positive start
-    var scaleY = currentScale[1];
+    // 1. ANIMATE Y ROTATION (Flip effect)
+    // Back = 0°, Front = 180°
+    if (flipToFaceUp) {
+        // Flip to face up: 0° -> 180°
+        yRotProp.setValueAtTime(flipStartTime, 0);
+        yRotProp.setValueAtTime(endTime, 180);
+    } else {
+        // Flip to face down: 180° -> 0° (or 180° -> 360° for continuous rotation)
+        yRotProp.setValueAtTime(flipStartTime, 180);
+        yRotProp.setValueAtTime(endTime, 0);
+    }
 
-    // Keyframes: flipStart (100) -> Mid (0) -> End (100)
-    scaleProp.setValueAtTime(flipStartTime, [scaleX, scaleY, 100]);
-    scaleProp.setValueAtTime(midTime, [0, scaleY, 100]);
-    scaleProp.setValueAtTime(endTime, [scaleX, scaleY, 100]);
+    applyBezierEasing(yRotProp);
 
-    applyBezierEasing(scaleProp);
-
-    // 2. TOGGLE VISIBILITY INSIDE PRE-COMP
-    // We need to access the pre-comp item and add Hold keyframes to Opacity
+    // 2. TOGGLE VISIBILITY INSIDE PRE-COMP at mid-flip (90°)
     var preComp = layer.source;
     if (preComp && preComp instanceof CompItem) {
         var frontLayer = preComp.layer("Front");
         var backLayer = preComp.layer("Back");
 
         if (frontLayer && backLayer) {
-            // Determine target opacity based on direction
-            // flipToFaceUp = true  => Front 0->100, Back 100->0
-            // flipToFaceUp = false => Front 100->0, Back 0->100
-
             var frontOp = frontLayer.property("Opacity");
             var backOp = backLayer.property("Opacity");
-
-            // Set Hold Keyframes at midTime
-            // Note: Since we are in a pre-comp, we use the same timeline times 
-            // because the pre-comp layer starts at 0 in the main comp (usually).
-            // If the layer was shifted in time, we'd need to adjust, but our generator 
-            // creates layer starting at 0.
 
             var t = midTime;
 
             if (flipToFaceUp) {
-                // Switch to Front Visible
-                frontOp.setValueAtTime(t - 0.01, 0); // Before mid: Hidden
-                frontOp.setValueAtTime(t, 100);      // At mid: Visible
+                // Switch to Front Visible at 90°
+                frontOp.setValueAtTime(t - 0.01, 0);
+                frontOp.setValueAtTime(t, 100);
 
-                backOp.setValueAtTime(t - 0.01, 100); // Before mid: Visible
-                backOp.setValueAtTime(t, 0);          // At mid: Hidden
+                backOp.setValueAtTime(t - 0.01, 100);
+                backOp.setValueAtTime(t, 0);
             } else {
-                // Switch to Back Visible
+                // Switch to Back Visible at 90°
                 frontOp.setValueAtTime(t - 0.01, 100);
                 frontOp.setValueAtTime(t, 0);
 
@@ -800,7 +790,6 @@ function processFlipEffect(layer, startTime, duration, flipToFaceUp) {
                 backOp.setValueAtTime(t, 100);
             }
 
-            // Set all new keyframes to Hold Interpolation to prevent fading
             setHoldInterpolation(frontOp);
             setHoldInterpolation(backOp);
         }
