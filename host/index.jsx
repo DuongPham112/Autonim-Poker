@@ -152,6 +152,28 @@ function generateSequence(jsonString, assetsRootPath) {
             return createErrorResponse(animResult.message);
         }
 
+        // Create Control Layer with Expression Control sliders
+        var controlLayer = createControlLayer(comp);
+        var controlLayerName = controlLayer.name;
+
+        // Apply expressions to all card layers
+        for (var cardId in layerMap) {
+            if (layerMap.hasOwnProperty(cardId)) {
+                var layer = layerMap[cardId];
+                var cardInfo = data.initialState[cardId];
+
+                // Apply Scale expression (links to Card Scale slider)
+                applyScaleExpression(layer, controlLayerName);
+
+                // Get base position from initial state
+                var baseX = cardInfo ? cardInfo.x : comp.width / 2;
+                var baseY = cardInfo ? cardInfo.y : comp.height / 2;
+
+                // Apply Position expression (links to Zone Spacing slider)
+                applyPositionExpression(layer, controlLayerName, baseX, baseY, cardInfo ? cardInfo.zone : 'table');
+            }
+        }
+
         // Cleanup: Set work area to actual duration
         var actualDuration = animResult.finalTime + 0.3; // Small buffer at end
         comp.workAreaStart = 0;
@@ -392,6 +414,81 @@ function applyInitialTransform(layer, assetInfo, comp) {
     var scale = assetInfo.scale !== undefined ? assetInfo.scale * 100 : 100;
     layer.property("Scale").setValue([scale, scale, 100]);
 }
+
+/**
+ * Create Control Layer with Expression Control sliders
+ * This allows user to adjust card size, spacing after export
+ */
+function createControlLayer(comp) {
+    // Create a null layer for controls
+    var controlLayer = comp.layers.addNull();
+    controlLayer.name = "🎛️ Controls";
+    controlLayer.guideLayer = true;  // Make it a guide layer (won't render)
+    controlLayer.moveToBeginning();  // Put at top of layer stack
+
+    // Extend duration to match comp
+    controlLayer.outPoint = comp.duration;
+
+    // Add Expression Control effects
+    // Card Scale (default 50 = 50%)
+    var cardScaleEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+    cardScaleEffect.name = "Card Scale";
+    cardScaleEffect.property("Slider").setValue(50);
+
+    // Card Spacing (default 100 = 100%)
+    var cardSpacingEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+    cardSpacingEffect.name = "Card Spacing";
+    cardSpacingEffect.property("Slider").setValue(100);
+
+    // Zone Spacing (default 100 = 100%)
+    var zoneSpacingEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+    zoneSpacingEffect.name = "Zone Spacing";
+    zoneSpacingEffect.property("Slider").setValue(100);
+
+    // Zone Y Offset (default 0)
+    var zoneYEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+    zoneYEffect.name = "Zone Y Offset";
+    zoneYEffect.property("Slider").setValue(0);
+
+    return controlLayer;
+}
+
+/**
+ * Apply expression to card layer Scale property
+ * Links to Control Layer's Card Scale slider
+ */
+function applyScaleExpression(layer, controlLayerName) {
+    var expr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n' +
+        'var scale = ctrl.effect("Card Scale")("Slider");\n' +
+        '[scale, scale, 100]';
+    layer.property("Scale").expression = expr;
+}
+
+/**
+ * Apply expression to card layer Position property
+ * Uses Zone Spacing to adjust position relative to comp center
+ */
+function applyPositionExpression(layer, controlLayerName, baseX, baseY, zoneType) {
+    // Calculate offset from center
+    var centerX = 960;  // Half of 1920
+    var centerY = 540;  // Half of 1080
+
+    // Different expression based on zone type
+    var expr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n' +
+        'var zoneSpacing = ctrl.effect("Zone Spacing")("Slider") / 100;\n' +
+        'var cardSpacing = ctrl.effect("Card Spacing")("Slider") / 100;\n' +
+        'var zoneY = ctrl.effect("Zone Y Offset")("Slider");\n' +
+        'var centerX = ' + centerX + ';\n' +
+        'var centerY = ' + centerY + ';\n' +
+        'var baseX = ' + baseX + ';\n' +
+        'var baseY = ' + baseY + ';\n' +
+        'var offsetX = (baseX - centerX) * zoneSpacing + centerX;\n' +
+        'var offsetY = (baseY - centerY) * zoneSpacing + centerY + zoneY;\n' +
+        '[offsetX, offsetY, value[2]]';
+
+    layer.property("Position").expression = expr;
+}
+
 
 /**
  * Process all scenario steps and apply animations
