@@ -203,6 +203,23 @@
                 </div>
             </div>
 
+            <!-- Timeline Section (moved to bottom) -->
+            <div class="timeline-bar" id="timelineBar">
+                <div class="timeline-header">
+                    <h3>🎬 Timeline</h3>
+                    <div class="timeline-controls">
+                        <button id="replayBtn" class="btn btn-sm btn-secondary" disabled>
+                            ▶️ Replay
+                        </button>
+                        <span id="replayProgress" class="replay-progress hidden">Step 0/0</span>
+                        <button id="stopReplayBtn" class="btn btn-sm btn-danger hidden">⏹️</button>
+                    </div>
+                </div>
+                <div id="timelinePreview" class="timeline-preview">
+                    <!-- Steps will be rendered here -->
+                </div>
+            </div>
+
             <!-- Footer / Status -->
             <footer class="footer">
                 <div class="status-bar" id="statusMessage">
@@ -363,24 +380,14 @@
                 </div>
             </div>
 
-            <!-- Timeline Preview -->
-            <div class="director-section">
-                <h3>Timeline</h3>
-                <div id="timelinePreview" class="timeline-preview">
-                    <!-- Steps will be rendered here -->
+            <!-- Log Section (simple text) -->
+            <div class="director-section log-section">
+                <h3>📋 Log</h3>
+                <div id="logContent" class="log-content">
+                    <pre id="debugContent" class="log-text"></pre>
                 </div>
             </div>
 
-            <!-- Replay Section -->
-            <div class="director-section replay-section" id="replaySection">
-                <button id="replayBtn" class="btn btn-secondary btn-block" disabled>
-                    ▶️ Replay Steps
-                </button>
-                <div class="replay-controls hidden" id="replayControls">
-                    <span id="replayProgress">Step 0/0</span>
-                    <button id="stopReplayBtn" class="btn btn-sm btn-danger">⏹️ Stop</button>
-                </div>
-            </div>
 
             <!-- Export -->
             <div class="director-section export-section">
@@ -407,19 +414,7 @@
         </div>
     </div>
 
-    <!-- Debug Overlay -->
-    <div id="debugOverlay" class="debug-overlay hidden">
-        <div class="debug-header">
-            <h4>🔍 Debug Log</h4>
-            <div class="debug-actions">
-                <button id="copyDebugBtn" class="btn btn-sm btn-primary">📋 Copy</button>
-                <button id="clearDebugBtn" class="btn btn-sm btn-secondary">🗑️ Clear</button>
-                <button id="closeDebugBtn" class="btn btn-sm btn-danger">✕</button>
-            </div>
-        </div>
-        <pre id="debugContent"></pre>
-    </div>
-    <button id="toggleDebugBtn" class="debug-toggle-btn">🐛</button>
+
 
     <!-- Hidden inputs -->
     <input type="file" id="folderInput" webkitdirectory directory multiple style="display: none;">

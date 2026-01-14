@@ -515,25 +515,31 @@ function processTransformAction(layer, action, startTime, duration, targetZ) {
  * Animation:
  * 1. Main Layer: Scale X 100 -> 0 (at mid) -> 100 (at end)
  * 2. Pre-Comp Internals: Swap Opacity of Front/Back at mid time
+ * 
+ * TIMING: Flip starts 1 frame before move ends, so card flips as it lands
  */
 function processFlipEffect(layer, startTime, duration, flipToFaceUp) {
     var scaleProp = layer.property("Scale");
 
-    // Use FLIP_DURATION_FRAMES for quick, decisive flip (~0.17s at 30fps)
     var frameDuration = 1 / FRAME_RATE;
     var flipDuration = FLIP_DURATION_FRAMES * frameDuration;
-    var midTime = startTime + flipDuration * 0.5;
-    var endTime = startTime + flipDuration;
+    var moveDuration = MOVE_DURATION_FRAMES * frameDuration;
+
+    // Calculate flip start time: start flip 1 frame before move ends
+    // This makes the card flip as it's landing, not while flying
+    var flipStartTime = startTime + moveDuration - frameDuration;
+    var midTime = flipStartTime + flipDuration * 0.5;
+    var endTime = flipStartTime + flipDuration;
 
     // 1. ANMIATE MAIN LAYER SCALE (Flip effect)
     var currentScale = scaleProp.valueAtTime(startTime, false);
     var scaleX = Math.abs(currentScale[0]); // Always positive start
     var scaleY = currentScale[1];
 
-    // Keyframes: Start (100) -> Mid (0) -> End (100)
-    scaleProp.setValueAtTime(startTime, [scaleX, scaleY]);
-    scaleProp.setValueAtTime(midTime, [0, scaleY]);
-    scaleProp.setValueAtTime(endTime, [scaleX, scaleY]);
+    // Keyframes: flipStart (100) -> Mid (0) -> End (100)
+    scaleProp.setValueAtTime(flipStartTime, [scaleX, scaleY, 100]);
+    scaleProp.setValueAtTime(midTime, [0, scaleY, 100]);
+    scaleProp.setValueAtTime(endTime, [scaleX, scaleY, 100]);
 
     applyBezierEasing(scaleProp);
 

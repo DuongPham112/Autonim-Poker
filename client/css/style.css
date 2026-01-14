@@ -1896,3 +1896,123 @@ body {
     color: var(--text-secondary);
     padding: 4px 8px;
 }
+
+/* ============================================
+   TIMELINE BAR (Bottom of main content)
+   ============================================ */
+.timeline-bar {
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    padding: 10px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.timeline-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.timeline-header h3 {
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.timeline-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.replay-progress {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.replay-progress.hidden {
+    display: none;
+}
+
+.timeline-preview {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 5px 0;
+    min-height: 40px;
+    align-items: center;
+}
+
+.timeline-step {
+    flex-shrink: 0;
+    width: 60px;
+    height: 30px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.timeline-step:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-blue);
+}
+
+.timeline-step.active {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: white;
+}
+
+.timeline-step.playing {
+    animation: pulse-step 0.5s infinite;
+}
+
+@keyframes pulse-step {
+
+    0%,
+    100% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.05);
+    }
+}
+
+/* ============================================
+   LOG SECTION (Right panel)
+   ============================================ */
+.log-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.log-content {
+    flex: 1;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: auto;
+    max-height: 200px;
+}
+
+.log-text {
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin: 0;
+    padding: 8px;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
