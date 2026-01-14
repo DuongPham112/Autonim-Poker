@@ -416,8 +416,8 @@ function applyInitialTransform(layer, assetInfo, comp) {
     var rotation = assetInfo.rotation !== undefined ? assetInfo.rotation : 0;
     layer.property("Z Rotation").setValue(rotation);
 
-    // Y Rotation for card face: Face-up = 180°, Face-down = 0°
-    var yRotation = assetInfo.isFaceUp ? 180 : 0;
+    // Y Rotation for card face: Face-up = 0°, Face-down = 180°
+    var yRotation = assetInfo.isFaceUp ? 0 : 180;
     layer.property("Y Rotation").setValue(yRotation);
 
     // Scale (3D: X, Y, Z)
