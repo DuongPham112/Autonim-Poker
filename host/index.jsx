@@ -307,8 +307,9 @@ function createCardPrecomp(mainComp, cardId, cardInfo, assetsPath, folderInfo) {
     // Enable 3D for z-ordering - cards will use Z position to control stacking
     preCompLayer.threeDLayer = true;
 
-    // Collapse Transformations (Continuous Rasterization) - vital for crisp edges if scaled
-    preCompLayer.collapseTransformation = true;
+    // Note: collapseTransformation conflicts with 3D layer behavior
+    // Leaving it OFF to enable proper 3D z-ordering
+    // preCompLayer.collapseTransformation = true;
 
     // Set anchor point to center
     setAnchorPointToCenter(preCompLayer);
