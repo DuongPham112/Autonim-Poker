@@ -752,15 +752,15 @@ function processFlipEffect(layer, startTime, duration, flipToFaceUp) {
     var endTime = flipStartTime + flipDuration;
 
     // 1. ANIMATE Y ROTATION (Flip effect)
-    // Back = 0°, Front = 180°
+    // Face-down = 180°, Face-up = 0°
     if (flipToFaceUp) {
-        // Flip to face up: 0° -> 180°
-        yRotProp.setValueAtTime(flipStartTime, 0);
-        yRotProp.setValueAtTime(endTime, 180);
-    } else {
-        // Flip to face down: 180° -> 0° (or 180° -> 360° for continuous rotation)
+        // Flip to face up: 180° -> 0°
         yRotProp.setValueAtTime(flipStartTime, 180);
         yRotProp.setValueAtTime(endTime, 0);
+    } else {
+        // Flip to face down: 0° -> 180°
+        yRotProp.setValueAtTime(flipStartTime, 0);
+        yRotProp.setValueAtTime(endTime, 180);
     }
 
     applyBezierEasing(yRotProp);
