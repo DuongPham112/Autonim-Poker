@@ -65,6 +65,15 @@ var FLIP_DURATION_FRAMES = 5;    // 5 frames (~0.17s) for rotation/flip animatio
 var Z_SPACING = 10;              // Z spacing between cards (3D ordering)
 var INITIAL_Z_OFFSET = 0;        // Initial Z position for all cards
 
+// Zone center positions for poker layout (1920x1080)
+var ZONE_CENTERS = {
+    top: { x: 960, y: 120 },
+    bottom: { x: 960, y: 960 },
+    left: { x: 120, y: 540 },
+    right: { x: 1800, y: 540 },
+    community: { x: 960, y: 540 }
+};
+
 // Folder organization
 var FOLDER_CARD_IMG = "Card_IMG";
 var FOLDER_COMP = "Comp";
@@ -156,7 +165,10 @@ function generateSequence(jsonString, assetsRootPath) {
         var controlLayer = createControlLayer(comp);
         var controlLayerName = controlLayer.name;
 
-        // Apply expressions to all card layers
+        // Create Zone Null layers (parents for cards)
+        var zoneNulls = createZoneNulls(comp, controlLayerName);
+
+        // Parent cards to their zone nulls and apply scale expression
         for (var cardId in layerMap) {
             if (layerMap.hasOwnProperty(cardId)) {
                 var layer = layerMap[cardId];
@@ -165,12 +177,15 @@ function generateSequence(jsonString, assetsRootPath) {
                 // Apply Scale expression (links to Card Scale slider)
                 applyScaleExpression(layer, controlLayerName);
 
-                // Get base position from initial state
-                var baseX = cardInfo ? cardInfo.x : comp.width / 2;
-                var baseY = cardInfo ? cardInfo.y : comp.height / 2;
+                // Parent to zone null if card is in a zone
+                if (cardInfo && cardInfo.zone && zoneNulls[cardInfo.zone]) {
+                    var zoneNull = zoneNulls[cardInfo.zone];
+                    var zoneCenter = ZONE_CENTERS[cardInfo.zone];
+                    var baseX = cardInfo.x || comp.width / 2;
+                    var baseY = cardInfo.y || comp.height / 2;
 
-                // Apply Position expression (links to Zone Spacing slider)
-                applyPositionExpression(layer, controlLayerName, baseX, baseY, cardInfo ? cardInfo.zone : 'table');
+                    parentCardToZone(layer, zoneNull, baseX, baseY, zoneCenter);
+                }
             }
         }
 
@@ -423,38 +438,95 @@ function createControlLayer(comp) {
     // Create a null layer for controls
     var controlLayer = comp.layers.addNull();
     controlLayer.name = "🎛️ Controls";
-    controlLayer.guideLayer = true;  // Make it a guide layer (won't render)
-    controlLayer.moveToBeginning();  // Put at top of layer stack
-
-    // Extend duration to match comp
+    controlLayer.guideLayer = true;
+    controlLayer.moveToBeginning();
     controlLayer.outPoint = comp.duration;
 
     // Add Expression Control effects
-    // Card Scale (default 50 = 50%)
+    // Card Scale (default 50%)
     var cardScaleEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
     cardScaleEffect.name = "Card Scale";
     cardScaleEffect.property("Slider").setValue(50);
 
-    // Card Spacing (default 100 = 100%)
-    var cardSpacingEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
-    cardSpacingEffect.name = "Card Spacing";
-    cardSpacingEffect.property("Slider").setValue(100);
+    // Top Zone Y Offset
+    var topYEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+    topYEffect.name = "Top Zone Y";
+    topYEffect.property("Slider").setValue(0);
 
-    // Zone Spacing (default 100 = 100%)
-    var zoneSpacingEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
-    zoneSpacingEffect.name = "Zone Spacing";
-    zoneSpacingEffect.property("Slider").setValue(100);
+    // Bottom Zone Y Offset
+    var bottomYEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+    bottomYEffect.name = "Bottom Zone Y";
+    bottomYEffect.property("Slider").setValue(0);
 
-    // Zone Y Offset (default 0)
-    var zoneYEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
-    zoneYEffect.name = "Zone Y Offset";
-    zoneYEffect.property("Slider").setValue(0);
+    // Left Zone X Offset
+    var leftXEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+    leftXEffect.name = "Left Zone X";
+    leftXEffect.property("Slider").setValue(0);
+
+    // Right Zone X Offset
+    var rightXEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+    rightXEffect.name = "Right Zone X";
+    rightXEffect.property("Slider").setValue(0);
 
     return controlLayer;
 }
 
 /**
- * Apply expression to card layer Scale property
+ * Create Zone Null layers as parents for cards
+ * Each zone null's position is linked to Control layer sliders
+ * @returns {Object} Map of zone name to null layer
+ */
+function createZoneNulls(comp, controlLayerName) {
+    var zoneNulls = {};
+    var zones = ["top", "bottom", "left", "right", "community"];
+
+    for (var i = 0; i < zones.length; i++) {
+        var zoneName = zones[i];
+        var center = ZONE_CENTERS[zoneName];
+        if (!center) continue;
+
+        // Create null layer for this zone
+        var zoneNull = comp.layers.addNull();
+        zoneNull.name = "Zone_" + zoneName;
+        zoneNull.threeDLayer = true;
+        zoneNull.outPoint = comp.duration;
+
+        // Set initial position at zone center
+        zoneNull.property("Position").setValue([center.x, center.y, 0]);
+
+        // Apply expression to link position to Control sliders
+        var expr = "";
+        if (zoneName === "top") {
+            expr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n' +
+                'var offset = ctrl.effect("Top Zone Y")("Slider");\n' +
+                '[' + center.x + ', ' + center.y + ' + offset, 0]';
+        } else if (zoneName === "bottom") {
+            expr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n' +
+                'var offset = ctrl.effect("Bottom Zone Y")("Slider");\n' +
+                '[' + center.x + ', ' + center.y + ' + offset, 0]';
+        } else if (zoneName === "left") {
+            expr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n' +
+                'var offset = ctrl.effect("Left Zone X")("Slider");\n' +
+                '[' + center.x + ' + offset, ' + center.y + ', 0]';
+        } else if (zoneName === "right") {
+            expr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n' +
+                'var offset = ctrl.effect("Right Zone X")("Slider");\n' +
+                '[' + center.x + ' + offset, ' + center.y + ', 0]';
+        } else {
+            // Community - no offset for now
+            expr = '[' + center.x + ', ' + center.y + ', 0]';
+        }
+
+        zoneNull.property("Position").expression = expr;
+
+        zoneNulls[zoneName] = zoneNull;
+    }
+
+    return zoneNulls;
+}
+
+/**
+ * Apply Scale expression to card layer
  * Links to Control Layer's Card Scale slider
  */
 function applyScaleExpression(layer, controlLayerName) {
@@ -465,28 +537,23 @@ function applyScaleExpression(layer, controlLayerName) {
 }
 
 /**
- * Apply expression to card layer Position property
- * Uses Zone Spacing to adjust position relative to comp center
+ * Parent a card layer to its zone null and convert to local position
+ * @param {Layer} cardLayer - The card layer to parent
+ * @param {Layer} zoneNull - The zone null layer to parent to
+ * @param {number} baseX - Original world X position
+ * @param {number} baseY - Original world Y position
  */
-function applyPositionExpression(layer, controlLayerName, baseX, baseY, zoneType) {
-    // Calculate offset from center
-    var centerX = 960;  // Half of 1920
-    var centerY = 540;  // Half of 1080
+function parentCardToZone(cardLayer, zoneNull, baseX, baseY, zoneCenter) {
+    // Calculate local position relative to zone center
+    var localX = baseX - zoneCenter.x;
+    var localY = baseY - zoneCenter.y;
 
-    // Different expression based on zone type
-    var expr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n' +
-        'var zoneSpacing = ctrl.effect("Zone Spacing")("Slider") / 100;\n' +
-        'var cardSpacing = ctrl.effect("Card Spacing")("Slider") / 100;\n' +
-        'var zoneY = ctrl.effect("Zone Y Offset")("Slider");\n' +
-        'var centerX = ' + centerX + ';\n' +
-        'var centerY = ' + centerY + ';\n' +
-        'var baseX = ' + baseX + ';\n' +
-        'var baseY = ' + baseY + ';\n' +
-        'var offsetX = (baseX - centerX) * zoneSpacing + centerX;\n' +
-        'var offsetY = (baseY - centerY) * zoneSpacing + centerY + zoneY;\n' +
-        '[offsetX, offsetY, value[2]]';
+    // Parent to zone null
+    cardLayer.parent = zoneNull;
 
-    layer.property("Position").expression = expr;
+    // Set local position (relative to parent)
+    var currentPos = cardLayer.property("Position").value;
+    cardLayer.property("Position").setValue([localX, localY, currentPos[2]]);
 }
 
 
