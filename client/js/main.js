@@ -2519,9 +2519,13 @@ function restoreToInitialState() {
         card.element = null;
     });
 
-    // Re-create elements for all cards in their zones
+    // Re-create elements ONLY for cards in the initial state
+    // Filter tableCards to only include those in initialState
+    const initialStateCardIds = Object.keys(scenarioData.initialState);
+    const cardsInInitialState = appState.tableCards.filter(c => initialStateCardIds.includes(c.id));
+
     // Sort by zone and zonePosition to ensure correct order
-    const sortedCards = [...appState.tableCards].sort((a, b) => {
+    const sortedCards = cardsInInitialState.sort((a, b) => {
         if (a.zone !== b.zone) return (a.zone || '').localeCompare(b.zone || '');
         return (a.zonePosition || 0) - (b.zonePosition || 0);
     });
@@ -2693,9 +2697,13 @@ function restoreFromSnapshot(snapshot) {
         card.element = null;
     });
 
-    // Re-create elements for all cards in their zones
+    // Re-create elements ONLY for cards in the snapshot
+    // Filter tableCards to only include those in the snapshot
+    const snapshotCardIds = Object.keys(snapshot);
+    const cardsInSnapshot = appState.tableCards.filter(c => snapshotCardIds.includes(c.id));
+
     // Sort by zone and zonePosition to ensure correct order
-    const sortedCards = [...appState.tableCards].sort((a, b) => {
+    const sortedCards = cardsInSnapshot.sort((a, b) => {
         if (a.zone !== b.zone) return (a.zone || '').localeCompare(b.zone || '');
         return (a.zonePosition || 0) - (b.zonePosition || 0);
     });
