@@ -870,9 +870,11 @@ function applyBezierEasing(property) {
 
             property.setInterpolationTypeAtKey(k, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
 
-            // Mild ease
-            var easeIn = new KeyframeEase(0, 33);
-            var easeOut = new KeyframeEase(0, 33);
+            // Strong ease-in/ease-out for smooth motion
+            // speed=0 means velocity is zero at keyframe (smooth stop/start)
+            // influence=75 gives strong easing effect
+            var easeIn = new KeyframeEase(0, 75);
+            var easeOut = new KeyframeEase(0, 75);
 
             var dims = (property.value instanceof Array) ? property.value.length : 1;
 
