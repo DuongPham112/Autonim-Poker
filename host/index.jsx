@@ -398,14 +398,13 @@ function setAnchorPointToCenter(layer) {
 /**
  * Apply initial transform properties to layer (3D)
  * zonePosition determines initial Z: lower zonePosition = more positive Z (further from camera = behind)
+ * isFaceUp determines initial Y Rotation: true = 180°, false = 0°
  */
 function applyInitialTransform(layer, assetInfo, comp) {
     // Get zonePosition for Z calculation
     var zonePosition = assetInfo.zonePosition || 0;
 
     // Calculate Z: lower zonePosition = more positive Z (behind)
-    // Higher zonePosition = more negative Z (in front)
-    // Cards with zonePosition 0 start at Z=0, each higher position is -Z_SPACING closer
     var zPos = INITIAL_Z_OFFSET - (zonePosition * Z_SPACING);
 
     // Position (3D: X, Y, Z)
@@ -413,9 +412,13 @@ function applyInitialTransform(layer, assetInfo, comp) {
     var posY = assetInfo.y !== undefined ? assetInfo.y : comp.height / 2;
     layer.property("Position").setValue([posX, posY, zPos]);
 
-    // Rotation (X Rotation for 3D layers)
+    // Z Rotation (table rotation)
     var rotation = assetInfo.rotation !== undefined ? assetInfo.rotation : 0;
     layer.property("Z Rotation").setValue(rotation);
+
+    // Y Rotation for card face: Face-up = 180°, Face-down = 0°
+    var yRotation = assetInfo.isFaceUp ? 180 : 0;
+    layer.property("Y Rotation").setValue(yRotation);
 
     // Scale (3D: X, Y, Z)
     var scale = assetInfo.scale !== undefined ? assetInfo.scale * 100 : 100;
