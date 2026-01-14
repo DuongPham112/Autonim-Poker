@@ -2219,15 +2219,40 @@ function handleSaveProject() {
     };
 
     const dataStr = JSON.stringify(projectData, null, 2);
-    const blob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `autonim-poker-project-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
 
-    setStatus('Project saved!', 'success');
+    // Use CEP file save dialog
+    if (csInterface) {
+        const defaultFilename = `autonim-poker-project-${Date.now()}.json`;
+        const result = window.cep.fs.showSaveDialogEx(
+            'Save Project',
+            '',
+            ['json'],
+            defaultFilename
+        );
+
+        if (result.data && result.data.length > 0) {
+            const filePath = result.data;
+            const writeResult = window.cep.fs.writeFile(filePath, dataStr);
+
+            if (writeResult.err === 0) {
+                setStatus('Project saved to: ' + filePath.split(/[\\/]/).pop(), 'success');
+            } else {
+                setStatus('Failed to save project', 'error');
+            }
+        } else {
+            setStatus('Save cancelled', '');
+        }
+    } else {
+        // Fallback for browser testing
+        const blob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `autonim-poker-project-${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        setStatus('Project saved to Downloads', 'success');
+    }
 }
 
 function handleLoadProject(e) {
