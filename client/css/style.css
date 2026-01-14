@@ -130,6 +130,27 @@ body {
     display: block;
 }
 
+/* Assets row - compact inline layout */
+.assets-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.assets-row .btn-xs {
+    flex-shrink: 0;
+    padding: 4px 8px;
+}
+
+.assets-path-text {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+}
+
 .deck-selector {
     display: flex;
     gap: 8px;
