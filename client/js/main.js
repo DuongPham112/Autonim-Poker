@@ -2323,6 +2323,14 @@ function handleLoadProject(e) {
 // ============================================
 
 function renderTimeline() {
+    // Use new TimelineUI if available
+    if (typeof timelineUI !== 'undefined' && timelineUI !== null) {
+        // Sync timing data first
+        syncTimelineModulesWithSteps();
+        return;
+    }
+
+    // Fallback to old rendering if TimelineUI not loaded
     timelinePreview.innerHTML = '';
 
     scenarioData.scenario.forEach((step, index) => {
