@@ -2438,10 +2438,13 @@ function handleReplay() {
     isReplaying = true;
     currentReplayStep = 0;
 
-    // Update UI
-    replayBtn.textContent = '⏸️ Pause';
-    replayControls.classList.remove('hidden');
-    replayProgress.textContent = `Initial / ${scenarioData.scenario.length} steps`;
+    // Update UI - old controls disabled, using new timeline controls
+    // replayBtn.textContent = '⏸️ Pause';
+    // replayControls.classList.remove('hidden');
+    // replayProgress.textContent = `Initial / ${scenarioData.scenario.length} steps`;
+
+    // Update playhead to start
+    updateTimelinePlayhead(0);
 
     // Start replay from initial state
     restoreToInitialState();
@@ -2472,7 +2475,12 @@ function replayNextStep() {
 
     const step = scenarioData.scenario[currentReplayStep];
     debugLog('Playing step:', currentReplayStep + 1, 'duration:', step.duration);
-    replayProgress.textContent = `Step ${currentReplayStep + 1}/${scenarioData.scenario.length}`;
+    // Old progress display disabled - using playhead now
+    // replayProgress.textContent = `Step ${currentReplayStep + 1}/${scenarioData.scenario.length}`;
+
+    // Update playhead position (step start time)
+    const playheadTime = step.startTime || currentReplayStep;
+    updateTimelinePlayhead(playheadTime);
 
     // Get previous snapshot for start positions
     // stepSnapshots[0] = initial state, stepSnapshots[1] = after step 1, etc.
@@ -3890,4 +3898,21 @@ function syncTimelineModulesWithSteps() {
     }
 
     console.log('[Timeline] Sync complete. Steps:', scenarioData.scenario.length, 'Snapshots:', snapshotManager.getSnapshotCount());
+}
+
+/**
+ * Update timeline playhead position
+ * @param {number} time - Current time in seconds
+ */
+function updateTimelinePlayhead(time) {
+    // Update TimelineUI playhead
+    if (timelineUI && timelineUI._updatePlayhead) {
+        timelineUI._updatePlayhead(time);
+    }
+
+    // Also update the time display elements directly
+    const currentTimeEl = document.getElementById('tlCurrentTime');
+    if (currentTimeEl) {
+        currentTimeEl.textContent = time.toFixed(1);
+    }
 }
