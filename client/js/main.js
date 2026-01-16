@@ -511,6 +511,11 @@ function setPhase(phase) {
     if (stepControlsSection) stepControlsSection.classList.add('hidden');
     gameContainer.classList.remove('board-setting-mode');
     clearCardDropZones(); // Clear drop zones when switching phases
+    // Hide recording indicator and border
+    const recIndicator = document.getElementById('recordingIndicator');
+    if (recIndicator) recIndicator.classList.add('hidden');
+    const gameWrapper = document.querySelector('.game-container-wrapper');
+    if (gameWrapper) gameWrapper.classList.remove('recording-mode');
     // Note: Don't remove grid-mode here - preserve it across phases
 
     if (phase === 'board-setting') {
@@ -575,6 +580,13 @@ function setPhase(phase) {
 
         // Save initial state when entering record phase
         saveInitialState();
+
+        // Show recording indicator and border
+        const recIndicator = document.getElementById('recordingIndicator');
+        if (recIndicator) recIndicator.classList.remove('hidden');
+        const gameWrapper = document.querySelector('.game-container-wrapper');
+        if (gameWrapper) gameWrapper.classList.add('recording-mode');
+
         setStatus('Record - Create animation steps');
     }
 

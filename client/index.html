@@ -80,10 +80,7 @@
                         </div>
                     </div>
                     <div class="header-right">
-                        <div class="recording-indicator" id="recordingIndicator">
-                            <span class="rec-dot"></span>
-                            <span>EDITING STEP</span>
-                        </div>
+                        <!-- Recording indicator moved to game container -->
                     </div>
                 </header>
 
@@ -141,6 +138,12 @@
                 <!-- Game Container with Player Zones -->
                 <div class="game-container-wrapper">
                     <div id="gameContainer" class="game-container">
+                        <!-- Recording Indicator (visible in Record mode) -->
+                        <div class="recording-indicator hidden" id="recordingIndicator">
+                            <span class="rec-dot"></span>
+                            <span class="rec-text">REC</span>
+                        </div>
+
                         <!-- Player Zone: Top -->
                         <div id="zoneTop" class="player-zone zone-top" data-zone="top" data-rotation="0">
                             <div class="zone-label">Player 1 (Top)</div>
