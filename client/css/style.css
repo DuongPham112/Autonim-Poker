@@ -76,12 +76,21 @@ body {
 }
 
 /* ============================================
-   APP LAYOUT - 3 Column
+   APP LAYOUT - Wrapper with Timeline at bottom
    ============================================ */
+.app-wrapper {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
 .app-container {
     display: grid;
     grid-template-columns: var(--tray-width) 1fr var(--director-width);
-    height: 100vh;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
 }
 
 /* ============================================
@@ -862,7 +871,21 @@ body {
     border-left: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
+    overflow: hidden;
+}
+
+/* Scrollable content area */
+.director-content {
+    flex: 1;
     overflow-y: auto;
+    min-height: 0;
+}
+
+/* Sticky footer for AE Settings & Export */
+.director-footer {
+    flex-shrink: 0;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
 }
 
 .director-header {
@@ -926,12 +949,35 @@ body {
     color: var(--accent-green);
 }
 
-/* Step Controls */
-.step-info {
+/* Step Info (compact single line) */
+.step-info-section {
+    padding: 10px 15px;
+}
+
+.step-info-compact {
     display: flex;
-    justify-content: space-between;
-    margin-bottom: 12px;
+    align-items: center;
+    gap: 8px;
     font-size: 12px;
+}
+
+.step-info-label {
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.step-info-values {
+    color: var(--text-primary);
+}
+
+.step-info-values strong {
+    color: var(--accent-green);
+    font-weight: 700;
+}
+
+/* Hide Edit Layout button in Record mode (added via JS) */
+.board-layout-info.record-mode .edit-layout-btn {
+    display: none;
 }
 
 .control-group {
@@ -1919,14 +1965,15 @@ body {
 }
 
 /* ============================================
-   TIMELINE BAR (Bottom of main content)
+   TIMELINE BAR (Full width at bottom)
    ============================================ */
 .timeline-bar {
     background: var(--bg-secondary);
     border-top: 1px solid var(--border-color);
-    padding: 10px 15px;
     display: flex;
     flex-direction: column;
+    flex-shrink: 0;
+    padding: 10px 15px;
     gap: 8px;
 }
 

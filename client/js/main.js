@@ -398,14 +398,14 @@ function bindEvents() {
 
     // Recording controls
     addStepBtn.addEventListener('click', handleAddStep);
-    finishStepBtn.addEventListener('click', handleFinishStep);
+    if (finishStepBtn) finishStepBtn.addEventListener('click', handleFinishStep);
 
     // Card properties
     flipCardCheck.addEventListener('change', handlePropertyChange);
     slamEffectCheck.addEventListener('change', handlePropertyChange);
 
     // Export
-    exportJsonBtn.addEventListener('click', handleExportJSON);
+    if (exportJsonBtn) exportJsonBtn.addEventListener('click', handleExportJSON);
     exportToAEBtn.addEventListener('click', handleExportToAE);
 
     // Replay
@@ -534,8 +534,11 @@ function setPhase(phase) {
         setupPhaseBtn.classList.add('active');
         modeBadge.textContent = 'SETUP';
 
-        // Show board layout info
-        if (boardLayoutInfo) boardLayoutInfo.classList.add('visible');
+        // Show board layout info (remove record-mode to show Edit button)
+        if (boardLayoutInfo) {
+            boardLayoutInfo.classList.add('visible');
+            boardLayoutInfo.classList.remove('record-mode');
+        }
         updateLayoutInfoDisplay();
 
         // Clear editable markers, render drop zones instead
@@ -554,8 +557,11 @@ function setPhase(phase) {
         modeBadge.classList.add('recording');
         if (stepControlsSection) stepControlsSection.classList.remove('hidden');
 
-        // Show board layout info
-        if (boardLayoutInfo) boardLayoutInfo.classList.add('visible');
+        // Show board layout info (add record-mode to hide Edit button)
+        if (boardLayoutInfo) {
+            boardLayoutInfo.classList.add('visible');
+            boardLayoutInfo.classList.add('record-mode');
+        }
         updateLayoutInfoDisplay();
 
         // Clear card place markers
@@ -1726,14 +1732,14 @@ function handleAddStep() {
 
     currentStep = {
         stepId: scenarioData.scenario.length + 1,
-        duration: parseFloat(stepDuration.value) || 1.0,
+        duration: stepDuration ? parseFloat(stepDuration.value) : 1.0,
         actions: []
     };
 
     appState.isEditingStep = true;
     appState.currentStepIndex = currentStep.stepId;
 
-    finishStepBtn.disabled = false;
+    if (finishStepBtn) finishStepBtn.disabled = false;
     addStepBtn.disabled = true;
     recordingIndicator.classList.add('active');
     currentStepNum.textContent = currentStep.stepId;
@@ -1748,7 +1754,7 @@ function handleFinishStep() {
     const actions = computeActions(startSnapshot, endSnapshot);
 
     currentStep.actions = actions;
-    currentStep.duration = parseFloat(stepDuration.value) || 1.0;
+    currentStep.duration = stepDuration ? parseFloat(stepDuration.value) : 1.0;
 
     scenarioData.scenario.push(currentStep);
 
@@ -1759,7 +1765,7 @@ function handleFinishStep() {
     currentStep = null;
     startSnapshot = null;
 
-    finishStepBtn.disabled = true;
+    if (finishStepBtn) finishStepBtn.disabled = true;
     addStepBtn.disabled = false;
     recordingIndicator.classList.remove('active');
     currentStepNum.textContent = '-';
@@ -2992,7 +2998,7 @@ function handleAutoStepYes() {
     if (actions.length > 0) {
         const newStep = {
             stepId: scenarioData.scenario.length + 1,
-            duration: parseFloat(stepDuration.value) || 1.0,
+            duration: stepDuration ? parseFloat(stepDuration.value) : 1.0,
             actions: actions
         };
 

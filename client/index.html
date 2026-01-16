@@ -10,427 +10,409 @@
 </head>
 
 <body>
-    <div class="app-container">
-        <!-- Left Panel: Card Tray -->
-        <aside id="cardTrayPanel" class="card-tray-panel">
-            <div class="tray-header">
-                <h3>🎴 Card Tray</h3>
-                <span class="card-count-badge" id="trayCardCount">52</span>
-            </div>
-
-            <!-- Assets Folder (for AE export) -->
-            <div class="tray-section assets-section">
-                <label>📁 Assets:</label>
-                <div class="assets-row">
-                    <button id="selectAssetsFolderBtn" class="btn btn-xs btn-secondary"
-                        title="Select Assets Folder">📂</button>
-                    <span id="assetsPathDisplay" class="assets-path-text">default deck</span>
+    <div class="app-wrapper">
+        <div class="app-container">
+            <!-- Left Panel: Card Tray -->
+            <aside id="cardTrayPanel" class="card-tray-panel">
+                <div class="tray-header">
+                    <h3>🎴 Card Tray</h3>
+                    <span class="card-count-badge" id="trayCardCount">52</span>
                 </div>
-            </div>
 
-            <!-- Deck Selection -->
-            <div class="tray-section">
-                <label>Deck:</label>
-                <div class="deck-selector">
-                    <select id="deckSelect">
-                        <option value="default">Default</option>
-                    </select>
-                    <button id="loadDeckBtn" class="btn btn-sm btn-primary">Load</button>
-                </div>
-            </div>
-
-            <!-- Search Filter -->
-            <div class="tray-section">
-                <input type="text" id="cardSearch" class="card-search"
-                    placeholder="🔍 Search cards... (e.g. ace, hearts)">
-            </div>
-
-            <!-- Quick Filters -->
-            <div class="tray-section suit-filters">
-                <button class="suit-btn" data-suit="all" title="All">🎴</button>
-                <button class="suit-btn" data-suit="spades" title="Spades">♠</button>
-                <button class="suit-btn" data-suit="hearts" title="Hearts">♥</button>
-                <button class="suit-btn" data-suit="diamonds" title="Diamonds">♦</button>
-                <button class="suit-btn" data-suit="clubs" title="Clubs">♣</button>
-            </div>
-
-            <!-- Card List -->
-            <div id="cardTrayList" class="card-tray-list">
-                <!-- Cards will be rendered here -->
-                <div class="tray-loading">
-                    <p>Load a deck to see cards</p>
-                </div>
-            </div>
-        </aside>
-
-        <!-- Center: Main Content -->
-        <main class="main-content">
-            <!-- Header -->
-            <header class="header">
-                <div class="header-left">
-                    <h1 class="logo">🎴 Autonim-Poker</h1>
-                    <span class="version">v2.0.0</span>
-                </div>
-                <div class="header-center">
-                    <div class="phase-indicator">
-                        <button id="boardSettingBtn" class="phase-btn">⚙️ Board</button>
-                        <button id="setupPhaseBtn" class="phase-btn active">📐 Setup</button>
-                        <button id="recordPhaseBtn" class="phase-btn">🎬 Record</button>
+                <!-- Assets Folder (for AE export) -->
+                <div class="tray-section assets-section">
+                    <label>📁 Assets:</label>
+                    <div class="assets-row">
+                        <button id="selectAssetsFolderBtn" class="btn btn-xs btn-secondary"
+                            title="Select Assets Folder">📂</button>
+                        <span id="assetsPathDisplay" class="assets-path-text">default deck</span>
                     </div>
                 </div>
-                <div class="header-right">
-                    <div class="recording-indicator" id="recordingIndicator">
-                        <span class="rec-dot"></span>
-                        <span>EDITING STEP</span>
-                    </div>
-                </div>
-            </header>
 
-            <!-- Controls Bar -->
-            <div class="controls-bar">
-                <div class="controls-left">
-                    <button id="resetTableBtn" class="btn btn-danger" title="Return all cards to tray">
-                        ↩️ Reset Table
-                    </button>
+                <!-- Deck Selection -->
+                <div class="tray-section">
+                    <label>Deck:</label>
+                    <div class="deck-selector">
+                        <select id="deckSelect">
+                            <option value="default">Default</option>
+                        </select>
+                        <button id="loadDeckBtn" class="btn btn-sm btn-primary">Load</button>
+                    </div>
                 </div>
-                <div class="controls-center">
-                    <div class="info-panel">
-                        <span id="tableCardCount">Table: 0</span>
-                        <span class="separator">|</span>
-                        <span id="stepCount">Steps: 0</span>
+
+                <!-- Search Filter -->
+                <div class="tray-section">
+                    <input type="text" id="cardSearch" class="card-search"
+                        placeholder="🔍 Search cards... (e.g. ace, hearts)">
+                </div>
+
+                <!-- Quick Filters -->
+                <div class="tray-section suit-filters">
+                    <button class="suit-btn" data-suit="all" title="All">🎴</button>
+                    <button class="suit-btn" data-suit="spades" title="Spades">♠</button>
+                    <button class="suit-btn" data-suit="hearts" title="Hearts">♥</button>
+                    <button class="suit-btn" data-suit="diamonds" title="Diamonds">♦</button>
+                    <button class="suit-btn" data-suit="clubs" title="Clubs">♣</button>
+                </div>
+
+                <!-- Card List -->
+                <div id="cardTrayList" class="card-tray-list">
+                    <!-- Cards will be rendered here -->
+                    <div class="tray-loading">
+                        <p>Load a deck to see cards</p>
                     </div>
-                    <!-- Per-zone flip toggles (for Poker layout) -->
-                    <div class="zone-flip-controls" id="pokerFlipControls">
-                        <label class="flip-toggle" title="Flip cards face-up for Player 1">
-                            <input type="checkbox" id="flipTop" data-zone="top"> Top
-                        </label>
-                        <label class="flip-toggle" title="Flip cards face-up for Player 3 (Main)">
-                            <input type="checkbox" id="flipBottom" data-zone="bottom" checked> Bottom
-                        </label>
-                        <label class="flip-toggle" title="Flip cards face-up for Player 4">
-                            <input type="checkbox" id="flipLeft" data-zone="left"> Left
-                        </label>
-                        <label class="flip-toggle" title="Flip cards face-up for Player 2">
-                            <input type="checkbox" id="flipRight" data-zone="right"> Right
-                        </label>
+                </div>
+            </aside>
+
+            <!-- Center: Main Content -->
+            <main class="main-content">
+                <!-- Header -->
+                <header class="header">
+                    <div class="header-left">
+                        <h1 class="logo">🎴 Autonim-Poker</h1>
+                        <span class="version">v2.0.0</span>
                     </div>
-                    <!-- Grid flip controls (for Grid layout) -->
-                    <div class="grid-flip-controls hidden" id="gridFlipControls">
-                        <button id="flipAllFaceUp" class="btn btn-xs" title="All cards face up">
-                            🔼 Face Up
+                    <div class="header-center">
+                        <div class="phase-indicator">
+                            <button id="boardSettingBtn" class="phase-btn">⚙️ Board</button>
+                            <button id="setupPhaseBtn" class="phase-btn active">📐 Setup</button>
+                            <button id="recordPhaseBtn" class="phase-btn">🎬 Record</button>
+                        </div>
+                    </div>
+                    <div class="header-right">
+                        <div class="recording-indicator" id="recordingIndicator">
+                            <span class="rec-dot"></span>
+                            <span>EDITING STEP</span>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- Controls Bar -->
+                <div class="controls-bar">
+                    <div class="controls-left">
+                        <button id="resetTableBtn" class="btn btn-danger" title="Return all cards to tray">
+                            ↩️ Reset Table
                         </button>
-                        <button id="flipAllFaceDown" class="btn btn-xs" title="All cards face down">
-                            🔽 Face Down
-                        </button>
-                        <label class="flip-toggle" title="Default flip state for new cards">
-                            <input type="checkbox" id="gridDefaultFaceUp"> Default: Up
-                        </label>
+                    </div>
+                    <div class="controls-center">
+                        <div class="info-panel">
+                            <span id="tableCardCount">Table: 0</span>
+                            <span class="separator">|</span>
+                            <span id="stepCount">Steps: 0</span>
+                        </div>
+                        <!-- Per-zone flip toggles (for Poker layout) -->
+                        <div class="zone-flip-controls" id="pokerFlipControls">
+                            <label class="flip-toggle" title="Flip cards face-up for Player 1">
+                                <input type="checkbox" id="flipTop" data-zone="top"> Top
+                            </label>
+                            <label class="flip-toggle" title="Flip cards face-up for Player 3 (Main)">
+                                <input type="checkbox" id="flipBottom" data-zone="bottom" checked> Bottom
+                            </label>
+                            <label class="flip-toggle" title="Flip cards face-up for Player 4">
+                                <input type="checkbox" id="flipLeft" data-zone="left"> Left
+                            </label>
+                            <label class="flip-toggle" title="Flip cards face-up for Player 2">
+                                <input type="checkbox" id="flipRight" data-zone="right"> Right
+                            </label>
+                        </div>
+                        <!-- Grid flip controls (for Grid layout) -->
+                        <div class="grid-flip-controls hidden" id="gridFlipControls">
+                            <button id="flipAllFaceUp" class="btn btn-xs" title="All cards face up">
+                                🔼 Face Up
+                            </button>
+                            <button id="flipAllFaceDown" class="btn btn-xs" title="All cards face down">
+                                🔽 Face Down
+                            </button>
+                            <label class="flip-toggle" title="Default flip state for new cards">
+                                <input type="checkbox" id="gridDefaultFaceUp"> Default: Up
+                            </label>
+                        </div>
+                    </div>
+                    <div class="controls-right">
+                        <!-- Card Overlap Adjustment -->
+                        <div class="overlap-control">
+                            <label>Overlap:</label>
+                            <input type="range" id="overlapSlider" min="15" max="50" value="25">
+                            <span id="overlapValue">25px</span>
+                        </div>
                     </div>
                 </div>
-                <div class="controls-right">
-                    <!-- Card Overlap Adjustment -->
-                    <div class="overlap-control">
-                        <label>Overlap:</label>
-                        <input type="range" id="overlapSlider" min="15" max="50" value="25">
-                        <span id="overlapValue">25px</span>
-                    </div>
-                </div>
-            </div>
 
-            <!-- Game Container with Player Zones -->
-            <div class="game-container-wrapper">
-                <div id="gameContainer" class="game-container">
-                    <!-- Player Zone: Top -->
-                    <div id="zoneTop" class="player-zone zone-top" data-zone="top" data-rotation="0">
-                        <div class="zone-label">Player 1 (Top)</div>
-                        <div class="zone-cards"></div>
-                    </div>
-
-                    <!-- Player Zone: Left -->
-                    <div id="zoneLeft" class="player-zone zone-left" data-zone="left" data-rotation="90">
-                        <div class="zone-label">Player 4 (Left)</div>
-                        <div class="zone-cards"></div>
-                    </div>
-
-                    <!-- Poker Table (Center) -->
-                    <div id="pokerTable" class="poker-table">
-                        <div class="table-felt"></div>
-                        <div class="table-border-ring"></div>
-
-                        <!-- Community Cards Area (center of table) -->
-                        <div id="communityZone" class="community-zone" data-zone="community" data-rotation="0">
-                            <div class="zone-label">Community Cards</div>
+                <!-- Game Container with Player Zones -->
+                <div class="game-container-wrapper">
+                    <div id="gameContainer" class="game-container">
+                        <!-- Player Zone: Top -->
+                        <div id="zoneTop" class="player-zone zone-top" data-zone="top" data-rotation="0">
+                            <div class="zone-label">Player 1 (Top)</div>
                             <div class="zone-cards"></div>
                         </div>
 
-                        <!-- Free Card Area (for dragging) -->
-                        <div id="cardArea" class="card-area">
-                            <!-- Dynamic cards inserted here -->
+                        <!-- Player Zone: Left -->
+                        <div id="zoneLeft" class="player-zone zone-left" data-zone="left" data-rotation="90">
+                            <div class="zone-label">Player 4 (Left)</div>
+                            <div class="zone-cards"></div>
                         </div>
 
-                        <!-- Instructions Overlay -->
-                        <div class="table-instructions" id="tableInstructions">
-                            <div class="instruction-content">
-                                <p>🎴 <strong>Drag cards</strong> from the Card Tray</p>
-                                <p>📍 Drop on <strong>Player Zones</strong> or table</p>
-                                <p>🔄 Click card to <strong>flip</strong> face up/down</p>
+                        <!-- Poker Table (Center) -->
+                        <div id="pokerTable" class="poker-table">
+                            <div class="table-felt"></div>
+                            <div class="table-border-ring"></div>
+
+                            <!-- Community Cards Area (center of table) -->
+                            <div id="communityZone" class="community-zone" data-zone="community" data-rotation="0">
+                                <div class="zone-label">Community Cards</div>
+                                <div class="zone-cards"></div>
+                            </div>
+
+                            <!-- Free Card Area (for dragging) -->
+                            <div id="cardArea" class="card-area">
+                                <!-- Dynamic cards inserted here -->
+                            </div>
+
+                            <!-- Instructions Overlay -->
+                            <div class="table-instructions" id="tableInstructions">
+                                <div class="instruction-content">
+                                    <p>🎴 <strong>Drag cards</strong> from the Card Tray</p>
+                                    <p>📍 Drop on <strong>Player Zones</strong> or table</p>
+                                    <p>🔄 Click card to <strong>flip</strong> face up/down</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Player Zone: Right -->
+                        <div id="zoneRight" class="player-zone zone-right" data-zone="right" data-rotation="-90">
+                            <div class="zone-label">Player 2 (Right)</div>
+                            <div class="zone-cards"></div>
+                        </div>
+
+                        <!-- Player Zone: Bottom -->
+                        <div id="zoneBottom" class="player-zone zone-bottom" data-zone="bottom" data-rotation="0">
+                            <div class="zone-label">Player 3 (Bottom)</div>
+                            <div class="zone-cards"></div>
+                        </div>
+
+                        <!-- Auto-Step Popup -->
+                        <div id="autoStepPopup" class="auto-step-popup hidden">
+                            <div class="popup-content">
+                                <span class="popup-icon">📝</span>
+                                <span class="popup-text">New Step?</span>
+                                <div class="popup-actions">
+                                    <button id="autoStepYes" class="btn btn-sm btn-success">✓ Yes</button>
+                                    <button id="autoStepNo" class="btn btn-sm btn-danger">✗ No</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Inline Card Context Menu -->
+                        <div id="cardContextMenu" class="card-context-menu hidden">
+                            <button id="ctxFlipBtn" class="ctx-btn" title="Flip Animation">
+                                🔄 Flip
+                            </button>
+                            <button id="ctxSlamBtn" class="ctx-btn" title="Slam Effect">
+                                💥 Slam
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer / Status -->
+                <footer class="footer">
+                    <div class="status-bar" id="statusMessage">
+                        Ready - Load a deck and drag cards to the table
+                    </div>
+                </footer>
+            </main>
+
+            <!-- Right Panel: Director Controls -->
+            <aside id="directorPanel" class="director-panel">
+                <div class="director-header">
+                    <h2>🎬 Director</h2>
+                    <span class="mode-badge" id="modeBadge">SETUP</span>
+                </div>
+
+                <!-- Scrollable content area -->
+                <div class="director-content">
+                    <!-- Board Layout Info (visible in setup/record phase) -->
+                    <div class="director-section board-layout-info" id="boardLayoutInfo">
+                        <h3>📐 Board Layout</h3>
+                        <div class="layout-info-display">
+                            <span class="layout-name" id="currentLayoutName">Poker (4 Players)</span>
+                        </div>
+                        <!-- Only visible in Setup mode, hidden in Record mode -->
+                        <button id="editLayoutBtn" class="btn btn-sm btn-secondary btn-block edit-layout-btn">
+                            ⚙️ Edit Layout
+                        </button>
+                    </div>
+
+                    <!-- Board Setting Section (visible in board-setting phase) -->
+                    <div class="director-section board-setting-controls" id="boardSettingSection">
+                        <h3>📐 Board Layout</h3>
+
+                        <!-- Preset Selection -->
+                        <div class="control-group">
+                            <label for="presetSelect">Preset:</label>
+                            <div class="preset-selector">
+                                <select id="presetSelect">
+                                    <option value="poker">Poker (4 Players)</option>
+                                    <option value="card-sorting">Card Sorting (4x3)</option>
+                                    <option value="custom">Custom</option>
+                                </select>
+                                <button id="loadPresetBtn" class="btn btn-sm btn-primary">Load</button>
+                            </div>
+                        </div>
+
+                        <!-- Grid Controls -->
+                        <div class="control-group grid-controls">
+                            <label>Grid Size:</label>
+                            <div class="grid-inputs">
+                                <input type="number" id="gridCols" value="4" min="1" max="8">
+                                <span>×</span>
+                                <input type="number" id="gridRows" value="3" min="1" max="6">
+                            </div>
+                            <button id="applyGridBtn" class="btn btn-sm btn-secondary">Apply</button>
+                        </div>
+
+                        <!-- Background Type -->
+                        <div class="control-group">
+                            <label>Background:</label>
+                            <div class="bg-selector">
+                                <select id="bgTypeSelect">
+                                    <option value="poker">Poker Table</option>
+                                    <option value="solid">Solid Color</option>
+                                    <option value="image">Custom Image</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Card Place Actions -->
+                        <div class="board-actions">
+                            <button id="addCardPlaceBtn" class="btn btn-sm btn-success">
+                                ➕ Add Place
+                            </button>
+                            <button id="clearBoardBtn" class="btn btn-sm btn-danger">
+                                🗑️ Clear
+                            </button>
+                        </div>
+
+                        <!-- Save Preset -->
+                        <div class="control-group">
+                            <label for="presetName">Save As:</label>
+                            <div class="save-preset-group">
+                                <input type="text" id="presetName" placeholder="My Layout">
+                                <button id="savePresetBtn" class="btn btn-sm btn-secondary">💾 Save</button>
+                            </div>
+                        </div>
+
+                        <!-- Card Places List -->
+                        <div class="card-places-list" id="cardPlacesList">
+                            <div class="list-header">Card Places (0)</div>
+                            <!-- Card places will be rendered here -->
+                        </div>
+                    </div>
+
+                    <!-- Step Info (compact single line) -->
+                    <div class="director-section step-info-section" id="stepControlsSection">
+                        <div class="step-info-compact">
+                            <span class="step-info-label">Step Info:</span>
+                            <span class="step-info-values">
+                                Current: <strong id="currentStepNum">00</strong> | Total: <strong
+                                    id="totalSteps">0</strong>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Selected Card Properties -->
+                    <div class="director-section">
+                        <h3>Card Properties</h3>
+                        <div id="noCardSelected" class="no-selection">
+                            Click a card to select
+                        </div>
+                        <div id="cardProperties" class="card-properties hidden">
+                            <div class="selected-card-info">
+                                <div id="selectedCardThumb" class="card-thumb"></div>
+                                <span>Selected: <strong id="selectedCardName">-</strong></span>
+                            </div>
+                            <div class="card-state-info">
+                                <span>Face: <strong id="cardFaceState">Down</strong></span>
+                            </div>
+                            <div class="checkbox-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="flipCardCheck">
+                                    <span>🔄 Flip (animation)</span>
+                                </label>
+                            </div>
+                            <div class="checkbox-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="slamEffectCheck">
+                                    <span>💥 Slam Effect</span>
+                                </label>
+                            </div>
+                            <div class="position-info">
+                                <span>X: <strong id="cardPosX">0</strong></span>
+                                <span>Y: <strong id="cardPosY">0</strong></span>
+                                <span>Rot: <strong id="cardRot">0°</strong></span>
                             </div>
                         </div>
                     </div>
+                </div><!-- End director-content -->
 
-                    <!-- Player Zone: Right -->
-                    <div id="zoneRight" class="player-zone zone-right" data-zone="right" data-rotation="-90">
-                        <div class="zone-label">Player 2 (Right)</div>
-                        <div class="zone-cards"></div>
-                    </div>
-
-                    <!-- Player Zone: Bottom -->
-                    <div id="zoneBottom" class="player-zone zone-bottom" data-zone="bottom" data-rotation="0">
-                        <div class="zone-label">Player 3 (Bottom)</div>
-                        <div class="zone-cards"></div>
-                    </div>
-
-                    <!-- Auto-Step Popup -->
-                    <div id="autoStepPopup" class="auto-step-popup hidden">
-                        <div class="popup-content">
-                            <span class="popup-icon">📝</span>
-                            <span class="popup-text">New Step?</span>
-                            <div class="popup-actions">
-                                <button id="autoStepYes" class="btn btn-sm btn-success">✓ Yes</button>
-                                <button id="autoStepNo" class="btn btn-sm btn-danger">✗ No</button>
-                            </div>
+                <!-- AE Settings & Export (sticky footer) -->
+                <div class="director-footer">
+                    <div class="director-section ae-settings">
+                        <h3>🎬 AE Settings</h3>
+                        <div class="setting-row">
+                            <label>Step Blending:</label>
+                            <input type="range" id="stepBlendingSlider" min="0" max="50" step="10" value="0">
+                            <span id="stepBlendingValue">0%</span>
                         </div>
                     </div>
 
-                    <!-- Inline Card Context Menu -->
-                    <div id="cardContextMenu" class="card-context-menu hidden">
-                        <button id="ctxFlipBtn" class="ctx-btn" title="Flip Animation">
-                            🔄 Flip
-                        </button>
-                        <button id="ctxSlamBtn" class="ctx-btn" title="Slam Effect">
-                            💥 Slam
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Timeline Section (moved to bottom) -->
-            <div class="timeline-bar" id="timelineBar">
-                <div class="timeline-header">
-                    <h3>🎬 Timeline</h3>
-                    <div class="timeline-controls">
-                        <div class="speed-control">
-                            <label>Speed:</label>
-                            <input type="range" id="stepSpeedSlider" min="0.5" max="4" step="0.5" value="1">
-                            <span id="stepSpeedValue">1x</span>
+                    <div class="director-section export-section">
+                        <div class="export-row">
+                            <button id="saveProjectBtn" class="btn btn-secondary btn-sm" title="Save Project">
+                                💾 Save
+                            </button>
+                            <button id="loadProjectBtn" class="btn btn-secondary btn-sm" title="Load Project">
+                                📂 Load
+                            </button>
+                            <input type="file" id="loadProjectInput" accept=".json" style="display: none;">
                         </div>
-                        <!-- Old replay controls hidden - now using new timeline playback controls below -->
-                        <button id="replayBtn" class="btn btn-sm btn-secondary hidden" disabled>
-                            ▶️ Replay
+                        <button id="exportToAEBtn" class="btn btn-primary btn-large">
+                            🚀 Send to AE
                         </button>
-                        <div class="replay-controls hidden" id="replayControls">
-                            <span id="replayProgress">Step 0/0</span>
-                            <button id="stopReplayBtn" class="btn btn-sm btn-danger">⏹️</button>
-                        </div>
                     </div>
                 </div>
-                <div id="timelinePreview" class="timeline-preview">
-                    <!-- Steps will be rendered here -->
-                </div>
-            </div>
+            </aside>
+        </div>
 
-            <!-- Footer / Status -->
-            <footer class="footer">
-                <div class="status-bar" id="statusMessage">
-                    Ready - Load a deck and drag cards to the table
-                </div>
-            </footer>
-        </main>
-
-        <!-- Right Panel: Director Controls -->
-        <aside id="directorPanel" class="director-panel">
-            <div class="director-header">
-                <h2>🎬 Director</h2>
-                <span class="mode-badge" id="modeBadge">SETUP</span>
-            </div>
-
-
-            <!-- Board Layout Info (visible in setup/record phase) -->
-            <div class="director-section board-layout-info" id="boardLayoutInfo">
-                <h3>📐 Board Layout</h3>
-                <div class="layout-info-display">
-                    <span class="layout-name" id="currentLayoutName">Poker (4 Players)</span>
-                </div>
-                <button id="editLayoutBtn" class="btn btn-sm btn-secondary btn-block">
-                    ⚙️ Edit Layout
-                </button>
-            </div>
-
-            <!-- Board Setting Section (visible in board-setting phase) -->
-            <div class="director-section board-setting-controls" id="boardSettingSection">
-                <h3>📐 Board Layout</h3>
-
-                <!-- Preset Selection -->
-                <div class="control-group">
-                    <label for="presetSelect">Preset:</label>
-                    <div class="preset-selector">
-                        <select id="presetSelect">
-                            <option value="poker">Poker (4 Players)</option>
-                            <option value="card-sorting">Card Sorting (4x3)</option>
-                            <option value="custom">Custom</option>
-                        </select>
-                        <button id="loadPresetBtn" class="btn btn-sm btn-primary">Load</button>
-                    </div>
-                </div>
-
-                <!-- Grid Controls -->
-                <div class="control-group grid-controls">
-                    <label>Grid Size:</label>
-                    <div class="grid-inputs">
-                        <input type="number" id="gridCols" value="4" min="1" max="8">
-                        <span>×</span>
-                        <input type="number" id="gridRows" value="3" min="1" max="6">
-                    </div>
-                    <button id="applyGridBtn" class="btn btn-sm btn-secondary">Apply</button>
-                </div>
-
-                <!-- Background Type -->
-                <div class="control-group">
-                    <label>Background:</label>
-                    <div class="bg-selector">
-                        <select id="bgTypeSelect">
-                            <option value="poker">Poker Table</option>
-                            <option value="solid">Solid Color</option>
-                            <option value="image">Custom Image</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- Card Place Actions -->
-                <div class="board-actions">
-                    <button id="addCardPlaceBtn" class="btn btn-sm btn-success">
-                        ➕ Add Place
-                    </button>
-                    <button id="clearBoardBtn" class="btn btn-sm btn-danger">
-                        🗑️ Clear
-                    </button>
-                </div>
-
-                <!-- Save Preset -->
-                <div class="control-group">
-                    <label for="presetName">Save As:</label>
-                    <div class="save-preset-group">
-                        <input type="text" id="presetName" placeholder="My Layout">
-                        <button id="savePresetBtn" class="btn btn-sm btn-secondary">💾 Save</button>
-                    </div>
-                </div>
-
-                <!-- Card Places List -->
-                <div class="card-places-list" id="cardPlacesList">
-                    <div class="list-header">Card Places (0)</div>
-                    <!-- Card places will be rendered here -->
-                </div>
-            </div>
-
-            <!-- Step Controls (visible in Record phase) -->
-            <div class="director-section step-controls" id="stepControlsSection">
-                <h3>Step Controls</h3>
-                <div class="step-info">
-                    <span>Current: <strong id="currentStepNum">-</strong></span>
-                    <span>Total: <strong id="totalSteps">0</strong></span>
-                </div>
-                <div class="control-group">
-                    <label for="stepDuration">Duration (s):</label>
-                    <input type="number" id="stepDuration" value="1.0" min="0.1" max="10" step="0.1">
-                </div>
-                <div class="step-buttons">
-                    <button id="addStepBtn" class="btn btn-success">
+        <!-- Timeline Bar (full width at bottom) -->
+        <div class="timeline-bar" id="timelineBar">
+            <div class="timeline-header">
+                <h3>🎬 Timeline</h3>
+                <div class="timeline-controls">
+                    <!-- Add Step button -->
+                    <button id="addStepBtn" class="btn btn-sm btn-success" title="Add new step">
                         ➕ Add Step
                     </button>
-                    <button id="finishStepBtn" class="btn btn-primary" disabled>
-                        ✓ Finish
+                    <div class="speed-control">
+                        <label>Speed:</label>
+                        <input type="range" id="stepSpeedSlider" min="0.5" max="4" step="0.5" value="1">
+                        <span id="stepSpeedValue">1x</span>
+                    </div>
+                    <!-- Old replay controls hidden -->
+                    <button id="replayBtn" class="btn btn-sm btn-secondary hidden" disabled>
+                        ▶️ Replay
                     </button>
-                </div>
-            </div>
-
-            <!-- Selected Card Properties -->
-            <div class="director-section">
-                <h3>Card Properties</h3>
-                <div id="noCardSelected" class="no-selection">
-                    Click a card to select
-                </div>
-                <div id="cardProperties" class="card-properties hidden">
-                    <div class="selected-card-info">
-                        <div id="selectedCardThumb" class="card-thumb"></div>
-                        <span>Selected: <strong id="selectedCardName">-</strong></span>
-                    </div>
-                    <div class="card-state-info">
-                        <span>Face: <strong id="cardFaceState">Down</strong></span>
-                    </div>
-                    <div class="checkbox-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="flipCardCheck">
-                            <span>🔄 Flip (animation)</span>
-                        </label>
-                    </div>
-                    <div class="checkbox-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="slamEffectCheck">
-                            <span>💥 Slam Effect</span>
-                        </label>
-                    </div>
-                    <div class="position-info">
-                        <span>X: <strong id="cardPosX">0</strong></span>
-                        <span>Y: <strong id="cardPosY">0</strong></span>
-                        <span>Rot: <strong id="cardRot">0°</strong></span>
+                    <div class="replay-controls hidden" id="replayControls">
+                        <span id="replayProgress">Step 0/0</span>
+                        <button id="stopReplayBtn" class="btn btn-sm btn-danger">⏹️</button>
                     </div>
                 </div>
             </div>
-
-            <!-- Log Section (simple text) -->
-            <div class="director-section log-section">
-                <div class="log-header">
-                    <h3>📋 Log</h3>
-                    <div class="log-actions">
-                        <button id="logCopyBtn" class="btn btn-xs btn-primary" title="Copy">📋</button>
-                        <button id="logClearBtn" class="btn btn-xs btn-secondary" title="Clear">🗑️</button>
-                    </div>
-                </div>
-                <div id="logContent" class="log-content">
-                    <pre id="logText" class="log-text"></pre>
-                </div>
+            <div id="timelinePreview" class="timeline-preview">
+                <!-- Steps will be rendered here -->
             </div>
-
-
-            <!-- AE Export Settings -->
-            <div class="director-section ae-settings">
-                <h3>🎬 AE Settings</h3>
-                <div class="setting-row">
-                    <label>Step Blending:</label>
-                    <input type="range" id="stepBlendingSlider" min="0" max="50" step="10" value="0">
-                    <span id="stepBlendingValue">0%</span>
-                </div>
-            </div>
-
-            <!-- Export -->
-            <div class="director-section export-section">
-                <div class="export-row">
-                    <button id="saveProjectBtn" class="btn btn-secondary btn-sm" title="Save Project">
-                        💾 Save
-                    </button>
-                    <button id="loadProjectBtn" class="btn btn-secondary btn-sm" title="Load Project">
-                        📂 Load
-                    </button>
-                    <input type="file" id="loadProjectInput" accept=".json" style="display: none;">
-                </div>
-                <button id="exportJsonBtn" class="btn btn-export">
-                    📥 Export JSON
-                </button>
-                <button id="exportToAEBtn" class="btn btn-primary btn-large">
-                    🚀 Send to AE
-                </button>
-            </div>
-        </aside>
+        </div>
     </div>
 
     <!-- Warning Modal -->
