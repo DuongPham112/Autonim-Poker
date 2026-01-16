@@ -101,7 +101,9 @@ class TimelineUI extends EventEmitter {
 
     _createPlaybackControls() {
         const existingControls = this.container.querySelector('.timeline-playback-controls');
-        if (existingControls) return;
+        if (existingControls) {
+            existingControls.remove();  // Remove and recreate
+        }
 
         // Insert after timeline header
         const header = this.container.querySelector('.timeline-header');
@@ -110,11 +112,10 @@ class TimelineUI extends EventEmitter {
         const controlsEl = document.createElement('div');
         controlsEl.className = 'timeline-playback-controls';
         controlsEl.innerHTML = `
-            <button class="btn btn-sm btn-icon" id="tlPrevBtn" title="Previous Step">⏮</button>
-            <button class="btn btn-sm btn-icon" id="tlPlayBackwardBtn" title="Play Backward">◀◀</button>
+            <button class="btn btn-sm btn-icon" id="tlGoStartBtn" title="Go to Start">⏮</button>
+            <button class="btn btn-sm btn-icon btn-primary" id="tlPlayBtn" title="Play/Pause">▶</button>
             <button class="btn btn-sm btn-icon" id="tlStopBtn" title="Stop">⏹</button>
-            <button class="btn btn-sm btn-icon btn-primary" id="tlPlayBtn" title="Play">▶</button>
-            <button class="btn btn-sm btn-icon" id="tlNextBtn" title="Next Step">⏭</button>
+            <button class="btn btn-sm btn-icon" id="tlGoEndBtn" title="Go to End">⏭</button>
             <div class="timeline-time-display">
                 <span class="current-time" id="tlCurrentTime">0.0</span>s / 
                 <span id="tlTotalTime">0.0</span>s
@@ -123,21 +124,47 @@ class TimelineUI extends EventEmitter {
 
         header.after(controlsEl);
 
-        // Bind button events
-        controlsEl.querySelector('#tlPrevBtn').addEventListener('click', () => {
-            this.playbackController?.stepBackward();
+        // Store reference to self for callbacks
+        const self = this;
+
+        // Bind button events - connect to EXISTING replay system
+        controlsEl.querySelector('#tlGoStartBtn').addEventListener('click', () => {
+            // Go to start - restore initial state
+            if (typeof restoreToInitialState === 'function') {
+                restoreToInitialState();
+                self._updatePlayhead(0);
+                console.log('[TimelineUI] Go to start');
+            }
         });
-        controlsEl.querySelector('#tlPlayBackwardBtn').addEventListener('click', () => {
-            this.playbackController?.playBackward();
-        });
-        controlsEl.querySelector('#tlStopBtn').addEventListener('click', () => {
-            this.playbackController?.stop();
-        });
+
         controlsEl.querySelector('#tlPlayBtn').addEventListener('click', () => {
-            this.playbackController?.togglePlay();
+            // Toggle play - use existing handleReplay
+            if (typeof handleReplay === 'function') {
+                handleReplay();
+                console.log('[TimelineUI] Play toggled');
+            }
         });
-        controlsEl.querySelector('#tlNextBtn').addEventListener('click', () => {
-            this.playbackController?.stepForward();
+
+        controlsEl.querySelector('#tlStopBtn').addEventListener('click', () => {
+            // Stop - use existing stopReplay
+            if (typeof stopReplay === 'function') {
+                stopReplay();
+                self._updatePlayhead(0);
+                console.log('[TimelineUI] Stopped');
+            }
+        });
+
+        controlsEl.querySelector('#tlGoEndBtn').addEventListener('click', () => {
+            // Go to end - restore last snapshot
+            if (typeof stepSnapshots !== 'undefined' && stepSnapshots.length > 0) {
+                const lastSnapshot = stepSnapshots[stepSnapshots.length - 1];
+                if (typeof restoreFromSnapshot === 'function' && lastSnapshot) {
+                    restoreFromSnapshot(lastSnapshot);
+                    const totalDuration = self.timelineManager?.getTotalDuration() || 0;
+                    self._updatePlayhead(totalDuration);
+                    console.log('[TimelineUI] Go to end');
+                }
+            }
         });
     }
 
