@@ -230,6 +230,9 @@ function init() {
     // Scan and populate deck dropdown, then auto-load first deck
     scanAndPopulateDecks();
 
+    // Initialize Timeline Modules (Phase 1)
+    initTimelineModulesIntegration();
+
     updateUI();
     setStatus('Ready - Load a deck and setup your cards');
     console.log('Autonim-Poker v2.0 initialized');
@@ -3594,4 +3597,259 @@ function updateCardPlacesList() {
 
         cardPlacesList.appendChild(item);
     });
+}
+
+// ============================================
+// TIMELINE MODULES INTEGRATION
+// ============================================
+
+// Module instances (lazy init)
+let timelineModules = null;
+let timelineUI = null;
+
+/**
+ * Initialize timeline modules integration
+ * This is called from init() and sets up all new timeline functionality
+ */
+function initTimelineModulesIntegration() {
+    // Check if modules are available
+    if (typeof TIMELINE_FEATURE_FLAGS === 'undefined') {
+        console.log('[Timeline] Modules not loaded - skipping initialization');
+        return;
+    }
+
+    if (!TIMELINE_FEATURE_FLAGS.ENABLED) {
+        console.log('[Timeline] Modules disabled via feature flag');
+        return;
+    }
+
+    console.log('[Timeline] Initializing modules integration...');
+
+    try {
+        // Initialize core modules
+        timelineModules = initTimelineModules(
+            scenarioData,
+            stepSnapshots,
+            restoreFromSnapshot
+        );
+
+        if (!timelineModules) {
+            console.warn('[Timeline] Module initialization returned null');
+            return;
+        }
+
+        // Initialize Timeline UI if container exists
+        const timelineBar = document.getElementById('timelineBar');
+        if (timelineBar && TIMELINE_FEATURE_FLAGS.TIMELINE_UI) {
+            timelineUI = new TimelineUI(timelineBar, {
+                timelineManager: timelineModules.timelineManager,
+                playbackController: timelineModules.playbackController,
+                onStepSelect: handleTimelineStepSelect,
+                onStepEdit: handleTimelineStepEdit,
+                onStepMove: handleTimelineStepMove
+            });
+
+            // Initial render
+            timelineUI.render();
+            console.log('[Timeline] UI initialized');
+        }
+
+        // Hook into existing functions to sync with timeline modules
+        hookTimelineFunctions();
+
+        // Run tests in development
+        if (typeof TIMELINE_FEATURE_FLAGS !== 'undefined' && location.hostname === 'localhost') {
+            // Uncomment to run tests automatically
+            // timelineModules.runTests();
+        }
+
+        console.log('[Timeline] Integration complete');
+
+    } catch (error) {
+        console.error('[Timeline] Error initializing modules:', error);
+    }
+}
+
+/**
+ * Hook into existing functions to sync timeline modules
+ */
+function hookTimelineFunctions() {
+    if (!timelineModules) return;
+
+    const { timelineManager, snapshotManager, stepPropertyManager } = timelineModules;
+
+    // Hook handleFinishStep to sync with timeline manager
+    const originalHandleFinishStep = handleFinishStep;
+    handleFinishStep = function () {
+        // Call original implementation
+        originalHandleFinishStep();
+
+        // Sync with timeline manager
+        if (scenarioData.scenario.length > 0) {
+            const lastStep = scenarioData.scenario[scenarioData.scenario.length - 1];
+
+            // Update timeline manager if step doesn't have timing
+            if (lastStep.startTime === undefined) {
+                const steps = scenarioData.scenario;
+                let currentTime = 0;
+                steps.forEach((step, index) => {
+                    if (step.startTime === undefined) {
+                        step.startTime = currentTime;
+                    }
+                    if (step.endTime === undefined) {
+                        step.endTime = step.startTime + (step.duration || 1.0);
+                    }
+                    currentTime = step.endTime;
+
+                    // Add default label and color
+                    if (!step.label) step.label = `Step ${step.stepId}`;
+                    if (!step.color) step.color = getStepColor(step.stepId);
+                });
+            }
+
+            // Sync snapshots
+            if (stepSnapshots.length > 0) {
+                snapshotManager.loadFromArray(stepSnapshots);
+            }
+
+            // Update timeline UI
+            if (timelineUI) {
+                timelineUI.render();
+            }
+        }
+    };
+
+    // Hook property changes for per-step property storage
+    if (TIMELINE_FEATURE_FLAGS.PER_STEP_PROPS) {
+        const originalHandlePropertyChange = handlePropertyChange;
+        handlePropertyChange = function () {
+            // Store in per-step manager during editing
+            if (appState.isEditingStep && appState.selectedCard) {
+                const cardId = appState.selectedCard.id;
+                const stepIndex = appState.currentStepIndex;
+
+                stepPropertyManager.setPendingProperty(cardId, 'flip', {
+                    enabled: flipCardCheck.checked,
+                    toFaceUp: appState.selectedCard.isFaceUp
+                });
+
+                stepPropertyManager.setPendingProperty(cardId, 'slam', {
+                    enabled: slamEffectCheck.checked
+                });
+            }
+
+            // Still call original to update card object
+            originalHandlePropertyChange();
+        };
+    }
+
+    console.log('[Timeline] Functions hooked');
+}
+
+/**
+ * Get step color (cycling through palette)
+ */
+function getStepColor(stepId) {
+    const colors = ['#4CAF50', '#2196F3', '#FF9800', '#E91E63', '#9C27B0', '#00BCD4', '#FF5722'];
+    return colors[(stepId - 1) % colors.length];
+}
+
+/**
+ * Handle timeline step selection
+ */
+function handleTimelineStepSelect(step, index) {
+    console.log('[Timeline] Step selected:', step.stepId);
+
+    // Jump playback to this step
+    if (timelineModules && timelineModules.playbackController) {
+        timelineModules.playbackController.jumpToStep(index);
+    }
+
+    // Highlight in existing timeline preview
+    const existingBlocks = document.querySelectorAll('.timeline-step');
+    existingBlocks.forEach(block => block.classList.remove('selected'));
+}
+
+/**
+ * Handle timeline step edit request
+ */
+function handleTimelineStepEdit(step, index) {
+    console.log('[Timeline] Edit requested for step:', step.stepId);
+
+    // Show warning if there are subsequent steps
+    if (index < scenarioData.scenario.length - 1) {
+        showWarningModal(`Editing Step ${step.stepId} may affect subsequent steps. Continue?`, () => {
+            startEditingStep(index);
+        });
+    } else {
+        startEditingStep(index);
+    }
+}
+
+/**
+ * Start editing an existing step
+ */
+function startEditingStep(stepIndex) {
+    if (appState.isEditingStep) {
+        setStatus('Finish current step first', 'error');
+        return;
+    }
+
+    // Restore to state before this step
+    const snapshot = stepSnapshots[stepIndex];
+    if (snapshot) {
+        restoreFromSnapshot(snapshot);
+    }
+
+    // Enter edit mode
+    appState.isEditingStep = true;
+    appState.currentStepIndex = stepIndex;
+
+    const step = scenarioData.scenario[stepIndex];
+    currentStep = JSON.parse(JSON.stringify(step));
+    startSnapshot = snapshot;
+
+    // Update UI
+    if (stepDuration) stepDuration.value = step.duration || 1.0;
+    if (finishStepBtn) {
+        finishStepBtn.disabled = false;
+        finishStepBtn.textContent = '✓ Update Step';
+    }
+    if (addStepBtn) addStepBtn.disabled = true;
+    if (recordingIndicator) recordingIndicator.classList.add('active');
+    if (currentStepNum) currentStepNum.textContent = step.stepId;
+
+    setStatus(`Editing Step ${step.stepId} - Move cards and click Update`, 'recording');
+}
+
+/**
+ * Handle timeline step move (drag)
+ */
+function handleTimelineStepMove(step) {
+    console.log('[Timeline] Step moved:', step.stepId, 'to', step.startTime);
+    // Timeline manager already updated the step
+    // Just need to re-render existing timeline if needed
+    renderTimeline();
+}
+
+/**
+ * Show warning modal
+ */
+function showWarningModal(message, onConfirm) {
+    if (warningModal && warningMessage) {
+        warningMessage.textContent = message;
+        warningModal.classList.remove('hidden');
+
+        // Store callback
+        warningModal._onConfirm = onConfirm;
+    }
+}
+
+/**
+ * Refresh timeline UI
+ */
+function refreshTimelineUI() {
+    if (timelineUI) {
+        timelineUI.render();
+    }
 }

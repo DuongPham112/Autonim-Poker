@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Autonim-Poker - Director Tool</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/timeline.css">
 </head>
 
 <body>
@@ -466,6 +467,16 @@
 
     <!-- Load CSInterface library -->
     <script src="../lib/CSInterface.js"></script>
+
+    <!-- Load Timeline Modules (in dependency order) -->
+    <script src="js/utils/event_emitter.js"></script>
+    <script src="js/modules/timeline_manager.js"></script>
+    <script src="js/modules/step_property_manager.js"></script>
+    <script src="js/modules/snapshot_manager.js"></script>
+    <script src="js/modules/playback_controller.js"></script>
+    <script src="js/modules/timeline_ui.js"></script>
+    <script src="js/modules/index.js"></script>
+
     <!-- Load main application logic -->
     <script src="js/main.js"></script>
 </body>
