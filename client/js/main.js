@@ -3684,39 +3684,8 @@ function hookTimelineFunctions() {
         // Call original implementation
         originalHandleFinishStep();
 
-        // Sync with timeline manager
-        if (scenarioData.scenario.length > 0) {
-            const lastStep = scenarioData.scenario[scenarioData.scenario.length - 1];
-
-            // Update timeline manager if step doesn't have timing
-            if (lastStep.startTime === undefined) {
-                const steps = scenarioData.scenario;
-                let currentTime = 0;
-                steps.forEach((step, index) => {
-                    if (step.startTime === undefined) {
-                        step.startTime = currentTime;
-                    }
-                    if (step.endTime === undefined) {
-                        step.endTime = step.startTime + (step.duration || 1.0);
-                    }
-                    currentTime = step.endTime;
-
-                    // Add default label and color
-                    if (!step.label) step.label = `Step ${step.stepId}`;
-                    if (!step.color) step.color = getStepColor(step.stepId);
-                });
-            }
-
-            // Sync snapshots
-            if (stepSnapshots.length > 0) {
-                snapshotManager.loadFromArray(stepSnapshots);
-            }
-
-            // Update timeline UI
-            if (timelineUI) {
-                timelineUI.render();
-            }
-        }
+        // Sync with timeline modules after step is created
+        syncTimelineModulesWithSteps();
     };
 
     // Hook property changes for per-step property storage
@@ -3742,6 +3711,20 @@ function hookTimelineFunctions() {
             originalHandlePropertyChange();
         };
     }
+
+    // Hook handleAutoStepYes to sync with snapshotManager
+    const originalHandleAutoStepYes = handleAutoStepYes;
+    handleAutoStepYes = function () {
+        // Call original implementation
+        originalHandleAutoStepYes();
+
+        // Sync with timeline modules after step is created
+        syncTimelineModulesWithSteps();
+    };
+
+    // Hook handleFinishStep that we already defined above also needs to sync
+    // The handleFinishStep hook is already defined above, but let's make sure
+    // auto-step also triggers timeline UI update
 
     console.log('[Timeline] Functions hooked');
 }
@@ -3852,4 +3835,51 @@ function refreshTimelineUI() {
     if (timelineUI) {
         timelineUI.render();
     }
+}
+
+/**
+ * Sync timeline modules with current step data
+ * Called after any step is created or modified
+ */
+function syncTimelineModulesWithSteps() {
+    if (!timelineModules) {
+        console.log('[Timeline] No modules to sync');
+        return;
+    }
+
+    const { snapshotManager, timelineManager } = timelineModules;
+
+    // Sync snapshots from stepSnapshots array to snapshotManager
+    if (stepSnapshots.length > 0) {
+        console.log('[Timeline] Syncing', stepSnapshots.length, 'snapshots');
+        snapshotManager.loadFromArray(stepSnapshots);
+    }
+
+    // Sync step timing
+    if (scenarioData.scenario.length > 0) {
+        let currentTime = 0;
+        scenarioData.scenario.forEach((step) => {
+            if (step.startTime === undefined) {
+                step.startTime = currentTime;
+            }
+            if (step.endTime === undefined) {
+                step.endTime = step.startTime + (step.duration || 1.0);
+            }
+            if (!step.label) step.label = `Step ${step.stepId}`;
+            if (!step.color) step.color = getStepColor(step.stepId);
+            currentTime = step.endTime;
+        });
+
+        // Update timeline total duration
+        if (scenarioData.timeline) {
+            scenarioData.timeline.totalDuration = currentTime;
+        }
+    }
+
+    // Update timeline UI
+    if (timelineUI) {
+        timelineUI.render();
+    }
+
+    console.log('[Timeline] Sync complete. Steps:', scenarioData.scenario.length, 'Snapshots:', snapshotManager.getSnapshotCount());
 }
