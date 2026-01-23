@@ -324,6 +324,38 @@
                         </div>
                     </div>
 
+                    <!-- Grouping Mode Controls (Record phase only) -->
+                    <div class="director-section grouping-section hidden" id="groupingSection">
+                        <h3>🎯 Grouping Mode</h3>
+                        <div class="grouping-controls">
+                            <label class="toggle-switch-label">
+                                <input type="checkbox" id="groupingModeToggle">
+                                <span class="toggle-text">Enable Grouping</span>
+                                <span class="group-count" id="groupCount"></span>
+                            </label>
+                            <div class="auto-record-row">
+                                <label class="toggle-switch-label">
+                                    <input type="checkbox" id="autoRecordToggle">
+                                    <span class="toggle-text">Auto Record</span>
+                                </label>
+                                <div class="countdown-slider" id="countdownSlider">
+                                    <input type="range" id="autoRecordDelay" min="1" max="10" value="3">
+                                    <span id="autoRecordDelayValue">3s</span>
+                                </div>
+                            </div>
+                            <div class="countdown-display hidden" id="countdownDisplay">
+                                <div class="countdown-progress">
+                                    <span class="countdown-text">Saving in: <strong
+                                            id="countdownTimer">3</strong>s</span>
+                                    <div class="countdown-bar">
+                                        <div class="countdown-bar-fill" id="countdownBarFill"></div>
+                                    </div>
+                                </div>
+                                <button class="btn btn-xs btn-danger" id="cancelCountdownBtn">✕ Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Selected Card Properties -->
                     <div class="director-section">
                         <h3>Card Properties</h3>

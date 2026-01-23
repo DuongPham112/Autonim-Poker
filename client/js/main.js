@@ -81,7 +81,15 @@ const appState = {
         gridRows: 3,
         cardPlaces: []            // For grid mode: [{id, x, y, label}, ...]
     },
-    selectedCardPlace: null       // Currently selected card place marker
+    selectedCardPlace: null,      // Currently selected card place marker
+
+    // Grouping Mode
+    groupingMode: false,          // Whether grouping mode is enabled
+    groupedCards: [],             // Cards selected for grouping
+    autoRecord: false,            // Auto-record after countdown
+    autoRecordDelay: 3,           // Countdown seconds (1-10)
+    countdownTimer: null,         // Interval timer ID
+    countdownValue: 0             // Current countdown value
 };
 
 // Scenario Data (for export)
@@ -147,6 +155,10 @@ let autoStepPopup, autoStepYes, autoStepNo;
 
 // Context Menu Elements
 let cardContextMenu, ctxFlipBtn, ctxSlamBtn;
+
+// Grouping Mode Elements
+let groupingSection, groupingModeToggle, autoRecordToggle, autoRecordDelay, autoRecordDelayValue;
+let countdownDisplay, countdownTimer, countdownBarFill, cancelCountdownBtn, groupCount;
 
 // Status
 let statusMessage;
@@ -351,6 +363,18 @@ function getDOMElements() {
     copyDebugBtn = document.getElementById('copyDebugBtn');
     clearDebugBtn = document.getElementById('clearDebugBtn');
     closeDebugBtn = document.getElementById('closeDebugBtn');
+
+    // Grouping Mode Elements
+    groupingSection = document.getElementById('groupingSection');
+    groupingModeToggle = document.getElementById('groupingModeToggle');
+    autoRecordToggle = document.getElementById('autoRecordToggle');
+    autoRecordDelay = document.getElementById('autoRecordDelay');
+    autoRecordDelayValue = document.getElementById('autoRecordDelayValue');
+    countdownDisplay = document.getElementById('countdownDisplay');
+    countdownTimer = document.getElementById('countdownTimer');
+    countdownBarFill = document.getElementById('countdownBarFill');
+    cancelCountdownBtn = document.getElementById('cancelCountdownBtn');
+    groupCount = document.getElementById('groupCount');
 }
 
 
@@ -489,6 +513,12 @@ function bindEvents() {
     if (closeDebugBtn) closeDebugBtn.addEventListener('click', () => {
         debugOverlay.classList.add('hidden');
     });
+
+    // Grouping Mode Events
+    if (groupingModeToggle) groupingModeToggle.addEventListener('change', handleGroupingModeChange);
+    if (autoRecordToggle) autoRecordToggle.addEventListener('change', handleAutoRecordChange);
+    if (autoRecordDelay) autoRecordDelay.addEventListener('input', handleAutoRecordDelayChange);
+    if (cancelCountdownBtn) cancelCountdownBtn.addEventListener('click', cancelAutoRecordCountdown);
 }
 
 
@@ -589,6 +619,9 @@ function setPhase(phase) {
 
         setStatus('Record - Create animation steps');
     }
+
+    // Update grouping section visibility
+    updateGroupingSectionVisibility();
 
     updateUI();
 }
@@ -1511,6 +1544,12 @@ function createTableCardElement(card) {
 // ============================================
 
 function handleCardClick(card, element) {
+    // Check if grouping mode is active (Record phase only)
+    if (appState.groupingMode && appState.phase === 'record') {
+        toggleCardGroupSelection(card);
+        return;  // Don't proceed with normal selection
+    }
+
     // Select the card
     selectCard(card);
 
@@ -3934,3 +3973,216 @@ function updateTimelinePlayhead(time) {
         currentTimeEl.textContent = time.toFixed(1);
     }
 }
+
+// ============================================
+// GROUPING MODE
+// ============================================
+
+/**
+ * Handle grouping mode toggle change
+ */
+function handleGroupingModeChange(e) {
+    appState.groupingMode = e.target.checked;
+
+    // Clear grouped cards when disabling
+    if (!appState.groupingMode) {
+        clearGroupedCards();
+        cancelAutoRecordCountdown();
+    }
+
+    // Update body class for CSS styling
+    document.body.classList.toggle('grouping-mode-active', appState.groupingMode);
+
+    setStatus(appState.groupingMode ? 'Grouping Mode ON - Click cards to select' : 'Grouping Mode OFF');
+}
+
+/**
+ * Handle auto-record toggle change
+ */
+function handleAutoRecordChange(e) {
+    appState.autoRecord = e.target.checked;
+
+    // Cancel any running countdown when disabling
+    if (!appState.autoRecord) {
+        cancelAutoRecordCountdown();
+    }
+}
+
+/**
+ * Handle auto-record delay slider change
+ */
+function handleAutoRecordDelayChange(e) {
+    appState.autoRecordDelay = parseInt(e.target.value);
+    if (autoRecordDelayValue) {
+        autoRecordDelayValue.textContent = `${appState.autoRecordDelay}s`;
+    }
+}
+
+/**
+ * Toggle card selection for grouping
+ * Called when clicking a card in grouping mode
+ */
+function toggleCardGroupSelection(card) {
+    // Take snapshot before first selection (for recording)
+    if (appState.groupedCards.length === 0 && !pendingChangeSnapshot) {
+        pendingChangeSnapshot = takeSnapshot();
+    }
+
+    const index = appState.groupedCards.findIndex(c => c.id === card.id);
+
+    if (index === -1) {
+        // Add to group
+        appState.groupedCards.push(card);
+        card.element?.classList.add('grouped');
+    } else {
+        // Remove from group
+        appState.groupedCards.splice(index, 1);
+        card.element?.classList.remove('grouped');
+    }
+
+    // Update count display
+    updateGroupCount();
+
+    // Start/restart auto-record countdown if enabled and cards are selected
+    if (appState.autoRecord && appState.groupedCards.length > 0) {
+        startAutoRecordCountdown();
+    } else if (appState.groupedCards.length === 0) {
+        cancelAutoRecordCountdown();
+        pendingChangeSnapshot = null;
+    }
+}
+
+/**
+ * Clear all grouped cards
+ */
+function clearGroupedCards() {
+    appState.groupedCards.forEach(card => {
+        card.element?.classList.remove('grouped');
+    });
+    appState.groupedCards = [];
+    updateGroupCount();
+}
+
+/**
+ * Update the group count display
+ */
+function updateGroupCount() {
+    if (groupCount) {
+        const count = appState.groupedCards.length;
+        groupCount.textContent = count > 0 ? `(${count})` : '';
+    }
+}
+
+/**
+ * Start the auto-record countdown
+ */
+function startAutoRecordCountdown() {
+    // Cancel any existing countdown
+    cancelAutoRecordCountdown();
+
+    appState.countdownValue = appState.autoRecordDelay;
+
+    // Show countdown display
+    if (countdownDisplay) countdownDisplay.classList.remove('hidden');
+    if (countdownTimer) countdownTimer.textContent = appState.countdownValue;
+    if (countdownBarFill) countdownBarFill.style.width = '100%';
+
+    // Start interval timer
+    appState.countdownTimer = setInterval(() => {
+        appState.countdownValue--;
+
+        // Update timer display
+        if (countdownTimer) countdownTimer.textContent = appState.countdownValue;
+
+        // Update progress bar
+        if (countdownBarFill) {
+            const progress = (appState.countdownValue / appState.autoRecordDelay) * 100;
+            countdownBarFill.style.width = `${progress}%`;
+        }
+
+        // Countdown finished
+        if (appState.countdownValue <= 0) {
+            cancelAutoRecordCountdown();
+            autoSaveGroupedStep();
+        }
+    }, 1000);
+}
+
+/**
+ * Cancel the auto-record countdown
+ */
+function cancelAutoRecordCountdown() {
+    if (appState.countdownTimer) {
+        clearInterval(appState.countdownTimer);
+        appState.countdownTimer = null;
+    }
+    appState.countdownValue = 0;
+
+    // Hide countdown display
+    if (countdownDisplay) countdownDisplay.classList.add('hidden');
+}
+
+/**
+ * Auto-save step with grouped cards
+ */
+function autoSaveGroupedStep() {
+    if (appState.groupedCards.length === 0) {
+        setStatus('No cards selected', 'error');
+        return;
+    }
+
+    // Get the snapshot before changes
+    const startSnap = pendingChangeSnapshot || takeSnapshot();
+
+    // Take current snapshot (after selections)
+    const endSnap = takeSnapshot();
+
+    // Compute actions from start to end
+    const actions = computeActions(startSnap, endSnap);
+
+    // Create the step
+    const newStep = {
+        stepId: scenarioData.scenario.length + 1,
+        duration: stepDuration ? parseFloat(stepDuration.value) : 1.0,
+        actions: actions
+    };
+
+    // Add to scenario
+    scenarioData.scenario.push(newStep);
+
+    // Save snapshot for replay
+    stepSnapshots.push(JSON.parse(JSON.stringify(endSnap)));
+
+    // Update UI
+    totalSteps.textContent = scenarioData.scenario.length;
+    renderTimeline();
+
+    // Clear state
+    clearGroupedCards();
+    pendingChangeSnapshot = null;
+
+    setStatus(`Step ${newStep.stepId} saved with ${actions.length} actions (auto-recorded)`, 'success');
+    updateUI();
+}
+
+/**
+ * Show/hide grouping section based on phase
+ */
+function updateGroupingSectionVisibility() {
+    if (groupingSection) {
+        if (appState.phase === 'record') {
+            groupingSection.classList.remove('hidden');
+        } else {
+            groupingSection.classList.add('hidden');
+            // Disable grouping when leaving record phase
+            if (appState.groupingMode) {
+                appState.groupingMode = false;
+                if (groupingModeToggle) groupingModeToggle.checked = false;
+                document.body.classList.remove('grouping-mode-active');
+                clearGroupedCards();
+                cancelAutoRecordCountdown();
+            }
+        }
+    }
+}
+
