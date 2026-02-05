@@ -155,6 +155,7 @@ let autoStepPopup, autoStepYes, autoStepNo;
 
 // Context Menu Elements
 let cardContextMenu, ctxFlipBtn, ctxSlamBtn;
+let ctxFlipAllBtn, ctxSlamAllBtn, ctxGroupDivider;
 
 // Grouping Mode Elements
 let groupingSection, groupingModeToggle, autoRecordToggle, autoRecordDelay, autoRecordDelayValue;
@@ -352,6 +353,9 @@ function getDOMElements() {
     cardContextMenu = document.getElementById('cardContextMenu');
     ctxFlipBtn = document.getElementById('ctxFlipBtn');
     ctxSlamBtn = document.getElementById('ctxSlamBtn');
+    ctxFlipAllBtn = document.getElementById('ctxFlipAllBtn');
+    ctxSlamAllBtn = document.getElementById('ctxSlamAllBtn');
+    ctxGroupDivider = document.getElementById('ctxGroupDivider');
 
     // Status
     statusMessage = document.getElementById('statusMessage');
@@ -475,6 +479,8 @@ function bindEvents() {
     // Context Menu
     if (ctxFlipBtn) ctxFlipBtn.addEventListener('click', toggleCtxFlip);
     if (ctxSlamBtn) ctxSlamBtn.addEventListener('click', toggleCtxSlam);
+    if (ctxFlipAllBtn) ctxFlipAllBtn.addEventListener('click', toggleCtxFlipAll);
+    if (ctxSlamAllBtn) ctxSlamAllBtn.addEventListener('click', toggleCtxSlamAll);
 
     // Zone drop targets
     setupZoneDropTargets();
@@ -519,6 +525,9 @@ function bindEvents() {
     if (autoRecordToggle) autoRecordToggle.addEventListener('change', handleAutoRecordChange);
     if (autoRecordDelay) autoRecordDelay.addEventListener('input', handleAutoRecordDelayChange);
     if (cancelCountdownBtn) cancelCountdownBtn.addEventListener('click', cancelAutoRecordCountdown);
+
+    // Pusoy Layout Slider Controls
+    setupPusoySliderControls();
 }
 
 
@@ -1090,6 +1099,18 @@ function handleZoneDrop(e, zone) {
     zone.classList.remove('drag-over');
 
     const cardId = e.dataTransfer.getData('text/plain');
+    console.log('[ZoneDrop] cardId:', cardId, 'groupingMode:', appState.groupingMode, 'groupedCards:', appState.groupedCards.map(c => c.id));
+
+    // Check if the dragged card is part of a group - move all grouped cards
+    const droppedCard = appState.tableCards.find(c => c.id === cardId);
+    const isInGroup = droppedCard && appState.groupedCards.some(c => c.id === cardId);
+    console.log('[ZoneDrop] droppedCard found:', !!droppedCard, 'isInGroup:', isInGroup);
+
+    if (droppedCard && appState.groupingMode && isInGroup) {
+        console.log('[ZoneDrop] Routing to handleGroupedCardsDrop');
+        handleGroupedCardsDrop(zone);
+        return;
+    }
 
     // Try to find card in tray first
     let card = appState.trayCards.find(c => c.id === cardId);
@@ -1185,15 +1206,22 @@ function swapCards(card1, card2) {
     if (card1.element) card1.element.remove();
     if (card2.element) card2.element.remove();
 
-    // Swap zone assignments
-    card1.zone = zone2;
-    card1.zonePosition = pos2;
-    card2.zone = zone1;
-    card2.zonePosition = pos1;
-
-    // Re-create card elements in new zones
+    // Find zone elements and get their rotation values
     const zone1Element = document.querySelector(`.card-drop-zone[data-zone="${zone1}"], .player-zone[data-zone="${zone1}"]`);
     const zone2Element = document.querySelector(`.card-drop-zone[data-zone="${zone2}"], .player-zone[data-zone="${zone2}"]`);
+
+    // Get rotation from zone data attributes (for Pusoy and other rotated layouts)
+    const rotation1 = parseInt(zone1Element?.dataset?.rotation) || 0;
+    const rotation2 = parseInt(zone2Element?.dataset?.rotation) || 0;
+
+    // Swap zone assignments AND update rotation to match destination zone
+    card1.zone = zone2;
+    card1.zonePosition = pos2;
+    card1.rotation = rotation2;  // Card1 inherits rotation of zone2
+
+    card2.zone = zone1;
+    card2.zonePosition = pos1;
+    card2.rotation = rotation1;  // Card2 inherits rotation of zone1
 
     if (zone1Element) createZoneCardElement(card2, zone1Element);
     if (zone2Element) createZoneCardElement(card1, zone2Element);
@@ -1419,6 +1447,9 @@ function createZoneCardElement(card, zoneElement) {
 
     const cardEl = document.createElement('div');
     cardEl.className = `zone-card ${card.isFaceUp ? 'face-up' : 'face-down'}`;
+    if (appState.groupedCards.some(c => c.id === card.id)) {
+        cardEl.classList.add('grouped');
+    }
     cardEl.id = card.id;
     cardEl.dataset.cardId = card.id;
 
@@ -1485,6 +1516,9 @@ function createZoneCardElement(card, zoneElement) {
 function createTableCardElement(card) {
     const cardEl = document.createElement('div');
     cardEl.className = `card ${card.isFaceUp ? 'face-up' : 'face-down'}`;
+    if (appState.groupedCards.some(c => c.id === card.id)) {
+        cardEl.classList.add('grouped');
+    }
     cardEl.id = card.id;
     cardEl.dataset.cardId = card.id;
 
@@ -1547,7 +1581,13 @@ function handleCardClick(card, element) {
     // Check if grouping mode is active (Record phase only)
     if (appState.groupingMode && appState.phase === 'record') {
         toggleCardGroupSelection(card);
-        return;  // Don't proceed with normal selection
+
+        // If card is now in group, also select it to show context menu for flip/slam
+        const isInGroup = appState.groupedCards.some(c => c.id === card.id);
+        if (isInGroup) {
+            selectCard(card);
+        }
+        return;  // Don't proceed with normal selection flow
     }
 
     // Select the card
@@ -1835,6 +1875,15 @@ function saveInitialState() {
     scenarioData.initialState = {};
 
     appState.tableCards.forEach(card => {
+        // Get zOrder from boardLayout.cardPlaces if card is in a grid zone
+        let zOrder = 0;
+        if (card.zone && card.zone.startsWith('grid-') && appState.boardLayout.cardPlaces) {
+            const placeId = card.zone.replace('grid-', '');
+            const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
+            if (place && place.zOrder !== undefined) {
+                zOrder = place.zOrder;
+            }
+        }
         scenarioData.initialState[card.id] = {
             x: card.x || 0,
             y: card.y || 0,
@@ -1842,8 +1891,10 @@ function saveInitialState() {
             isFaceUp: card.isFaceUp,
             zone: card.zone,
             zonePosition: card.zonePosition || 0,
+            zOrder: zOrder,
             flipAction: card.flipAction || false,
-            slamEffect: card.slamEffect || false
+            slamEffect: card.slamEffect || false,
+            isSelected: appState.groupedCards.some(c => c.id === card.id)
         };
     });
 
@@ -1860,6 +1911,15 @@ function saveInitialState() {
 function takeSnapshot() {
     const snapshot = {};
     appState.tableCards.forEach(card => {
+        // Get zOrder from boardLayout.cardPlaces if card is in a grid zone
+        let zOrder = 0;
+        if (card.zone && card.zone.startsWith('grid-') && appState.boardLayout.cardPlaces) {
+            const placeId = card.zone.replace('grid-', '');
+            const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
+            if (place && place.zOrder !== undefined) {
+                zOrder = place.zOrder;
+            }
+        }
         snapshot[card.id] = {
             x: card.x || 0,
             y: card.y || 0,
@@ -1867,8 +1927,10 @@ function takeSnapshot() {
             isFaceUp: card.isFaceUp,
             zone: card.zone,
             zonePosition: card.zonePosition || 0,
+            zOrder: zOrder,
             flipAction: card.flipAction || false,
-            slamEffect: card.slamEffect || false
+            slamEffect: card.slamEffect || false,
+            isSelected: appState.groupedCards.some(c => c.id === card.id)
         };
     });
     return snapshot;
@@ -1909,6 +1971,28 @@ function computeActions(startSnap, endSnap) {
 
         if (!start || !end) return;
 
+        // Check for SELECT/DESELECT changes (grouping mode)
+        const startSelected = start.isSelected || false;
+        const endSelected = end.isSelected || false;
+
+        if (startSelected !== endSelected) {
+            // SELECT uses current/end position (card lifts at its current spot)
+            // DESELECT uses START position (card drops at its original spot before moving)
+            const pos = endSelected ? getAEPosition(end) : getAEPosition(start);
+            actions.push({
+                targetId: card.id,
+                type: endSelected ? 'SELECT' : 'DESELECT',
+                position: pos,
+                zone: endSelected ? end.zone : start.zone,
+                zonePosition: endSelected ? (end.zonePosition || 0) : (start.zonePosition || 0),
+                // SELECT moves Y up by SELECT_OFFSET_Y, DESELECT moves back down
+                selectOffset: endSelected ? -25 : 0
+            });
+            // If only selection changed, don't process as TRANSFORM
+            // (unless there are also position/zone changes)
+        }
+
+
         const startPos = getAEPosition(start);
         const endPos = getAEPosition(end);
 
@@ -1946,6 +2030,7 @@ function computeActions(startSnap, endSnap) {
 
     return actions;
 }
+
 
 
 
@@ -2570,6 +2655,7 @@ function replayNextStep() {
                 movingCards.push({
                     cardId,
                     fromZone: prevState.zone,
+                    fromZonePosition: prevState.zonePosition || 0,
                     toZone: targetState.zone,
                     targetState
                 });
@@ -2649,10 +2735,11 @@ function animateCardsSequentially(movingCards, targetSnapshot, onComplete) {
             }
 
             // Get start and end positions in UI coordinates (1280x720)
+            // Use zonePosition from state to get correct offset within zone
             const startPos = move.isNew
                 ? { x: -100, y: UI_HEIGHT / 2 }  // Start from left edge
-                : getUIZonePosition(move.fromZone);
-            const endPos = getUIZonePosition(move.toZone);
+                : getUIZonePosition(move.fromZone, move.fromZonePosition || 0);
+            const endPos = getUIZonePosition(move.toZone, move.targetState.zonePosition || 0);
 
             // Get poker table offset relative to gameContainer
             const containerRect = gameContainer.getBoundingClientRect();
@@ -2918,6 +3005,9 @@ function restoreFromSnapshot(snapshot) {
 
     cardArea.innerHTML = '';
 
+    // Clear and rebuild groupedCards based on snapshot isSelected
+    appState.groupedCards = [];
+
     // Restore each card to its saved state
     Object.entries(snapshot).forEach(([cardId, state]) => {
         const card = appState.tableCards.find(c => c.id === cardId);
@@ -2937,6 +3027,11 @@ function restoreFromSnapshot(snapshot) {
         card.flipAction = state.flipAction || false;
         card.slamEffect = state.slamEffect || false;
         card.element = null;
+
+        // Track selected cards for grouping
+        if (state.isSelected) {
+            appState.groupedCards.push(card);
+        }
     });
 
     // Re-create elements ONLY for cards in the snapshot
@@ -2966,10 +3061,19 @@ function restoreFromSnapshot(snapshot) {
         } else {
             debugWarn(`Card ${card.id} has no valid zone:`, card.zone);
         }
+
+        // Apply .grouped class if card is selected
+        const isCardSelected = snapshot[card.id]?.isSelected || false;
+        if (isCardSelected && card.element) {
+            card.element.classList.add('grouped');
+        }
     });
 
+    // Update group count display
+    updateGroupCount();
     updateUI();
 }
+
 
 
 // ============================================
@@ -3135,6 +3239,12 @@ function showCardContextMenu(card) {
     // Update button states
     updateContextMenuState(card);
 
+    // Show/hide group action buttons based on grouping mode
+    const hasGroupedCards = appState.groupingMode && appState.groupedCards.length > 1;
+    if (ctxGroupDivider) ctxGroupDivider.classList.toggle('hidden', !hasGroupedCards);
+    if (ctxFlipAllBtn) ctxFlipAllBtn.classList.toggle('hidden', !hasGroupedCards);
+    if (ctxSlamAllBtn) ctxSlamAllBtn.classList.toggle('hidden', !hasGroupedCards);
+
     cardContextMenu.classList.remove('hidden');
 }
 
@@ -3215,6 +3325,74 @@ function toggleCtxSlam() {
     }, 300);
 }
 
+/**
+ * Toggle flip action on ALL grouped cards
+ */
+function toggleCtxFlipAll() {
+    if (appState.groupedCards.length === 0) return;
+
+    // Determine new state: toggle based on majority
+    const enabledCount = appState.groupedCards.filter(c => c.flipAction).length;
+    const newState = enabledCount < appState.groupedCards.length / 2;
+
+    appState.groupedCards.forEach(card => {
+        card.flipAction = newState;
+        // Flip visually if state changed
+        flipCard(card);
+    });
+
+    // Update properties panel if selected card is in group
+    if (appState.selectedCard && appState.groupedCards.some(c => c.id === appState.selectedCard.id)) {
+        flipCardCheck.checked = appState.selectedCard.flipAction;
+        if (ctxFlipBtn) {
+            ctxFlipBtn.classList.toggle('active', appState.selectedCard.flipAction);
+        }
+    }
+
+    setStatus(newState
+        ? `Flip animation enabled for ${appState.groupedCards.length} cards`
+        : `Flip animation disabled for ${appState.groupedCards.length} cards`
+    );
+
+    // Auto-hide menu after selection
+    setTimeout(() => {
+        hideCardContextMenu();
+    }, 300);
+}
+
+/**
+ * Toggle slam effect on ALL grouped cards
+ */
+function toggleCtxSlamAll() {
+    if (appState.groupedCards.length === 0) return;
+
+    // Determine new state: toggle based on majority
+    const enabledCount = appState.groupedCards.filter(c => c.slamEffect).length;
+    const newState = enabledCount < appState.groupedCards.length / 2;
+
+    appState.groupedCards.forEach(card => {
+        card.slamEffect = newState;
+    });
+
+    // Update properties panel if selected card is in group
+    if (appState.selectedCard && appState.groupedCards.some(c => c.id === appState.selectedCard.id)) {
+        slamEffectCheck.checked = appState.selectedCard.slamEffect;
+        if (ctxSlamBtn) {
+            ctxSlamBtn.classList.toggle('active', appState.selectedCard.slamEffect);
+        }
+    }
+
+    setStatus(newState
+        ? `Slam effect enabled for ${appState.groupedCards.length} cards`
+        : `Slam effect disabled for ${appState.groupedCards.length} cards`
+    );
+
+    // Auto-hide menu after selection
+    setTimeout(() => {
+        hideCardContextMenu();
+    }, 300);
+}
+
 // ============================================
 // BOARD SETTING FUNCTIONS
 // ============================================
@@ -3227,6 +3405,8 @@ function handleLoadPreset() {
 
     if (presetValue === 'poker') {
         loadPokerLayout();
+    } else if (presetValue === 'pusoy') {
+        loadPusoyLayout();
     } else if (presetValue === 'card-sorting') {
         loadGridLayout(4, 3);
     } else if (presetValue === 'custom') {
@@ -3252,6 +3432,160 @@ function loadPokerLayout() {
 
     gameContainer.classList.remove('grid-mode');
     setStatus('Loaded Poker layout (4 player zones + community)');
+}
+
+/**
+ * Load Pusoy layout (3-5-5 pyramid formation)
+ * Row 0 (top): 3 cards
+ * Row 1 (middle): 5 cards  
+ * Row 2 (bottom): 5 cards
+ * 
+ * Z-order: 
+ * - Within row: left cards behind, right cards in front
+ * - Between rows: bottom row in front of middle, middle in front of top
+ */
+function loadPusoyLayout() {
+    const places = [];
+
+    // Use UI coordinate system (1280x720) for consistency with animation/export
+    // The positions will be scaled down when rendering to actual DOM size
+    const tableWidth = UI_WIDTH;  // 1280
+    const tableHeight = UI_HEIGHT; // 720
+
+    // Read slider values from DOM (with defaults)
+    const spacingSlider = document.getElementById('pusoySpacing');
+    const curvatureSlider = document.getElementById('pusoyCurvature');
+    const layerGapSlider = document.getElementById('pusoyLayerGap');
+
+    const baseSpacing = spacingSlider ? parseInt(spacingSlider.value) : 150;
+    const curvature = curvatureSlider ? parseInt(curvatureSlider.value) : 50;
+    const layerGap = layerGapSlider ? parseInt(layerGapSlider.value) : 30;
+
+    // Fan configuration for each row
+    // fanRadius decreases for each row (top row biggest, bottom row smallest)
+    // angleSpread scales with curvature slider
+    // pivotY increases by layerGap for each row
+    // basePivotY of 430 in UI coords (720 height) → 645 in AE coords (1080 height)
+    const basePivotY = 430; // Starting pivot Y position (adjusted for AE centering)
+    const rowConfigs = [
+        { row: 0, count: 3, fanRadius: baseSpacing + 30, angleSpread: curvature - 20, pivotY: basePivotY },
+        { row: 1, count: 5, fanRadius: baseSpacing, angleSpread: curvature, pivotY: basePivotY + layerGap },
+        { row: 2, count: 5, fanRadius: baseSpacing - 30, angleSpread: curvature + 5, pivotY: basePivotY + (layerGap * 2) }
+    ];
+
+    const centerX = tableWidth / 2;
+    let placeIndex = 0;
+
+    rowConfigs.forEach(config => {
+        const { row, count, fanRadius, angleSpread, pivotY } = config;
+
+        // Convert to radians
+        const spreadRad = (angleSpread * Math.PI) / 180;
+        const startAngle = -spreadRad / 2;  // Start from left
+        const angleStep = count > 1 ? spreadRad / (count - 1) : 0;
+
+        for (let col = 0; col < count; col++) {
+            // Calculate angle for this card (from vertical, -90° = up)
+            const angle = startAngle + (col * angleStep);
+
+            // Position card using polar coordinates from pivot point
+            // X = centerX + radius * sin(angle)
+            // Y = pivotY - radius * cos(angle)
+            const x = centerX + (fanRadius * Math.sin(angle));
+            const y = pivotY - (fanRadius * Math.cos(angle));
+
+            // Rotation matches the angle (convert to degrees)
+            const rotation = Math.round((angle * 180) / Math.PI);
+
+            // Z-order: higher row = front, higher col = front within row
+            const zOrder = (row * 10) + col;
+
+            places.push({
+                id: `place-${placeIndex}`,
+                x: x,
+                y: y,
+                col: col,
+                row: row,
+                rotation: rotation,
+                zOrder: zOrder,
+                label: String(placeIndex + 1)
+            });
+            placeIndex++;
+        }
+    });
+
+    appState.boardLayout = {
+        type: 'grid',
+        name: 'Pusoy (3-5-5)',
+        boardStyle: 'pusoy',
+        gridCols: 5,
+        gridRows: 3,
+        cardPlaces: places
+    };
+
+    gameContainer.classList.add('grid-mode');
+    setStatus('Loaded Pusoy layout (3-5-5 fan)');
+}
+
+/**
+ * Setup Pusoy layout slider controls and visibility toggle
+ */
+function setupPusoySliderControls() {
+    const pusoyControls = document.getElementById('pusoyControls');
+    const presetSelect = document.getElementById('presetSelect');
+    const loadPresetBtn = document.getElementById('loadPresetBtn');
+
+    const spacingSlider = document.getElementById('pusoySpacing');
+    const curvatureSlider = document.getElementById('pusoyCurvature');
+    const layerGapSlider = document.getElementById('pusoyLayerGap');
+
+    const spacingValue = document.getElementById('pusoySpacingValue');
+    const curvatureValue = document.getElementById('pusoyCurvatureValue');
+    const layerGapValue = document.getElementById('pusoyLayerGapValue');
+
+    if (!pusoyControls || !presetSelect) return;
+
+    // Function to toggle Pusoy controls visibility
+    const togglePusoyControls = () => {
+        const isPusoy = presetSelect.value === 'pusoy';
+        pusoyControls.classList.toggle('hidden', !isPusoy);
+    };
+
+    // Function to update layout when sliders change
+    const updatePusoyLayout = () => {
+        // Update display values
+        if (spacingSlider && spacingValue) {
+            spacingValue.textContent = spacingSlider.value;
+        }
+        if (curvatureSlider && curvatureValue) {
+            curvatureValue.textContent = curvatureSlider.value + '°';
+        }
+        if (layerGapSlider && layerGapValue) {
+            layerGapValue.textContent = layerGapSlider.value;
+        }
+
+        // Regenerate layout if Pusoy is selected
+        if (appState.boardLayout.boardStyle === 'pusoy') {
+            loadPusoyLayout();
+            renderCardPlaceMarkers();
+            renderCardDropZones();
+        }
+    };
+
+    // Show/hide on preset change
+    presetSelect.addEventListener('change', togglePusoyControls);
+
+    // Show controls after preset is loaded
+    if (loadPresetBtn) {
+        loadPresetBtn.addEventListener('click', () => {
+            setTimeout(togglePusoyControls, 100);
+        });
+    }
+
+    // Slider event listeners
+    if (spacingSlider) spacingSlider.addEventListener('input', updatePusoyLayout);
+    if (curvatureSlider) curvatureSlider.addEventListener('input', updatePusoyLayout);
+    if (layerGapSlider) layerGapSlider.addEventListener('input', updatePusoyLayout);
 }
 
 /**
@@ -3426,19 +3760,35 @@ function renderCardPlaceMarkers() {
 
     const tableRect = pokerTable.getBoundingClientRect();
     const containerRect = gameContainer.getBoundingClientRect();
+    const tableWidth = pokerTable.offsetWidth;
+    const tableHeight = pokerTable.offsetHeight;
 
     // Calculate offset from gameContainer to pokerTable
     const offsetX = tableRect.left - containerRect.left;
     const offsetY = tableRect.top - containerRect.top;
+
+    // Scale factors to convert UI coordinates (1280x720) to actual DOM size
+    const scaleX = tableWidth / UI_WIDTH;
+    const scaleY = tableHeight / UI_HEIGHT;
 
     appState.boardLayout.cardPlaces.forEach((place, index) => {
         const marker = document.createElement('div');
         marker.className = 'card-place-marker';
         marker.dataset.placeId = place.id;
 
-        // Position relative to gameContainer (add pokerTable offset)
-        marker.style.left = `${offsetX + place.x - CARD_WIDTH / 2}px`;
-        marker.style.top = `${offsetY + place.y - CARD_HEIGHT / 2}px`;
+        // Scale UI coordinates to DOM pixels, then position relative to gameContainer
+        const scaledX = place.x * scaleX;
+        const scaledY = place.y * scaleY;
+        marker.style.left = `${offsetX + scaledX - CARD_WIDTH / 2}px`;
+        marker.style.top = `${offsetY + scaledY - CARD_HEIGHT / 2}px`;
+
+        // Apply rotation and z-order for Pusoy layout
+        if (place.rotation) {
+            marker.style.transform = `rotate(${place.rotation}deg)`;
+        }
+        if (place.zOrder !== undefined) {
+            marker.style.zIndex = String(place.zOrder + 10);
+        }
 
         // Place number
         const number = document.createElement('span');
@@ -3493,20 +3843,36 @@ function renderCardDropZones() {
 
     const tableRect = pokerTable.getBoundingClientRect();
     const containerRect = gameContainer.getBoundingClientRect();
+    const tableWidth = pokerTable.offsetWidth;
+    const tableHeight = pokerTable.offsetHeight;
 
     const offsetX = tableRect.left - containerRect.left;
     const offsetY = tableRect.top - containerRect.top;
+
+    // Scale factors to convert UI coordinates (1280x720) to actual DOM size
+    const scaleX = tableWidth / UI_WIDTH;
+    const scaleY = tableHeight / UI_HEIGHT;
 
     appState.boardLayout.cardPlaces.forEach((place, index) => {
         const zone = document.createElement('div');
         zone.className = 'card-drop-zone';
         zone.dataset.placeId = place.id;
         zone.dataset.zone = `grid-${place.id}`;
-        zone.dataset.rotation = '0';
+        zone.dataset.rotation = String(place.rotation || 0);
 
-        // Position relative to gameContainer
-        zone.style.left = `${offsetX + place.x - CARD_WIDTH / 2}px`;
-        zone.style.top = `${offsetY + place.y - CARD_HEIGHT / 2}px`;
+        // Scale UI coordinates to DOM pixels, then position relative to gameContainer
+        const scaledX = place.x * scaleX;
+        const scaledY = place.y * scaleY;
+        zone.style.left = `${offsetX + scaledX - CARD_WIDTH / 2}px`;
+        zone.style.top = `${offsetY + scaledY - CARD_HEIGHT / 2}px`;
+
+        // Apply rotation and z-order for Pusoy layout
+        if (place.rotation) {
+            zone.style.transform = `rotate(${place.rotation}deg)`;
+        }
+        if (place.zOrder !== undefined) {
+            zone.style.zIndex = String(place.zOrder + 10); // +10 to ensure above table
+        }
 
         // Zone label
         const label = document.createElement('span');
@@ -4021,36 +4387,39 @@ function handleAutoRecordDelayChange(e) {
 /**
  * Toggle card selection for grouping
  * Called when clicking a card in grouping mode
+ * Each selection/deselection triggers auto-step popup to record as separate step
  */
 function toggleCardGroupSelection(card) {
-    // Take snapshot before first selection (for recording)
-    if (appState.groupedCards.length === 0 && !pendingChangeSnapshot) {
-        pendingChangeSnapshot = takeSnapshot();
-    }
+    console.log('[GroupSelect] Before - groupedCards:', appState.groupedCards.length);
+
+    // Take snapshot BEFORE the selection change (for recording)
+    const snapshotBeforeChange = takeSnapshot();
 
     const index = appState.groupedCards.findIndex(c => c.id === card.id);
 
     if (index === -1) {
-        // Add to group
+        // Add to group (SELECT)
         appState.groupedCards.push(card);
         card.element?.classList.add('grouped');
+        console.log('[GroupSelect] Added card:', card.id, 'groupedCards:', appState.groupedCards.length);
     } else {
-        // Remove from group
+        // Remove from group (DESELECT)
         appState.groupedCards.splice(index, 1);
         card.element?.classList.remove('grouped');
+        console.log('[GroupSelect] Removed card:', card.id, 'groupedCards:', appState.groupedCards.length);
     }
 
     // Update count display
     updateGroupCount();
 
-    // Start/restart auto-record countdown if enabled and cards are selected
-    if (appState.autoRecord && appState.groupedCards.length > 0) {
-        startAutoRecordCountdown();
-    } else if (appState.groupedCards.length === 0) {
-        cancelAutoRecordCountdown();
-        pendingChangeSnapshot = null;
+    console.log('[GroupSelect] After - groupedCards:', appState.groupedCards.length);
+
+    // Trigger auto-step popup for this selection change (Record mode only)
+    if (appState.phase === 'record' && !appState.isEditingStep) {
+        showAutoStepPopup(card, snapshotBeforeChange);
     }
 }
+
 
 /**
  * Clear all grouped cards
@@ -4183,6 +4552,83 @@ function updateGroupingSectionVisibility() {
                 cancelAutoRecordCountdown();
             }
         }
+    }
+}
+
+/**
+ * Handle dropping all grouped cards to a zone
+ * @param {HTMLElement} zone - Target zone element
+ */
+function handleGroupedCardsDrop(zone) {
+    console.log('[GroupDrop] Called with zone:', zone?.dataset?.zone, 'groupedCards:', appState.groupedCards.length);
+    if (appState.groupedCards.length === 0) return;
+
+    // Use pendingChangeSnapshot if available (captured when first card was selected)
+    // Otherwise take a new snapshot
+    const snapshotBeforeMove = pendingChangeSnapshot || takeSnapshot();
+    console.log('[GroupDrop] snapshotBeforeMove exists:', !!snapshotBeforeMove);
+
+    const zoneName = zone.dataset.zone;
+    const rotation = parseInt(zone.dataset.rotation) || 0;
+
+    // Collect old zones for later re-render
+    const oldZones = new Set();
+
+    // Move each grouped card to the target zone
+    appState.groupedCards.forEach(card => {
+        if (card.zone && card.zone !== zoneName) {
+            oldZones.add(card.zone);
+        }
+        if (card.element) {
+            card.element.remove();
+        }
+        card.zone = zoneName;
+        card.rotation = rotation;
+
+        const flipCheckbox = document.querySelector(`#flip${zoneName.charAt(0).toUpperCase() + zoneName.slice(1)}`);
+        if (flipCheckbox) {
+            card.isFaceUp = flipCheckbox.checked;
+        }
+    });
+
+    // Recalculate positions for old zones
+    oldZones.forEach(oldZoneName => {
+        const oldZoneCards = appState.tableCards.filter(c => c.zone === oldZoneName);
+        oldZoneCards.forEach((c, idx) => {
+            c.zonePosition = idx;
+        });
+        const oldZoneElement = document.querySelector(
+            `.player-zone[data-zone="${oldZoneName}"], .community-zone[data-zone="${oldZoneName}"], .card-drop-zone[data-zone="${oldZoneName}"]`
+        );
+        if (oldZoneElement) {
+            rerenderZoneCards(oldZoneName, oldZoneElement);
+        }
+    });
+
+    // Assign consecutive positions in new zone
+    const existingCardsInZone = appState.tableCards.filter(
+        c => c.zone === zoneName && !appState.groupedCards.some(gc => gc.id === c.id)
+    );
+    let nextPos = existingCardsInZone.length;
+
+    appState.groupedCards.forEach(card => {
+        card.zonePosition = nextPos++;
+        createZoneCardElement(card, zone);
+    });
+
+    const movedCount = appState.groupedCards.length;
+    updateUI();
+    setStatus(`Moved ${movedCount} cards to ${zoneName} zone`);
+    console.log('[GroupDrop] Moved', movedCount, 'cards to', zoneName);
+
+    // Clear grouped cards after move
+    clearGroupedCards();
+
+    // Show auto-step popup if in record mode
+    console.log('[GroupDrop] phase:', appState.phase, 'isEditingStep:', appState.isEditingStep, 'autoStepPopup:', !!autoStepPopup);
+    if (appState.phase === 'record' && !appState.isEditingStep) {
+        console.log('[GroupDrop] Calling showAutoStepPopup');
+        showAutoStepPopup(null, snapshotBeforeMove);
     }
 }
 

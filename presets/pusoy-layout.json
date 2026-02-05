@@ -1,0 +1,132 @@
+{
+    "name": "Pusoy (3-5-5)",
+    "type": "grid",
+    "boardStyle": "pusoy",
+    "description": "Pyramid fan layout for Pusoy/Capsa games - 3 cards top, 5 middle, 5 bottom",
+    "config": {
+        "cardSpacing": 55,
+        "rowSpacing": 70,
+        "rotationSpread": 6,
+        "baseY": 100
+    },
+    "rows": [
+        {
+            "row": 0,
+            "count": 3
+        },
+        {
+            "row": 1,
+            "count": 5
+        },
+        {
+            "row": 2,
+            "count": 5
+        }
+    ],
+    "cardPlaces": [
+        {
+            "id": "place-0",
+            "row": 0,
+            "col": 0,
+            "rotation": -6,
+            "zOrder": 0,
+            "label": "1"
+        },
+        {
+            "id": "place-1",
+            "row": 0,
+            "col": 1,
+            "rotation": 0,
+            "zOrder": 1,
+            "label": "2"
+        },
+        {
+            "id": "place-2",
+            "row": 0,
+            "col": 2,
+            "rotation": 6,
+            "zOrder": 2,
+            "label": "3"
+        },
+        {
+            "id": "place-3",
+            "row": 1,
+            "col": 0,
+            "rotation": -12,
+            "zOrder": 10,
+            "label": "4"
+        },
+        {
+            "id": "place-4",
+            "row": 1,
+            "col": 1,
+            "rotation": -6,
+            "zOrder": 11,
+            "label": "5"
+        },
+        {
+            "id": "place-5",
+            "row": 1,
+            "col": 2,
+            "rotation": 0,
+            "zOrder": 12,
+            "label": "6"
+        },
+        {
+            "id": "place-6",
+            "row": 1,
+            "col": 3,
+            "rotation": 6,
+            "zOrder": 13,
+            "label": "7"
+        },
+        {
+            "id": "place-7",
+            "row": 1,
+            "col": 4,
+            "rotation": 12,
+            "zOrder": 14,
+            "label": "8"
+        },
+        {
+            "id": "place-8",
+            "row": 2,
+            "col": 0,
+            "rotation": -12,
+            "zOrder": 20,
+            "label": "9"
+        },
+        {
+            "id": "place-9",
+            "row": 2,
+            "col": 1,
+            "rotation": -6,
+            "zOrder": 21,
+            "label": "10"
+        },
+        {
+            "id": "place-10",
+            "row": 2,
+            "col": 2,
+            "rotation": 0,
+            "zOrder": 22,
+            "label": "11"
+        },
+        {
+            "id": "place-11",
+            "row": 2,
+            "col": 3,
+            "rotation": 6,
+            "zOrder": 23,
+            "label": "12"
+        },
+        {
+            "id": "place-12",
+            "row": 2,
+            "col": 4,
+            "rotation": 12,
+            "zOrder": 24,
+            "label": "13"
+        }
+    ]
+}

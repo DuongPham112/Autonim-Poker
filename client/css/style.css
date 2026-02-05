@@ -722,7 +722,10 @@ body {
     justify-content: center;
     background: rgba(0, 0, 0, 0.4);
     border-radius: 50%;
-    z-index: 100;
+    z-index: 5;
+    /* Below drop zones */
+    pointer-events: none;
+    /* Allow drops through overlay */
     transition: opacity 0.3s;
 }
 
@@ -1518,6 +1521,23 @@ body {
     background: var(--accent-blue);
     border-color: var(--accent-blue);
     color: white;
+}
+
+.ctx-divider {
+    width: 1px;
+    background: var(--border-color);
+    margin: 0 2px;
+}
+
+.ctx-group-btn {
+    background: var(--accent-green);
+    border-color: var(--accent-green);
+    color: white;
+}
+
+.ctx-group-btn:hover {
+    background: #3fb950;
+    border-color: #3fb950;
 }
 
 /* ============================================
@@ -2521,4 +2541,73 @@ body.grouping-mode-active .zone-card {
 body.grouping-mode-active .zone-card:hover:not(.grouped) {
     outline: 2px dashed var(--accent-blue);
     outline-offset: 2px;
+}
+
+/* Cards being dragged as group */
+.zone-card.group-dragging {
+    opacity: 0.6;
+    transform: translateY(-15px) scale(0.95) !important;
+}
+
+.zone-left .zone-card.group-dragging {
+    transform: rotate(90deg) translateX(-15px) scale(0.95) !important;
+}
+
+.zone-right .zone-card.group-dragging {
+    transform: rotate(-90deg) translateX(15px) scale(0.95) !important;
+}
+
+/* Table cards grouped styling */
+.card.grouped {
+    transform: translateY(-25px) !important;
+    z-index: 50 !important;
+    box-shadow: 0 12px 25px rgba(0, 0, 0, 0.5);
+    outline: 3px solid var(--accent-blue);
+}
+
+/* Pusoy Layout Controls */
+.pusoy-controls {
+    background: var(--bg-primary);
+    padding: 10px;
+    border-radius: 6px;
+    margin-top: 8px;
+}
+
+.pusoy-controls.hidden {
+    display: none;
+}
+
+.pusoy-controls label {
+    display: block;
+    margin-bottom: 10px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.slider-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.slider-control .slider-label {
+    flex: 0 0 90px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.slider-control input[type="range"] {
+    flex: 1;
+    height: 4px;
+    cursor: pointer;
+    accent-color: var(--accent-blue);
+}
+
+.slider-control .slider-value {
+    flex: 0 0 35px;
+    text-align: right;
+    font-size: 11px;
+    color: var(--accent-green);
+    font-weight: 600;
 }

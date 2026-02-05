@@ -214,6 +214,16 @@
                             <button id="ctxSlamBtn" class="ctx-btn" title="Slam Effect">
                                 💥 Slam
                             </button>
+                            <!-- Group Actions (visible when grouping mode is active) -->
+                            <div id="ctxGroupDivider" class="ctx-divider hidden"></div>
+                            <button id="ctxFlipAllBtn" class="ctx-btn ctx-group-btn hidden"
+                                title="Flip All Grouped Cards">
+                                🔄 Flip All
+                            </button>
+                            <button id="ctxSlamAllBtn" class="ctx-btn ctx-group-btn hidden"
+                                title="Slam All Grouped Cards">
+                                💥 Slam All
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -257,6 +267,7 @@
                             <div class="preset-selector">
                                 <select id="presetSelect">
                                     <option value="poker">Poker (4 Players)</option>
+                                    <option value="pusoy">Pusoy (3-5-5)</option>
                                     <option value="card-sorting">Card Sorting (4x3)</option>
                                     <option value="custom">Custom</option>
                                 </select>
@@ -273,6 +284,29 @@
                                 <input type="number" id="gridRows" value="3" min="1" max="6">
                             </div>
                             <button id="applyGridBtn" class="btn btn-sm btn-secondary">Apply</button>
+                        </div>
+
+                        <!-- Pusoy Layout Controls (visible when Pusoy preset is active) -->
+                        <div class="control-group pusoy-controls hidden" id="pusoyControls">
+                            <label>Pusoy Settings:</label>
+
+                            <div class="slider-control">
+                                <span class="slider-label">Card Spacing:</span>
+                                <input type="range" id="pusoySpacing" min="80" max="250" value="150">
+                                <span class="slider-value" id="pusoySpacingValue">150</span>
+                            </div>
+
+                            <div class="slider-control">
+                                <span class="slider-label">Curvature:</span>
+                                <input type="range" id="pusoyCurvature" min="20" max="80" value="50">
+                                <span class="slider-value" id="pusoyCurvatureValue">50°</span>
+                            </div>
+
+                            <div class="slider-control">
+                                <span class="slider-label">Layer Gap:</span>
+                                <input type="range" id="pusoyLayerGap" min="15" max="60" value="30">
+                                <span class="slider-value" id="pusoyLayerGapValue">30</span>
+                            </div>
                         </div>
 
                         <!-- Background Type -->

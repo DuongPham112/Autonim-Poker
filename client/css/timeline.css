@@ -55,8 +55,10 @@
     background: rgba(0, 0, 0, 0.2);
     border-radius: 4px;
     margin-top: 8px;
-    overflow: hidden;
+    overflow: visible;
+    /* Changed from hidden to allow context menu to show */
 }
+
 
 .timeline-track-inner {
     position: relative;
@@ -320,10 +322,12 @@
     border-radius: 6px;
     min-width: 140px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-    z-index: 200;
+    z-index: 1000;
+    /* High z-index to ensure visibility above all elements */
     overflow: hidden;
     display: none;
 }
+
 
 .step-context-menu.visible {
     display: block;

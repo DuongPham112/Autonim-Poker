@@ -223,22 +223,27 @@ function generateSequence(jsonString, assetsRootPath) {
 function setupInitialScene(comp, initialState, assetsRootPath, layerMap, folderInfo) {
     var importErrors = [];
 
-    // Collect asset IDs with their zonePosition for sorting
+    // Collect asset IDs with their zOrder for sorting
+    // zOrder comes from Pusoy layout, fallback to zonePosition for other layouts
     var assetArray = [];
     for (var assetId in initialState) {
         if (initialState.hasOwnProperty(assetId)) {
+            var assetInfo = initialState[assetId];
+            // Prioritize zOrder (from grid layouts like Pusoy), fallback to zonePosition
+            var sortOrder = assetInfo.zOrder !== undefined ? assetInfo.zOrder :
+                (assetInfo.zonePosition || 0);
             assetArray.push({
                 id: assetId,
-                zonePosition: initialState[assetId].zonePosition || 0
+                zOrder: sortOrder
             });
         }
     }
 
-    // Sort by zonePosition ASCENDING
-    // Cards with lower zonePosition are added FIRST → end up at BOTTOM of layer stack
-    // Cards with higher zonePosition are added LAST → end up on TOP
+    // Sort by zOrder ASCENDING
+    // Cards with lower zOrder are added FIRST → end up at BOTTOM of layer stack (behind)
+    // Cards with higher zOrder are added LAST → end up on TOP of layer stack (in front)
     assetArray.sort(function (a, b) {
-        return a.zonePosition - b.zonePosition;
+        return a.zOrder - b.zOrder;
     });
 
 
@@ -397,15 +402,18 @@ function setAnchorPointToCenter(layer) {
 
 /**
  * Apply initial transform properties to layer (3D)
- * zonePosition determines initial Z: lower zonePosition = more positive Z (further from camera = behind)
+ * zOrder (from layout) or zonePosition determines initial Z:
+ * - Higher zOrder = more NEGATIVE Z = closer to camera = in FRONT
  * isFaceUp determines initial Y Rotation: true = 180°, false = 0°
  */
 function applyInitialTransform(layer, assetInfo, comp) {
-    // Get zonePosition for Z calculation
-    var zonePosition = assetInfo.zonePosition || 0;
+    // Get z-order for Z calculation
+    // Prioritize zOrder from layout (Pusoy) over zonePosition
+    var zOrderValue = assetInfo.zOrder !== undefined ? assetInfo.zOrder :
+        (assetInfo.zonePosition || 0);
 
-    // Calculate Z: lower zonePosition = more positive Z (behind)
-    var zPos = INITIAL_Z_OFFSET - (zonePosition * Z_SPACING);
+    // Calculate Z: higher zOrder = more NEGATIVE Z (closer to camera = in front)
+    var zPos = INITIAL_Z_OFFSET - (zOrderValue * Z_SPACING);
 
     // Position (3D: X, Y, Z)
     var posX = assetInfo.x !== undefined ? assetInfo.x : comp.width / 2;
@@ -625,6 +633,9 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending) {
     // Calculate blending factor (0 = no overlap, 0.5 = 50% overlap)
     var blendFactor = (stepBlending || 0) / 100;
 
+    // Track selection state per card for Y offset animation
+    var cardSelectionState = {};
+
     for (var s = 0; s < scenario.length; s++) {
         var step = scenario[s];
         var stepDuration = step.duration || 1.0;
@@ -639,13 +650,25 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending) {
             if (!layer) continue;
 
             try {
+                // Process SELECT/DESELECT actions (grouping mode Y offset)
+                if (action.type === "SELECT" || action.type === "DESELECT") {
+                    processSelectionAction(layer, action, currentTime, stepDuration, cardSelectionState);
+                    continue; // SELECT/DESELECT doesn't need TRANSFORM processing
+                }
+
                 // Calculate target Z for this card based on move order
                 // Cards that move LATER get MORE NEGATIVE Z (closer to camera = on top)
                 var targetZ = baseZForMovingCards - (moveCounter * Z_SPACING);
                 moveCounter++;
 
                 // Process transform animation (X, Y, Z position)
-                processTransformAction(layer, action, currentTime, stepDuration, targetZ);
+                // Pass selectionState so TRANSFORM knows if card is currently lifted
+                processTransformAction(layer, action, currentTime, stepDuration, targetZ, cardSelectionState);
+
+                // After transform, card is no longer lifted (it has moved to new position)
+                if (cardSelectionState[targetId]) {
+                    cardSelectionState[targetId] = false;
+                }
 
                 // Process FLIP effect
                 if (action.flip === true) {
@@ -671,10 +694,61 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending) {
 }
 
 /**
+ * Process SELECT/DESELECT action - animates Y offset for lift up/down effect
+ * SELECT: moves card up by 25px (scaled to AE coordinates)
+ * DESELECT: moves card back down to original position
+ * Uses position from action data (calculated in computeActions via getAEPosition)
+ */
+function processSelectionAction(layer, action, startTime, stepDuration, selectionState) {
+    var frameDuration = 1 / FRAME_RATE;
+    var selectDuration = 5 * frameDuration; // 5 frames for selection animation
+
+    var positionProp = layer.property("Position");
+
+    // Use position from action data (correct position for the zone)
+    var baseX = action.position.x;
+    var baseY = action.position.y;
+
+    // Get current Z from layer (Z is managed separately for stacking)
+    var currentPos = positionProp.valueAtTime(startTime, false);
+    var baseZ = currentPos.length > 2 ? currentPos[2] : 0;
+
+    // Selection offset (25px in UI = scaled for AE 1920x1080 vs UI 1280x720)
+    // Scale factor is 1.5 (1920/1280), so 25px becomes ~37.5px
+    var SELECT_OFFSET_Y = 37.5;
+
+    var startY, endY;
+
+    if (action.type === "SELECT") {
+        // SELECT: card is at base position, moves UP
+        startY = baseY;
+        endY = baseY - SELECT_OFFSET_Y;
+        selectionState[action.targetId] = true;
+    } else {
+        // DESELECT: card was lifted (at baseY - offset), moves back DOWN to baseY
+        startY = baseY - SELECT_OFFSET_Y;
+        endY = baseY;
+        selectionState[action.targetId] = false;
+    }
+
+    var endTime = startTime + selectDuration;
+
+    // Set keyframes
+    positionProp.setValueAtTime(startTime, [baseX, startY, baseZ]);
+    positionProp.setValueAtTime(endTime, [baseX, endY, baseZ]);
+
+    // Apply smooth easing
+    applyBezierEasing(positionProp);
+}
+
+
+
+/**
  * Process transform (position, rotation) animation (3D)
  * Includes Z-position animation for stacking order
+ * @param selectionState - tracks which cards are currently "lifted" from SELECT action
  */
-function processTransformAction(layer, action, startTime, duration, targetZ) {
+function processTransformAction(layer, action, startTime, duration, targetZ, selectionState) {
     var frameDuration = 1 / FRAME_RATE;
     var moveDuration = MOVE_DURATION_FRAMES * frameDuration;  // ~0.33s for movement
     var rotDuration = FLIP_DURATION_FRAMES * frameDuration;   // ~0.17s for rotation
@@ -698,6 +772,14 @@ function processTransformAction(layer, action, startTime, duration, targetZ) {
         startX = action.startPosition.x;
         startY = action.startPosition.y;
     }
+
+    // If card is currently lifted (from SELECT action), apply the lifted offset to startY
+    // This prevents the "snap back to original position" before moving
+    var SELECT_OFFSET_Y = 37.5; // 25px UI * 1.5 scale
+    var isCurrentlyLifted = selectionState && selectionState[action.targetId];
+    if (isCurrentlyLifted) {
+        startY = startY - SELECT_OFFSET_Y;
+    }
     if (action.startRotation !== undefined) {
         startRot = action.startRotation;
     }
@@ -715,9 +797,27 @@ function processTransformAction(layer, action, startTime, duration, targetZ) {
         endRot = action.endRotation;
     }
 
-    // Position animation: 10 frames (~0.33s) - includes Z transition
+    // Position animation: 10 frames (~0.33s)
+    // Z-order animation uses 3 keyframes:
+    //   1. startTime: current Z (where card is)
+    //   2. startTime + 1 frame: jump to VERY front Z (above all other cards during move)
+    //   3. endTime: settle to targetZ
     var posEndTime = startTime + moveDuration;
+    var frontZ = -200; // Very front, above all other cards during movement
+
+    // Keyframe 1: Start position with current Z
     positionProp.setValueAtTime(startTime, [startX, startY, startZ]);
+
+    // Keyframe 2: One frame later, jump to front Z while starting to move
+    // This ensures the card is above all others during the swap animation
+    var liftTime = startTime + frameDuration;
+    // Interpolate XY position at liftTime (1 frame into animation)
+    var liftProgress = frameDuration / moveDuration; // ~0.1 for 1 of 10 frames
+    var liftX = startX + (endX - startX) * liftProgress;
+    var liftY = startY + (endY - startY) * liftProgress;
+    positionProp.setValueAtTime(liftTime, [liftX, liftY, frontZ]);
+
+    // Keyframe 3: End position with targetZ
     positionProp.setValueAtTime(posEndTime, [endX, endY, targetZ]);
 
     // Rotation animation: 5 frames (~0.17s) - quick and decisive
