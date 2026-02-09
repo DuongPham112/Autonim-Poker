@@ -656,9 +656,18 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending) {
                     continue; // SELECT/DESELECT doesn't need TRANSFORM processing
                 }
 
-                // Calculate target Z for this card based on move order
-                // Cards that move LATER get MORE NEGATIVE Z (closer to camera = on top)
-                var targetZ = baseZForMovingCards - (moveCounter * Z_SPACING);
+                // Calculate target Z for this card based on destination zone's zOrder
+                // If action has endZOrder (from grid layout like Pusoy), use it for proper row stacking
+                // Otherwise fall back to moveCounter for non-grid layouts
+                var targetZ;
+                if (action.endZOrder !== undefined && action.endZOrder > 0) {
+                    // Use destination zone's zOrder: higher zOrder = more NEGATIVE Z = in front
+                    // Same formula as applyInitialTransform
+                    targetZ = INITIAL_Z_OFFSET - (action.endZOrder * Z_SPACING);
+                } else {
+                    // Fallback: cards that move LATER get MORE NEGATIVE Z (on top)
+                    targetZ = baseZForMovingCards - (moveCounter * Z_SPACING);
+                }
                 moveCounter++;
 
                 // Process transform animation (X, Y, Z position)

@@ -2012,6 +2012,15 @@ function computeActions(startSnap, endSnap) {
         const hasSlam = zoneChanged && card.slamEffect;
 
         if (posChanged || rotChanged || flipChanged || zoneChanged || hasFlipAction || hasSlam) {
+            // Get endZOrder from boardLayout.cardPlaces for the destination zone
+            let endZOrder = 0;
+            if (end.zone && end.zone.startsWith('grid-') && appState.boardLayout.cardPlaces) {
+                const endPlaceId = end.zone.replace('grid-', '');
+                const endPlace = appState.boardLayout.cardPlaces.find(p => p.id === endPlaceId);
+                if (endPlace && endPlace.zOrder !== undefined) {
+                    endZOrder = endPlace.zOrder;
+                }
+            }
             actions.push({
                 targetId: card.id,
                 type: 'TRANSFORM',
@@ -2021,6 +2030,7 @@ function computeActions(startSnap, endSnap) {
                 endRotation: Math.round(end.rotation || 0),
                 startZone: start.zone,
                 endZone: end.zone,
+                endZOrder: endZOrder,
                 flip: hasFlipAction || flipChanged,
                 flipToFaceUp: end.isFaceUp,
                 effect: hasSlam ? 'SLAM' : null
@@ -2188,6 +2198,7 @@ function saveInitialStateForExport() {
             scale: aeCardScale,
             zone: wasInInitialSnap ? initialSnap[card.id].zone : 'offscreen',
             zonePosition: wasInInitialSnap ? (initialSnap[card.id].zonePosition || 0) : 0,
+            zOrder: wasInInitialSnap ? (initialSnap[card.id].zOrder || 0) : 0,
             isFaceUp: wasInInitialSnap ? initialSnap[card.id].isFaceUp : false
         };
     });
