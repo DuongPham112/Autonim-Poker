@@ -535,12 +535,13 @@ function createZoneNulls(comp, controlLayerName) {
 
 /**
  * Apply Scale expression to card layer
- * Links to Control Layer's Card Scale slider
+ * Multiplies keyframe scale (slam animation) with global Card Scale slider
+ * This way slam keyframes work AND user can adjust overall size
  */
 function applyScaleExpression(layer, controlLayerName) {
-    var expr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n' +
-        'var scale = ctrl.effect("Card Scale")("Slider");\n' +
-        '[scale, scale, 100]';
+    var expr = 'var globalSize = thisComp.layer("' + controlLayerName + '").effect("Card Scale")("Slider");\n' +
+        'var s = value;\n' +
+        '[s[0] * (globalSize / 100), s[1] * (globalSize / 100), s.length > 2 ? s[2] : 100]';
     layer.property("Scale").expression = expr;
 }
 
