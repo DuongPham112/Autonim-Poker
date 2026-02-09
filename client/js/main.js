@@ -482,6 +482,18 @@ function bindEvents() {
     if (ctxFlipAllBtn) ctxFlipAllBtn.addEventListener('click', toggleCtxFlipAll);
     if (ctxSlamAllBtn) ctxSlamAllBtn.addEventListener('click', toggleCtxSlamAll);
 
+    // Context menu popup toggle
+    var showCtxToggle = document.getElementById('showContextMenuToggle');
+    if (showCtxToggle) {
+        showCtxToggle.addEventListener('change', function () {
+            if (!this.checked) {
+                hideCardContextMenu();
+            } else if (appState.selectedCard) {
+                showCardContextMenu(appState.selectedCard);
+            }
+        });
+    }
+
     // Zone drop targets
     setupZoneDropTargets();
 
@@ -3243,6 +3255,13 @@ function showCardContextMenu(card) {
 
     // Only show in Record mode
     if (appState.phase !== 'record') {
+        hideCardContextMenu();
+        return;
+    }
+
+    // Check if popup is disabled by user toggle
+    var showToggle = document.getElementById('showContextMenuToggle');
+    if (showToggle && !showToggle.checked) {
         hideCardContextMenu();
         return;
     }
