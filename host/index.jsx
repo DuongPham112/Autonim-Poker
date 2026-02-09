@@ -161,6 +161,11 @@ function generateSequence(jsonString, assetsRootPath) {
             return createErrorResponse(animResult.message);
         }
 
+        // Create visual mouse null layer if enabled and swap data exists
+        if (data.enableVisualMouse !== false && animResult.swapTimeline && animResult.swapTimeline.length > 0) {
+            createVisualMouseLayer(comp, animResult.swapTimeline, animResult.finalTime);
+        }
+
         // Create Control Layer with Expression Control sliders
         var controlLayer = createControlLayer(comp);
         var controlLayerName = controlLayer.name;
@@ -615,20 +620,19 @@ function applyZoneOffsetExpression(cardLayer, controlLayerName, zoneName) {
     cardLayer.property("Position").expression = expr;
 }
 
-
 /**
  * Process all scenario steps and apply animations
+ * Detects swap pairs (Pusoy board) and animates them sequentially
  * Uses Z-position keyframes to control card stacking order over time
  * @param stepBlending - Overlap percentage (0-50) to reduce time between steps
+ * @returns {object} Result with success, finalTime, and swapTimeline for visual mouse
  */
 function processScenarioAnimation(comp, scenario, layerMap, stepBlending) {
     var currentTime = 0;
     var moveCounter = 0;  // Tracks order of card movements for z-ordering
 
     // Calculate base Z for moving cards - they should always be in front of initial cards
-    // Initial cards have Z from 0 to -(maxZonePosition * Z_SPACING)
-    // Moving cards will start at a more negative Z
-    var baseZForMovingCards = -100;  // Well in front of any initial card positions
+    var baseZForMovingCards = -100;
 
     // Calculate blending factor (0 = no overlap, 0.5 = 50% overlap)
     var blendFactor = (stepBlending || 0) / 100;
@@ -636,71 +640,296 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending) {
     // Track selection state per card for Y offset animation
     var cardSelectionState = {};
 
+    // Track swap pairs for visual mouse layer
+    var swapTimeline = [];
+
+    var frameDuration = 1 / FRAME_RATE;
+    var moveDuration = MOVE_DURATION_FRAMES * frameDuration;
+    var pauseFrames = 2; // Pause between initiator and displaced
+    var pauseDuration = pauseFrames * frameDuration;
+
     for (var s = 0; s < scenario.length; s++) {
         var step = scenario[s];
         var stepDuration = step.duration || 1.0;
         var actions = step.actions || [];
 
-        // Process each action in this step
+        // Separate SELECT/DESELECT from TRANSFORM actions
+        var selectActions = [];
+        var transformActions = [];
         for (var a = 0; a < actions.length; a++) {
-            var action = actions[a];
-            var targetId = action.targetId;
-            var layer = layerMap[targetId];
-
-            if (!layer) continue;
-
-            try {
-                // Process SELECT/DESELECT actions (grouping mode Y offset)
-                if (action.type === "SELECT" || action.type === "DESELECT") {
-                    processSelectionAction(layer, action, currentTime, stepDuration, cardSelectionState);
-                    continue; // SELECT/DESELECT doesn't need TRANSFORM processing
-                }
-
-                // Calculate target Z for this card based on destination zone's zOrder
-                // If action has endZOrder (from grid layout like Pusoy), use it for proper row stacking
-                // Otherwise fall back to moveCounter for non-grid layouts
-                var targetZ;
-                if (action.endZOrder !== undefined && action.endZOrder > 0) {
-                    // Use destination zone's zOrder: higher zOrder = more NEGATIVE Z = in front
-                    // Same formula as applyInitialTransform
-                    targetZ = INITIAL_Z_OFFSET - (action.endZOrder * Z_SPACING);
-                } else {
-                    // Fallback: cards that move LATER get MORE NEGATIVE Z (on top)
-                    targetZ = baseZForMovingCards - (moveCounter * Z_SPACING);
-                }
-                moveCounter++;
-
-                // Process transform animation (X, Y, Z position)
-                // Pass selectionState so TRANSFORM knows if card is currently lifted
-                processTransformAction(layer, action, currentTime, stepDuration, targetZ, cardSelectionState);
-
-                // After transform, card is no longer lifted (it has moved to new position)
-                if (cardSelectionState[targetId]) {
-                    cardSelectionState[targetId] = false;
-                }
-
-                // Process FLIP effect
-                if (action.flip === true) {
-                    processFlipEffect(layer, currentTime, stepDuration, action.flipToFaceUp);
-                }
-
-                // Process SLAM effect
-                if (action.effect === "SLAM") {
-                    processSlamEffect(layer, currentTime, stepDuration, comp);
-                }
-
-            } catch (e) {
-                $.writeln("Error processing action for " + targetId + ": " + e.toString());
+            if (actions[a].type === "SELECT" || actions[a].type === "DESELECT") {
+                selectActions.push(actions[a]);
+            } else if (actions[a].type === "TRANSFORM" || actions[a].type === "PLACE") {
+                transformActions.push(actions[a]);
             }
         }
 
-        // Advance current time (with blending overlap)
-        var blendedDuration = stepDuration * (1 - blendFactor);
-        currentTime += blendedDuration;
+        // Process SELECT/DESELECT first
+        for (var si = 0; si < selectActions.length; si++) {
+            var selAction = selectActions[si];
+            var selLayer = layerMap[selAction.targetId];
+            if (selLayer) {
+                processSelectionAction(selLayer, selAction, currentTime, stepDuration, cardSelectionState);
+            }
+        }
+
+        // Detect swap pairs among TRANSFORM actions
+        // A swap pair: exactly 2 TRANSFORM actions with exchanged zones
+        var swapPairs = [];
+        var processedIndices = {};
+
+        if (transformActions.length === 2) {
+            var ta0 = transformActions[0];
+            var ta1 = transformActions[1];
+            // Check if they form a swap (zones are exchanged)
+            if (ta0.startZone && ta1.startZone &&
+                ta0.startZone === ta1.endZone && ta1.startZone === ta0.endZone) {
+                swapPairs.push({ initiator: ta0, displaced: ta1 });
+                processedIndices[0] = true;
+                processedIndices[1] = true;
+            }
+        }
+
+        if (swapPairs.length > 0) {
+            // Process swap pairs sequentially
+            for (var sp = 0; sp < swapPairs.length; sp++) {
+                var pair = swapPairs[sp];
+                var initiator = pair.initiator;
+                var displaced = pair.displaced;
+
+                var initiatorLayer = layerMap[initiator.targetId];
+                var displacedLayer = layerMap[displaced.targetId];
+
+                if (!initiatorLayer || !displacedLayer) continue;
+
+                // Calculate target Z for both cards based on destination zOrder
+                var initiatorTargetZ = calculateTargetZ(initiator, baseZForMovingCards, moveCounter);
+                moveCounter++;
+                var displacedTargetZ = calculateTargetZ(displaced, baseZForMovingCards, moveCounter);
+                moveCounter++;
+
+                // Phase 1: Initiator moves (lifts to very front Z, moves to target)
+                var initiatorStartTime = currentTime;
+                processSwapInitiator(initiatorLayer, initiator, initiatorStartTime, moveDuration, initiatorTargetZ, cardSelectionState);
+
+                // Process initiator FLIP/SLAM at initiator start time
+                if (initiator.flip === true) {
+                    processFlipEffect(initiatorLayer, initiatorStartTime, stepDuration, initiator.flipToFaceUp);
+                }
+                if (initiator.effect === "SLAM") {
+                    processSlamEffect(initiatorLayer, initiatorStartTime, stepDuration, comp);
+                }
+
+                // Phase 2: Displaced card moves after initiator finishes + pause
+                var displacedStartTime = initiatorStartTime + moveDuration + pauseDuration;
+                processSwapDisplaced(displacedLayer, displaced, displacedStartTime, moveDuration, displacedTargetZ, cardSelectionState);
+
+                // Process displaced FLIP/SLAM at displaced start time
+                if (displaced.flip === true) {
+                    processFlipEffect(displacedLayer, displacedStartTime, stepDuration, displaced.flipToFaceUp);
+                }
+                if (displaced.effect === "SLAM") {
+                    processSlamEffect(displacedLayer, displacedStartTime, stepDuration, comp);
+                }
+
+                // Clear selection state after swap
+                if (cardSelectionState[initiator.targetId]) cardSelectionState[initiator.targetId] = false;
+                if (cardSelectionState[displaced.targetId]) cardSelectionState[displaced.targetId] = false;
+
+                // Record swap info for visual mouse
+                swapTimeline.push({
+                    stepIndex: s,
+                    initiatorStartTime: initiatorStartTime,
+                    initiatorEndTime: initiatorStartTime + moveDuration,
+                    displacedStartTime: displacedStartTime,
+                    displacedEndTime: displacedStartTime + moveDuration,
+                    initiatorStartPos: initiator.startPosition,
+                    initiatorEndPos: initiator.endPosition,
+                    displacedStartPos: displaced.startPosition,
+                    displacedEndPos: displaced.endPosition
+                });
+            }
+        }
+
+        // Process non-swap TRANSFORM actions normally
+        for (var ti = 0; ti < transformActions.length; ti++) {
+            if (processedIndices[ti]) continue; // Skip swap-processed actions
+
+            var action = transformActions[ti];
+            var layer = layerMap[action.targetId];
+            if (!layer) continue;
+
+            try {
+                var targetZ = calculateTargetZ(action, baseZForMovingCards, moveCounter);
+                moveCounter++;
+
+                processTransformAction(layer, action, currentTime, stepDuration, targetZ, cardSelectionState);
+
+                if (cardSelectionState[action.targetId]) {
+                    cardSelectionState[action.targetId] = false;
+                }
+
+                if (action.flip === true) {
+                    processFlipEffect(layer, currentTime, stepDuration, action.flipToFaceUp);
+                }
+                if (action.effect === "SLAM") {
+                    processSlamEffect(layer, currentTime, stepDuration, comp);
+                }
+            } catch (e) {
+                $.writeln("Error processing action for " + action.targetId + ": " + e.toString());
+            }
+        }
+
+        // Advance current time
+        // For swap pairs, account for the sequential animation duration
+        if (swapPairs.length > 0) {
+            // Total swap duration: moveDuration (initiator) + pause + moveDuration (displaced)
+            var swapTotalDuration = (moveDuration * 2) + pauseDuration;
+            var effectiveDuration = Math.max(stepDuration, swapTotalDuration + 0.1);
+            currentTime += effectiveDuration * (1 - blendFactor);
+        } else {
+            var blendedDuration = stepDuration * (1 - blendFactor);
+            currentTime += blendedDuration;
+        }
     }
 
-    return { success: true, finalTime: currentTime };
+    return { success: true, finalTime: currentTime, swapTimeline: swapTimeline };
 }
+
+/**
+ * Calculate target Z for a card action
+ * Uses endZOrder for grid layouts, falls back to moveCounter
+ * Note: endZOrder=0 is valid (top-left position in Pusoy), so check endZone prefix
+ */
+function calculateTargetZ(action, baseZForMovingCards, moveCounter) {
+    if (action.endZone && action.endZone.indexOf("grid-") === 0 && action.endZOrder !== undefined) {
+        return INITIAL_Z_OFFSET - (action.endZOrder * Z_SPACING);
+    }
+    return baseZForMovingCards - (moveCounter * Z_SPACING);
+}
+
+/**
+ * Process swap initiator card - lifts to very front Z and moves to target
+ * Initiator is the card the user dragged, it moves FIRST
+ */
+function processSwapInitiator(layer, action, startTime, moveDuration, targetZ, selectionState) {
+    var frameDuration = 1 / FRAME_RATE;
+    var rotDuration = FLIP_DURATION_FRAMES * frameDuration;
+
+    var positionProp = layer.property("Position");
+    var rotationProp = layer.property("Z Rotation");
+
+    var currentPos = positionProp.valueAtTime(startTime, false);
+    var currentRot = rotationProp.valueAtTime(startTime, false);
+
+    var startZ = currentPos[2] !== undefined ? currentPos[2] : 0;
+    var startX = currentPos[0];
+    var startY = currentPos[1];
+    var startRot = currentRot;
+
+    if (action.startPosition && action.startPosition.x !== undefined) {
+        startX = action.startPosition.x;
+        startY = action.startPosition.y;
+    }
+
+    // Apply lifted offset if card is currently selected
+    var SELECT_OFFSET_Y = 37.5;
+    if (selectionState && selectionState[action.targetId]) {
+        startY = startY - SELECT_OFFSET_Y;
+    }
+    if (action.startRotation !== undefined) startRot = action.startRotation;
+
+    var endX = startX, endY = startY, endRot = startRot;
+    if (action.endPosition && action.endPosition.x !== undefined) {
+        endX = action.endPosition.x;
+        endY = action.endPosition.y;
+    }
+    if (action.endRotation !== undefined) endRot = action.endRotation;
+
+    // Initiator Z behavior:
+    // 1. Start at current Z
+    // 2. Immediately lift to VERY front (-300) 
+    // 3. Settle to targetZ at end
+    var frontZ = -300; // Above everything during move
+    var posEndTime = startTime + moveDuration;
+
+    // Keyframe 1: Start
+    positionProp.setValueAtTime(startTime, [startX, startY, startZ]);
+
+    // Keyframe 2: 1 frame later, jump to front Z
+    var liftTime = startTime + frameDuration;
+    var liftProgress = frameDuration / moveDuration;
+    var liftX = startX + (endX - startX) * liftProgress;
+    var liftY = startY + (endY - startY) * liftProgress;
+    positionProp.setValueAtTime(liftTime, [liftX, liftY, frontZ]);
+
+    // Keyframe 3: End position with targetZ
+    positionProp.setValueAtTime(posEndTime, [endX, endY, targetZ]);
+
+    // Rotation
+    var rotEndTime = startTime + rotDuration;
+    rotationProp.setValueAtTime(startTime, startRot);
+    rotationProp.setValueAtTime(rotEndTime, endRot);
+
+    applyBezierEasing(positionProp);
+    applyBezierEasing(rotationProp);
+}
+
+/**
+ * Process swap displaced card - waits for initiator, then moves to new position
+ * Displaced card is the one being "pushed out" by the initiator
+ */
+function processSwapDisplaced(layer, action, startTime, moveDuration, targetZ, selectionState) {
+    var frameDuration = 1 / FRAME_RATE;
+    var rotDuration = FLIP_DURATION_FRAMES * frameDuration;
+
+    var positionProp = layer.property("Position");
+    var rotationProp = layer.property("Z Rotation");
+
+    var currentPos = positionProp.valueAtTime(startTime, false);
+    var currentRot = rotationProp.valueAtTime(startTime, false);
+
+    var startZ = currentPos[2] !== undefined ? currentPos[2] : 0;
+    var startX = currentPos[0];
+    var startY = currentPos[1];
+    var startRot = currentRot;
+
+    if (action.startPosition && action.startPosition.x !== undefined) {
+        startX = action.startPosition.x;
+        startY = action.startPosition.y;
+    }
+
+    var SELECT_OFFSET_Y = 37.5;
+    if (selectionState && selectionState[action.targetId]) {
+        startY = startY - SELECT_OFFSET_Y;
+    }
+    if (action.startRotation !== undefined) startRot = action.startRotation;
+
+    var endX = startX, endY = startY, endRot = startRot;
+    if (action.endPosition && action.endPosition.x !== undefined) {
+        endX = action.endPosition.x;
+        endY = action.endPosition.y;
+    }
+    if (action.endRotation !== undefined) endRot = action.endRotation;
+
+    // Displaced card: normal move (no extreme Z lift needed, initiator is already done)
+    var posEndTime = startTime + moveDuration;
+
+    // Keyframe 1: Hold at start position until this card's turn
+    positionProp.setValueAtTime(startTime, [startX, startY, startZ]);
+
+    // Keyframe 2: End position with targetZ
+    positionProp.setValueAtTime(posEndTime, [endX, endY, targetZ]);
+
+    // Rotation
+    var rotEndTime = startTime + rotDuration;
+    rotationProp.setValueAtTime(startTime, startRot);
+    rotationProp.setValueAtTime(rotEndTime, endRot);
+
+    applyBezierEasing(positionProp);
+    applyBezierEasing(rotationProp);
+}
+
 
 /**
  * Process SELECT/DESELECT action - animates Y offset for lift up/down effect
@@ -962,6 +1191,109 @@ function processSlamEffect(layer, startTime, stepDuration, comp) {
     // Apply ease for smooth bounce
     applyBezierEasing(scaleProp);
     layer.motionBlur = true;
+}
+
+// ============================================
+// VISUAL MOUSE NULL LAYER
+// ============================================
+
+/**
+ * Create a null layer that follows card movements during swaps
+ * User can parent a hand/cursor graphic to this null in AE
+ * The mouse travels: off-screen → initiator start → follows initiator → next swap... → off-screen
+ */
+function createVisualMouseLayer(comp, swapTimeline, finalTime) {
+    if (!swapTimeline || swapTimeline.length === 0) return null;
+
+    var frameDuration = 1 / FRAME_RATE;
+    var leadInFrames = 5;  // 5 frames to travel to card position
+    var leadInDuration = leadInFrames * frameDuration;
+    var exitFrames = 8;    // 8 frames to exit off-screen
+    var exitDuration = exitFrames * frameDuration;
+
+    // Create null layer
+    var mouseLayer = comp.layers.addNull();
+    mouseLayer.name = "Mouse Cursor";
+    mouseLayer.threeDLayer = true;
+    mouseLayer.enabled = true;
+    mouseLayer.shy = false;
+    mouseLayer.label = 11; // Yellow label for easy identification
+
+    // Set null size small (50x50 for visibility)
+    mouseLayer.property("Transform").property("Scale").setValue([50, 50, 100]);
+
+    var positionProp = mouseLayer.property("Position");
+    var mouseZ = -350; // Always in front of everything
+
+    // Off-screen positions (right side, outside comp)
+    var offScreenX = comp.width + 200;
+    var offScreenY = comp.height / 2;
+
+    // Start off-screen at time 0
+    positionProp.setValueAtTime(0, [offScreenX, offScreenY, mouseZ]);
+
+    for (var i = 0; i < swapTimeline.length; i++) {
+        var swap = swapTimeline[i];
+
+        // Get positions from swap data
+        var initStartX = swap.initiatorStartPos ? swap.initiatorStartPos.x : comp.width / 2;
+        var initStartY = swap.initiatorStartPos ? swap.initiatorStartPos.y : comp.height / 2;
+        var initEndX = swap.initiatorEndPos ? swap.initiatorEndPos.x : initStartX;
+        var initEndY = swap.initiatorEndPos ? swap.initiatorEndPos.y : initStartY;
+
+        // Phase 1: Travel to initiator's start position (lead-in)
+        var arrivalTime = swap.initiatorStartTime;
+        var departTime = arrivalTime - leadInDuration;
+        if (departTime < 0) departTime = 0;
+
+        // If this is the first swap, travel from off-screen
+        // If not, the previous keyframe handles transition
+        if (i === 0) {
+            positionProp.setValueAtTime(departTime, [offScreenX, offScreenY, mouseZ]);
+        }
+
+        // Arrive at initiator start position
+        positionProp.setValueAtTime(arrivalTime, [initStartX, initStartY, mouseZ]);
+
+        // Phase 2: Follow initiator to its end position
+        positionProp.setValueAtTime(swap.initiatorEndTime, [initEndX, initEndY, mouseZ]);
+
+        // Phase 3: If there's a next swap, travel to next initiator's start
+        // Otherwise stay at current position (will exit off-screen after loop)
+    }
+
+    // Exit off-screen after last swap
+    var lastSwap = swapTimeline[swapTimeline.length - 1];
+    var exitStartTime = lastSwap.initiatorEndTime + (2 * frameDuration); // Small pause
+    var exitEndTime = exitStartTime + exitDuration;
+
+    var lastEndX = lastSwap.initiatorEndPos ? lastSwap.initiatorEndPos.x : comp.width / 2;
+    var lastEndY = lastSwap.initiatorEndPos ? lastSwap.initiatorEndPos.y : comp.height / 2;
+
+    positionProp.setValueAtTime(exitStartTime, [lastEndX, lastEndY, mouseZ]);
+    positionProp.setValueAtTime(exitEndTime, [offScreenX, offScreenY, mouseZ]);
+
+    // Apply easing to all keyframes
+    applyBezierEasing(positionProp);
+
+    // Set opacity: visible only during swap sequences
+    var opacityProp = mouseLayer.property("Opacity");
+    opacityProp.setValueAtTime(0, 0); // Start invisible
+
+    // First swap: fade in
+    var firstSwap = swapTimeline[0];
+    var fadeInStart = firstSwap.initiatorStartTime - leadInDuration;
+    if (fadeInStart < 0) fadeInStart = 0;
+    opacityProp.setValueAtTime(fadeInStart, 0);
+    opacityProp.setValueAtTime(fadeInStart + (2 * frameDuration), 100);
+
+    // Last swap: fade out
+    opacityProp.setValueAtTime(exitStartTime, 100);
+    opacityProp.setValueAtTime(exitEndTime, 0);
+
+    applyBezierEasing(opacityProp);
+
+    return mouseLayer;
 }
 
 // ============================================

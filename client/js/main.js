@@ -550,6 +550,16 @@ function setPhase(phase) {
     if (stepControlsSection) stepControlsSection.classList.add('hidden');
     gameContainer.classList.remove('board-setting-mode');
     clearCardDropZones(); // Clear drop zones when switching phases
+
+    // Toggle card tray disabled state
+    var cardTrayPanel = document.getElementById('cardTrayPanel');
+    if (cardTrayPanel) {
+        if (phase === 'board-setting') {
+            cardTrayPanel.classList.add('tray-disabled');
+        } else {
+            cardTrayPanel.classList.remove('tray-disabled');
+        }
+    }
     // Hide recording indicator and border
     const recIndicator = document.getElementById('recordingIndicator');
     if (recIndicator) recIndicator.classList.add('hidden');
@@ -1059,6 +1069,11 @@ function handleSuitFilter(btn) {
 // ============================================
 
 function handleTrayCardDragStart(e, card) {
+    // Block dragging from tray during board-setting phase
+    if (appState.phase === 'board-setting') {
+        e.preventDefault();
+        return;
+    }
     e.dataTransfer.setData('text/plain', card.id);
     e.dataTransfer.effectAllowed = 'move';
     e.target.classList.add('dragging');
@@ -2255,7 +2270,8 @@ function handleExportToAE() {
         ...scenarioData,
         initialState: saveInitialStateForExport(),
         boardType: appState.boardLayout.type || 'poker',
-        stepBlending: appState.stepBlending || 0  // Overlap % between steps
+        stepBlending: appState.stepBlending || 0,  // Overlap % between steps
+        enableVisualMouse: true  // Create mouse cursor null for swap animations
     };
 
     setStatus('Sending to After Effects...', 'recording');

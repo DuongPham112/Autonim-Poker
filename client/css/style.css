@@ -245,6 +245,22 @@ body {
     color: var(--text-muted);
 }
 
+/* Card Tray disabled state (Board Setting phase) */
+.card-tray-panel.tray-disabled .card-tray-list {
+    opacity: 0.35;
+    pointer-events: none;
+}
+
+.card-tray-panel.tray-disabled .suit-filters {
+    opacity: 0.35;
+    pointer-events: none;
+}
+
+.card-tray-panel.tray-disabled .card-search {
+    opacity: 0.35;
+    pointer-events: none;
+}
+
 /* Tray Card Item */
 .tray-card {
     width: calc(50% - 4px);
