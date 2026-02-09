@@ -1,0 +1,404 @@
+/**
+ * Timeline CSS - Styles for timeline visualization
+ * Separate file to avoid modifying existing styles
+ */
+
+/* ========================================
+   ENHANCED TIMELINE BAR
+   ======================================== */
+
+.timeline-bar {
+    position: relative;
+}
+
+/* Timeline playback controls */
+.timeline-playback-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 6px;
+}
+
+.timeline-playback-controls .btn {
+    padding: 4px 12px;
+    font-size: 14px;
+}
+
+.timeline-playback-controls .btn-icon {
+    padding: 4px 8px;
+    min-width: 32px;
+}
+
+/* Time display */
+.timeline-time-display {
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-left: auto;
+}
+
+.timeline-time-display .current-time {
+    color: var(--primary);
+    font-weight: bold;
+}
+
+/* ========================================
+   TIMELINE TRACK (DOM-based steps)
+   ======================================== */
+
+.timeline-track {
+    position: relative;
+    height: 80px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    margin-top: 8px;
+    overflow: visible;
+    /* Changed from hidden to allow context menu to show */
+}
+
+
+.timeline-track-inner {
+    position: relative;
+    height: 100%;
+    min-width: 100%;
+}
+
+/* Ruler */
+.timeline-ruler {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 24px;
+    background: rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: flex-end;
+    user-select: none;
+}
+
+.timeline-ruler-marker {
+    position: absolute;
+    bottom: 0;
+    font-size: 10px;
+    color: var(--text-muted);
+    transform: translateX(-50%);
+    pointer-events: none;
+}
+
+.timeline-ruler-marker::before {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Step blocks */
+.timeline-step-block {
+    position: absolute;
+    top: 28px;
+    height: 48px;
+    background: var(--step-color, #4CAF50);
+    border-radius: 4px;
+    cursor: move;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 4px 8px;
+    box-sizing: border-box;
+    transition: box-shadow 0.15s, transform 0.1s;
+    user-select: none;
+    overflow: hidden;
+}
+
+.timeline-step-block:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    z-index: 10;
+}
+
+.timeline-step-block.selected {
+    box-shadow: 0 0 0 2px #fff, 0 2px 12px rgba(0, 0, 0, 0.5);
+    z-index: 20;
+}
+
+.timeline-step-block.dragging {
+    opacity: 0.8;
+    transform: scale(1.02);
+    z-index: 100;
+}
+
+/* Step block content */
+.step-block-label {
+    font-size: 11px;
+    font-weight: bold;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.step-block-info {
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.8);
+    white-space: nowrap;
+}
+
+/* Resize handles */
+.step-resize-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    cursor: ew-resize;
+    background: transparent;
+}
+
+.step-resize-handle:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.step-resize-handle.left {
+    left: 0;
+    border-radius: 4px 0 0 4px;
+}
+
+.step-resize-handle.right {
+    right: 0;
+    border-radius: 0 4px 4px 0;
+}
+
+/* Playhead */
+.timeline-playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #ff4444;
+    pointer-events: none;
+    z-index: 50;
+    transition: left 0.05s linear;
+}
+
+.timeline-playhead::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -5px;
+    width: 12px;
+    height: 12px;
+    background: #ff4444;
+    clip-path: polygon(50% 100%, 0 0, 100% 0);
+}
+
+.timeline-playhead.scrubbing {
+    transition: none;
+}
+
+/* ========================================
+   STEP DETAILS PANEL (appears on selection)
+   ======================================== */
+
+.step-details-panel {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px;
+    min-width: 220px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    z-index: 100;
+    display: none;
+}
+
+.step-details-panel.visible {
+    display: block;
+}
+
+.step-details-panel::after {
+    content: '';
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 12px;
+    height: 12px;
+    background: var(--bg-card);
+    border-right: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.step-details-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.step-details-title {
+    font-weight: bold;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.step-details-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px;
+    font-size: 14px;
+}
+
+.step-details-close:hover {
+    color: var(--text-primary);
+}
+
+.step-details-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.step-details-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.step-details-row label {
+    font-size: 11px;
+    color: var(--text-muted);
+    min-width: 50px;
+}
+
+.step-details-row input {
+    flex: 1;
+    padding: 4px 6px;
+    font-size: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-input);
+    color: var(--text-primary);
+}
+
+.step-details-row input[type="color"] {
+    width: 32px;
+    height: 24px;
+    padding: 2px;
+    cursor: pointer;
+}
+
+.step-details-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-color);
+}
+
+.step-details-actions .btn {
+    flex: 1;
+    padding: 4px 8px;
+    font-size: 11px;
+}
+
+/* ========================================
+   STEP CONTEXT MENU
+   ======================================== */
+
+.step-context-menu {
+    position: absolute;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    min-width: 140px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    /* High z-index to ensure visibility above all elements */
+    overflow: hidden;
+    display: none;
+}
+
+
+.step-context-menu.visible {
+    display: block;
+}
+
+.step-context-item {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.step-context-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.step-context-item.danger {
+    color: var(--danger);
+}
+
+.step-context-item.danger:hover {
+    background: rgba(244, 67, 54, 0.1);
+}
+
+.step-context-divider {
+    height: 1px;
+    background: var(--border-color);
+    margin: 4px 0;
+}
+
+/* ========================================
+   ANIMATION STATES
+   ======================================== */
+
+@keyframes step-pulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.4);
+    }
+
+    50% {
+        box-shadow: 0 0 8px 4px rgba(76, 175, 80, 0.4);
+    }
+}
+
+.timeline-step-block.recording {
+    animation: step-pulse 1.5s infinite;
+}
+
+.timeline-step-block.playing {
+    border: 2px solid #fff;
+}
+
+/* ========================================
+   RESPONSIVE
+   ======================================== */
+
+@media (max-width: 1200px) {
+    .timeline-playback-controls {
+        flex-wrap: wrap;
+    }
+
+    .timeline-time-display {
+        width: 100%;
+        margin-top: 8px;
+        text-align: center;
+    }
+}

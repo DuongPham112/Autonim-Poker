@@ -1,0 +1,81 @@
+{
+  "name": "test",
+  "type": "grid",
+  "description": "Saved preset: test",
+  "gridCols": 4,
+  "gridRows": 3,
+  "cardPlaces": [
+    {
+      "id": "place-0",
+      "x": 93,
+      "y": 42,
+      "label": "1"
+    },
+    {
+      "id": "place-1",
+      "x": 174,
+      "y": 42,
+      "label": "2"
+    },
+    {
+      "id": "place-2",
+      "x": 251,
+      "y": 42,
+      "label": "3"
+    },
+    {
+      "id": "place-3",
+      "x": 327,
+      "y": 42,
+      "label": "4"
+    },
+    {
+      "id": "place-4",
+      "x": 91,
+      "y": 136,
+      "label": "5"
+    },
+    {
+      "id": "place-5",
+      "x": 174,
+      "y": 147,
+      "label": "6"
+    },
+    {
+      "id": "place-6",
+      "x": 248,
+      "y": 143,
+      "label": "7"
+    },
+    {
+      "id": "place-7",
+      "x": 330,
+      "y": 143,
+      "label": "8"
+    },
+    {
+      "id": "place-8",
+      "x": 425,
+      "y": 171,
+      "label": "9"
+    },
+    {
+      "id": "place-9",
+      "x": 299,
+      "y": 288,
+      "label": "10"
+    },
+    {
+      "id": "place-10",
+      "x": 379,
+      "y": 288,
+      "label": "11"
+    },
+    {
+      "id": "place-11",
+      "x": 459,
+      "y": 288,
+      "label": "12"
+    }
+  ]
+}

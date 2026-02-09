@@ -1,0 +1,89 @@
+{
+    "name": "Card Sorting (4x3 Grid)",
+    "type": "grid",
+    "description": "Grid layout for card arrangement games",
+    "gridCols": 4,
+    "gridRows": 3,
+    "spacing": {
+        "x": 80,
+        "y": 100
+    },
+    "offset": {
+        "x": 200,
+        "y": 120
+    },
+    "cardPlaces": [
+        {
+            "id": "0",
+            "col": 0,
+            "row": 0,
+            "label": "1"
+        },
+        {
+            "id": "1",
+            "col": 1,
+            "row": 0,
+            "label": "2"
+        },
+        {
+            "id": "2",
+            "col": 2,
+            "row": 0,
+            "label": "3"
+        },
+        {
+            "id": "3",
+            "col": 3,
+            "row": 0,
+            "label": "4"
+        },
+        {
+            "id": "4",
+            "col": 0,
+            "row": 1,
+            "label": "5"
+        },
+        {
+            "id": "5",
+            "col": 1,
+            "row": 1,
+            "label": "6"
+        },
+        {
+            "id": "6",
+            "col": 2,
+            "row": 1,
+            "label": "7"
+        },
+        {
+            "id": "7",
+            "col": 3,
+            "row": 1,
+            "label": "8"
+        },
+        {
+            "id": "8",
+            "col": 0,
+            "row": 2,
+            "label": "9"
+        },
+        {
+            "id": "9",
+            "col": 1,
+            "row": 2,
+            "label": "10"
+        },
+        {
+            "id": "10",
+            "col": 2,
+            "row": 2,
+            "label": "11"
+        },
+        {
+            "id": "11",
+            "col": 3,
+            "row": 2,
+            "label": "12"
+        }
+    ]
+}

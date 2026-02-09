@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deck Prepper Tool - Autonim Poker</title>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --panel-bg: #2a2a2a;
+            --text-color: #e0e0e0;
+            --accent-color: #3498db;
+            --success-color: #2ecc71;
+            --card-width: 80px;
+            --card-height: 112px;
+        }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #444;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .btn {
+            background-color: var(--panel-bg);
+            border: 1px solid #555;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background-color: #3a3a3a;
+        }
+
+        .btn-primary {
+            background-color: var(--accent-color);
+            border-color: var(--accent-color);
+        }
+
+        .btn-primary:hover {
+            background-color: #2980b9;
+        }
+
+        .btn-success {
+            background-color: var(--success-color);
+            border-color: var(--success-color);
+        }
+
+        .btn-success:hover {
+            background-color: #27ae60;
+        }
+
+        .suit-row {
+            display: flex;
+            margin-bottom: 15px;
+            background: var(--panel-bg);
+            padding: 10px;
+            border-radius: 8px;
+            align-items: center;
+        }
+
+        .suit-label {
+            width: 80px;
+            font-weight: bold;
+            text-align: center;
+            font-size: 24px;
+        }
+
+        .spades,
+        .clubs {
+            color: #aaa;
+        }
+
+        .hearts,
+        .diamonds {
+            color: #e74c3c;
+        }
+
+        .slots-container {
+            display: flex;
+            gap: 10px;
+            flex: 1;
+            overflow-x: auto;
+            padding-bottom: 5px;
+        }
+
+        .card-slot {
+            width: var(--card-width);
+            height: var(--card-height);
+            border: 2px dashed #444;
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            background: #222;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .card-slot.drag-over {
+            border-color: var(--accent-color);
+            background: #2c3e50;
+        }
+
+        .card-slot.filled {
+            border-style: solid;
+            border-color: #555;
+        }
+
+        .card-slot img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 4px;
+        }
+
+        .slot-label {
+            position: absolute;
+            top: 6px;
+            left: 8px;
+            font-size: 14px;
+            font-weight: bold;
+            color: #555;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .card-slot.filled .slot-label {
+            /* Keep usage for filename tooltip on filled */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            opacity: 0;
+            transition: opacity 0.2s;
+            font-weight: normal;
+        }
+
+        .card-slot:hover .slot-label {
+            opacity: 1;
+        }
+
+        .remove-btn {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #c0392b;
+            color: white;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 12px;
+            cursor: pointer;
+            display: none;
+            z-index: 10;
+        }
+
+        .card-slot.filled:hover .remove-btn {
+            display: flex;
+        }
+
+        .back-slot {
+            margin-left: 20px;
+            border-left: 1px solid #444;
+            padding-left: 20px;
+        }
+
+        #dropOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(52, 152, 219, 0.9);
+            z-index: 1000;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            color: white;
+            font-size: 24px;
+            pointer-events: none;
+        }
+
+        .settings-bar {
+            background: #222;
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            display: flex;
+            gap: 20px;
+            font-size: 14px;
+        }
+
+        input[type="number"] {
+            background: #333;
+            border: 1px solid #555;
+            color: white;
+            padding: 4px;
+            width: 60px;
+            border-radius: 3px;
+        }
+
+        #status {
+            margin-top: 10px;
+            color: #888;
+            font-size: 14px;
+        }
+
+        /* Upload Icon (+) inside empty slots */
+        .upload-icon {
+            font-size: 28px;
+            color: #555;
+            pointer-events: none;
+            transition: color 0.2s;
+        }
+
+        .card-slot:hover .upload-icon {
+            color: var(--accent-color);
+        }
+
+        .card-slot.filled .upload-icon {
+            display: none;
+        }
+
+        .card-slot {
+            cursor: pointer;
+        }
+
+        /* Batch Upload Button */
+        .batch-btn {
+            background: transparent;
+            border: 2px solid #73577e;
+            /* Purple */
+            color: #73577e;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 6px;
+            margin-top: 2px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .batch-btn:hover {
+            border-color: #af7ac5;
+            color: #af7ac5;
+            background: rgba(155, 89, 182, 0.15);
+            box-shadow: 0 0 10px rgba(155, 89, 182, 0.3);
+        }
+
+        .batch-btn svg {
+            width: 16px;
+            height: 16px;
+            stroke-width: 2.5px;
+        }
+
+        .suit-label {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <h1>🃏 Deck Prepper Tool</h1>
+        <div class="controls">
+            <button id="clearAllBtn" class="btn">Clear All</button>
+            <button id="exportBtn" class="btn btn-primary">Process & Export</button>
+        </div>
+    </header>
+
+    <div class="settings-bar">
+        <label>
+            Output Size: Width
+            <input type="number" id="outWidth" value="400"> px (Height Auto)
+        </label>
+        <label>
+            Output Format: <strong>PNG (Transparent)</strong>
+        </label>
+        <label>
+            Naming: <strong>{rank}_{suit}.png</strong>
+        </label>
+    </div>
+
+    <div id="mainBoard">
+        <!-- Suits will be generated here -->
+    </div>
+
+    <div id="dropOverlay">
+        <h1>Drop Sequence of Cards Here</h1>
+        <p>Auto-fills 2 → 3 → ... → A</p>
+    </div>
+
+    <div id="status">Ready. Drag images onto suit rows.</div>
+
+    <script src="prepper.js"></script>
+</body>
+
+</html>
