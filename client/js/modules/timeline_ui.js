@@ -116,6 +116,7 @@ class TimelineUI extends EventEmitter {
             <button class="btn btn-sm btn-icon btn-primary" id="tlPlayBtn" title="Play/Pause">▶</button>
             <button class="btn btn-sm btn-icon" id="tlStopBtn" title="Stop">⏹</button>
             <button class="btn btn-sm btn-icon" id="tlGoEndBtn" title="Go to End">⏭</button>
+            <button class="btn btn-sm btn-icon btn-danger" id="tlClearBtn" title="Clear All Steps">🗑️</button>
             <div class="timeline-time-display">
                 <span class="current-time" id="tlCurrentTime">0.0</span>s / 
                 <span id="tlTotalTime">0.0</span>s
@@ -165,6 +166,12 @@ class TimelineUI extends EventEmitter {
                     console.log('[TimelineUI] Go to end');
                 }
             }
+        });
+
+        controlsEl.querySelector('#tlClearBtn').addEventListener('click', () => {
+            if (!confirm('Clear all steps? This cannot be undone.')) return;
+            self.emit('clearTimeline');
+            console.log('[TimelineUI] Clear timeline requested');
         });
     }
 
@@ -477,8 +484,7 @@ class TimelineUI extends EventEmitter {
         const menu = document.createElement('div');
         menu.className = 'step-context-menu visible';
         menu.id = 'stepContextMenu';
-        menu.style.left = x + 'px';
-        menu.style.top = y + 'px';
+        menu.style.position = 'fixed'; // Use fixed positioning with clientX/clientY
 
         menu.innerHTML = `
             <button class="step-context-item" data-action="edit">✏️ Edit Step</button>
@@ -489,6 +495,13 @@ class TimelineUI extends EventEmitter {
         `;
 
         document.body.appendChild(menu);
+
+        // Position above click point (timeline is at bottom of viewport)
+        var menuHeight = menu.offsetHeight || 160;
+        var menuTop = y - menuHeight - 5; // Show above the click
+        if (menuTop < 0) menuTop = y + 5;  // Fallback: show below if no space above
+        menu.style.left = x + 'px';
+        menu.style.top = menuTop + 'px';
 
         // Handle menu clicks
         menu.addEventListener('click', (e) => {

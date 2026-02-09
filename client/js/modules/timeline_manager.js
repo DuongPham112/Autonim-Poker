@@ -123,6 +123,15 @@ class TimelineManager extends EventEmitter {
     }
 
     /**
+     * Clear all steps
+     */
+    clearSteps() {
+        this.scenarioData.scenario = [];
+        this._updateTotalDuration();
+        this.emit('stepsCleared');
+    }
+
+    /**
      * Insert a step after a given index
      * @param {number} afterIndex - Insert after this index (-1 for beginning)
      * @param {Object} step - Step to insert

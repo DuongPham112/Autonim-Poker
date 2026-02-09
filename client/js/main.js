@@ -4134,6 +4134,22 @@ function initTimelineModulesIntegration() {
                 onStepMove: handleTimelineStepMove
             });
 
+            // Handle clear timeline
+            timelineUI.on('clearTimeline', function () {
+                scenarioData.scenario = [];
+                stepSnapshots = [];
+                if (timelineModules.timelineManager) {
+                    timelineModules.timelineManager.clearSteps();
+                }
+                timelineUI.render();
+                totalSteps.textContent = '0';
+                if (typeof restoreToInitialState === 'function') {
+                    restoreToInitialState();
+                }
+                setStatus('Timeline cleared');
+                console.log('[Timeline] All steps cleared');
+            });
+
             // Initial render
             timelineUI.render();
             console.log('[Timeline] UI initialized');
