@@ -31,7 +31,7 @@
       <DispatchInfo>
         <Resources>
           <MainPath>./client/index.html</MainPath>
-          <ScriptPath>./host/index.jsx</ScriptPath>
+          <!-- ScriptPath removed: host/index.jsx is now loaded via backend OTA -->
           <CEFCommandLine>
             <Parameter>--enable-nodejs</Parameter>
             <Parameter>--mixed-context</Parameter>

@@ -10,7 +10,32 @@
 </head>
 
 <body>
-    <div class="app-wrapper">
+    <!-- Login Overlay (shown when not authenticated) -->
+    <div id="loginOverlay" class="login-overlay">
+        <div class="login-container">
+            <div class="login-logo">
+                <span class="login-icon">🎴</span>
+                <h1>Autonim-Poker</h1>
+                <p class="login-subtitle">Director Tool</p>
+            </div>
+            <form id="loginForm" class="login-form">
+                <div class="form-group">
+                    <label for="loginUsername">Username or Email</label>
+                    <input type="text" id="loginUsername" placeholder="Enter username or email" required
+                        autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="loginPassword">Password</label>
+                    <input type="password" id="loginPassword" placeholder="Enter password" required
+                        autocomplete="current-password">
+                </div>
+                <div id="loginError" class="login-error"></div>
+                <button type="submit" class="btn btn-primary btn-login">Sign In</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="app-wrapper hidden">
         <div class="app-container">
             <!-- Left Panel: Card Tray -->
             <aside id="cardTrayPanel" class="card-tray-panel">
@@ -80,7 +105,12 @@
                         </div>
                     </div>
                     <div class="header-right">
-                        <!-- Recording indicator moved to game container -->
+                        <!-- User Info -->
+                        <span class="user-badge" id="userBadge">
+                            <span class="user-icon">👤</span>
+                            <span id="currentUserDisplay">—</span>
+                        </span>
+                        <button id="logoutBtn" class="btn btn-xs btn-secondary" title="Sign Out">🚪</button>
                     </div>
                 </header>
 
@@ -534,6 +564,11 @@
     <script src="js/modules/playback_controller.js"></script>
     <script src="js/modules/timeline_ui.js"></script>
     <script src="js/modules/index.js"></script>
+
+    <!-- Load Auth & OTA Modules (before main.js) -->
+    <script src="js/modules/auth.js"></script>
+    <script src="js/modules/script_loader.js"></script>
+    <script src="js/modules/asset_manager.js"></script>
 
     <!-- Load main application logic -->
     <script src="js/main.js"></script>

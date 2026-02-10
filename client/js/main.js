@@ -234,7 +234,62 @@ function fallbackCopyText(text) {
 // INITIALIZATION
 // ============================================
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', authBoot);
+
+/**
+ * Auth-aware boot: checks authentication before initializing app
+ */
+async function authBoot() {
+    // Load API config
+    await loadAuthConfig();
+
+    // Initialize login UI handlers
+    initLoginUI();
+
+    // Check if already authenticated
+    if (isAuthenticated()) {
+        hideLoginScreen();
+        await bootApp();
+    } else {
+        showLoginScreen();
+    }
+}
+
+/**
+ * Boot the application (called after successful auth)
+ */
+async function bootApp() {
+    try {
+        // Update user display
+        updateUserDisplay();
+
+        // Load core ExtendScript from backend (OTA)
+        try {
+            const scriptResult = await loadCoreScript();
+            console.log('[Boot] Core script loaded:', scriptResult);
+        } catch (scriptErr) {
+            if (scriptErr.name === 'AuthError') {
+                showLoginScreen();
+                return;
+            }
+            console.warn('[Boot] Core script load failed, continuing anyway:', scriptErr.message);
+        }
+
+        // Check for asset updates (non-blocking)
+        checkAssetUpdates().catch(err => {
+            if (err.name === 'AuthError') {
+                showLoginScreen();
+                return;
+            }
+            console.warn('[Boot] Asset update check failed:', err.message);
+        });
+
+        // Initialize the main app
+        init();
+    } catch (error) {
+        console.error('[Boot] Failed to boot app:', error);
+    }
+}
 
 function init() {
     getDOMElements();
@@ -248,7 +303,9 @@ function init() {
 
     updateUI();
     setStatus('Ready - Load a deck and setup your cards');
-    console.log('Autonim-Poker v2.0 initialized');
+
+    const user = getUser();
+    console.log(`Autonim-Poker v2.0 initialized (user: ${user ? user.username : 'unknown'})`);
 }
 
 function getDOMElements() {
