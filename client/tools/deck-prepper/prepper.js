@@ -35,16 +35,26 @@ function renderBoard() {
     const board = document.getElementById('mainBoard');
     board.innerHTML = '';
 
-    // Create Back Slot row
+    // Create Back + Joker Slot row
     const backRow = document.createElement('div');
     backRow.className = 'suit-row';
     backRow.innerHTML = `
-        <div class="suit-label">Back</div>
+        <div class="suit-label">🂠</div>
         <div class="slots-container">
              <div class="card-slot" data-id="back" id="slot-back">
                 <span class="upload-icon">+</span>
                 <span class="slot-label">back.png</span>
                 <input type="file" id="file-back" style="display:none" accept="image/*">
+             </div>
+             <div class="card-slot" data-id="joker_black" id="slot-joker_black" style="margin-left:15px">
+                <span class="upload-icon">+</span>
+                <span class="slot-label">Joker A</span>
+                <input type="file" id="file-joker_black" style="display:none" accept="image/*">
+             </div>
+             <div class="card-slot" data-id="joker_red" id="slot-joker_red">
+                <span class="upload-icon">+</span>
+                <span class="slot-label">Joker B</span>
+                <input type="file" id="file-joker_red" style="display:none" accept="image/*">
              </div>
         </div>
     `;
@@ -59,6 +69,18 @@ function renderBoard() {
     backRow.querySelector('#file-back').onchange = (e) => {
         if (e.target.files.length > 0) fillSlot('back', null, e.target.files[0]);
     };
+
+    // Setup joker slots click
+    ['joker_black', 'joker_red'].forEach(jokerId => {
+        const jokerSlot = backRow.querySelector(`#slot-${jokerId}`);
+        jokerSlot.onclick = (e) => {
+            if (e.target.closest('.remove-btn')) return;
+            document.getElementById(`file-${jokerId}`).click();
+        };
+        backRow.querySelector(`#file-${jokerId}`).onchange = (e) => {
+            if (e.target.files.length > 0) fillSlot(jokerId, null, e.target.files[0]);
+        };
+    });
 
     // Create 4 suit rows
     SUITS.forEach(suit => {
@@ -223,13 +245,15 @@ function handleMultiDrop(files) {
 }
 
 function fillSlot(suit, rank, file) {
-    const id = suit === 'back' ? 'back' : `${rank}_${suit}`;
+    // Determine the slot ID
+    const isSpecial = (suit === 'back' || suit === 'joker_black' || suit === 'joker_red');
+    const id = isSpecial ? suit : `${rank}_${suit}`;
 
     // Store file
     cardMap[id] = file;
 
     // Update UI
-    const slotId = suit === 'back' ? 'slot-back' : `slot-${rank}_${suit}`;
+    const slotId = isSpecial ? `slot-${suit}` : `slot-${rank}_${suit}`;
     const slot = document.getElementById(slotId);
 
     if (slot) {
@@ -254,7 +278,7 @@ function fillSlot(suit, rank, file) {
             // Restore initial state with input
             slot.innerHTML = `
                 <span class="upload-icon">+</span>
-                <span class="slot-label">${suit === 'back' ? 'back' : rank}</span>
+                <span class="slot-label">${isSpecial ? (suit === 'back' ? 'back' : suit.replace('_', ' ')) : rank}</span>
             `;
             if (existingInput) {
                 existingInput.value = '';
@@ -267,7 +291,7 @@ function fillSlot(suit, rank, file) {
         // Add name label on hover
         const nameLabel = document.createElement('span');
         nameLabel.className = 'slot-label';
-        nameLabel.textContent = suit === 'back' ? 'back.png' : `${rank}_${suit}.png`;
+        nameLabel.textContent = isSpecial ? `${suit}.png` : `${rank}_${suit}.png`;
         slot.appendChild(nameLabel);
     }
 }
@@ -295,7 +319,7 @@ async function handleExport() {
 
         for (const id of filledSlots) {
             const file = cardMap[id];
-            const fileName = (id === 'back') ? 'back.png' : `${id}.png`;
+            const fileName = `${id}.png`;
             const savePath = path.join(outFolder, fileName);
 
             try {
@@ -327,7 +351,7 @@ async function handleExport() {
 
                 for (const id of filledSlots) {
                     const file = cardMap[id];
-                    const fileName = (id === 'back') ? 'back.png' : `${id}.png`;
+                    const fileName = `${id}.png`;
 
                     try {
                         const blob = await resizeImage(file, targetWidth);
@@ -365,7 +389,7 @@ async function handleExport() {
 
             for (const id of filledSlots) {
                 const file = cardMap[id];
-                const fileName = (id === 'back') ? 'back.png' : `${id}.png`;
+                const fileName = `${id}.png`;
 
                 try {
                     const blob = await resizeImage(file, targetWidth);
@@ -387,7 +411,7 @@ async function handleExport() {
 
             for (const id of filledSlots) {
                 const file = cardMap[id];
-                const fileName = (id === 'back') ? 'back.png' : `${id}.png`;
+                const fileName = `${id}.png`;
 
                 try {
                     const blob = await resizeImage(file, targetWidth);
