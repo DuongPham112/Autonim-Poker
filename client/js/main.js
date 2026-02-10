@@ -996,10 +996,51 @@ function createPlaceholderDeck() {
         }
     }
 
+    // Add Joker cards
+    const jokers = [
+        { name: 'joker_black', displayName: 'Black Joker', color: 'black' },
+        { name: 'joker_red', displayName: 'Red Joker', color: 'red' }
+    ];
+    for (const j of jokers) {
+        appState.trayCards.push({
+            id: `card-${index}-${j.name}`,
+            name: j.name,
+            displayName: j.displayName,
+            filename: `${j.name}.png`,
+            frontImageUrl: '',
+            backImageUrl: '',
+            suit: 'joker',
+            rank: 'joker',
+            jokerColor: j.color,
+            isFaceUp: false,
+            inTray: true
+        });
+        index++;
+    }
+
     renderCardTray();
 }
 
 function createCardData(index, filename, baseName, folderPath) {
+    // Check if this is a Joker card
+    const lowerName = baseName.toLowerCase();
+    if (lowerName.includes('joker')) {
+        const isRed = lowerName.includes('red');
+        return {
+            id: `card-${index}-${baseName.replace(/\s+/g, '_')}`,
+            name: baseName,
+            displayName: isRed ? 'Red Joker' : 'Black Joker',
+            filename: filename,
+            frontImageUrl: `file://${folderPath}/${filename}`,
+            backImageUrl: appState.backImagePath ? `file://${appState.backImagePath}` : '',
+            suit: 'joker',
+            rank: 'joker',
+            jokerColor: isRed ? 'red' : 'black',
+            isFaceUp: false,
+            inTray: true
+        };
+    }
+
     // Try to parse suit from filename
     let suit = 'unknown';
     let rank = baseName;
@@ -1085,6 +1126,7 @@ function createPlaceholderCardImage(card) {
         hearts: '♥',
         diamonds: '♦',
         clubs: '♣',
+        joker: '🃏',
         unknown: '?'
     };
     const suitColors = {
@@ -1092,12 +1134,13 @@ function createPlaceholderCardImage(card) {
         hearts: '#e74c3c',
         diamonds: '#e74c3c',
         clubs: '#2c3e50',
+        joker: card.jokerColor === 'red' ? '#e74c3c' : '#2c3e50',
         unknown: '#666'
     };
 
     const symbol = suitSymbols[card.suit] || '?';
     const color = suitColors[card.suit] || '#666';
-    const rankDisplay = card.rank ? card.rank.charAt(0).toUpperCase() : '?';
+    const rankDisplay = card.suit === 'joker' ? 'J' : (card.rank ? card.rank.charAt(0).toUpperCase() : '?');
 
     const svg = `
         <svg xmlns="http://www.w3.org/2000/svg" width="40" height="56" viewBox="0 0 40 56">
