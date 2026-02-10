@@ -7,7 +7,7 @@
 // ============================================
 // CONFIG
 // ============================================
-let API_BASE_URL = 'http://localhost:3001';
+let API_BASE_URL = 'https://banner-generator-ai.vercel.app';
 
 // Load config (called on module init)
 async function loadAuthConfig() {
