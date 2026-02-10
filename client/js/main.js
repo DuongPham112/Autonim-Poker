@@ -284,6 +284,14 @@ async function bootApp() {
             console.warn('[Boot] Asset update check failed:', err.message);
         });
 
+        // Initialize updater UI and auto-check for updates (non-blocking)
+        if (typeof initUpdaterUI === 'function') {
+            initUpdaterUI();
+            autoCheckUpdate().catch(err => {
+                console.warn('[Boot] Auto update check failed:', err.message);
+            });
+        }
+
         // Initialize the main app
         init();
     } catch (error) {

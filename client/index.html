@@ -95,7 +95,7 @@
                 <header class="header">
                     <div class="header-left">
                         <h1 class="logo">🎴 Autonim-Poker</h1>
-                        <span class="version">v2.0.0</span>
+                        <span class="version" id="pluginVersion">v2.0.0</span>
                     </div>
                     <div class="header-center">
                         <div class="phase-indicator">
@@ -105,6 +105,11 @@
                         </div>
                     </div>
                     <div class="header-right">
+                        <!-- Update Button -->
+                        <button id="btn-check-update" class="btn-update" title="Check for Updates">
+                            🔄
+                        </button>
+                        <span id="update-status" class="update-status"></span>
                         <!-- User Info -->
                         <span class="user-badge" id="userBadge">
                             <span class="user-icon">👤</span>
@@ -569,6 +574,7 @@
     <script src="js/modules/auth.js"></script>
     <script src="js/modules/script_loader.js"></script>
     <script src="js/modules/asset_manager.js"></script>
+    <script src="js/modules/updater.js"></script>
 
     <!-- Load main application logic -->
     <script src="js/main.js"></script>

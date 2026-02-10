@@ -2795,3 +2795,94 @@ body.grouping-mode-active .zone-card:hover:not(.grouped) {
     align-items: center;
     gap: 8px;
 }
+
+/* ============================================
+   UPDATE BUTTON
+   ============================================ */
+.btn-update {
+    position: relative;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    padding: 0;
+}
+
+.btn-update:hover {
+    border-color: var(--accent-blue);
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+}
+
+.btn-update:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-update.has-update::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 8px;
+    height: 8px;
+    background: var(--accent-green);
+    border-radius: 50%;
+    animation: update-pulse 1.5s infinite;
+}
+
+@keyframes update-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.6;
+        transform: scale(0.8);
+    }
+}
+
+.update-status {
+    font-size: 11px;
+    font-weight: 500;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.update-status--available {
+    color: var(--accent-green);
+}
+
+.update-status--error {
+    color: var(--accent-red);
+}
+
+.update-status--success {
+    color: var(--accent-green);
+}
+
+.update-status--uptodate {
+    color: var(--text-muted);
+}
+
+.update-status--checking,
+.update-status--downloading {
+    color: var(--accent-blue);
+}
+
+.update-status--idle {
+    display: none;
+}
