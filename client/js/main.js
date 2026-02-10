@@ -263,16 +263,24 @@ async function bootApp() {
         // Update user display
         updateUserDisplay();
 
-        // Load core ExtendScript from backend (OTA)
-        try {
-            const scriptResult = await loadCoreScript();
-            console.log('[Boot] Core script loaded:', scriptResult);
-        } catch (scriptErr) {
-            if (scriptErr.name === 'AuthError') {
-                showLoginScreen();
-                return;
+        // Load core ExtendScript from backend (OTA) — skip if local JSX already loaded via ScriptPath
+        const localScriptLoaded = csInterface && await new Promise(resolve => {
+            csInterface.evalScript('typeof generateSequence', result => resolve(result === 'function'));
+        }).catch(() => false);
+
+        if (localScriptLoaded) {
+            console.log('[Boot] Local ExtendScript already loaded via ScriptPath, skipping OTA');
+        } else {
+            try {
+                const scriptResult = await loadCoreScript();
+                console.log('[Boot] Core script loaded via OTA:', scriptResult);
+            } catch (scriptErr) {
+                if (scriptErr.name === 'AuthError') {
+                    showLoginScreen();
+                    return;
+                }
+                console.warn('[Boot] Core script load failed, continuing anyway:', scriptErr.message);
             }
-            console.warn('[Boot] Core script load failed, continuing anyway:', scriptErr.message);
         }
 
         // Check for asset updates (non-blocking)
