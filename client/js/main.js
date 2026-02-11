@@ -53,7 +53,7 @@ const SUITS = ['spades', 'hearts', 'diamonds', 'clubs'];
 
 // Application State
 const appState = {
-    phase: 'setup',               // 'board-setting', 'setup' or 'record'
+    phase: 'board-setting',       // 'board-setting', 'setup' or 'record'
     deckPath: null,               // Path to deck folder
     assetsRootPath: null,         // Assets folder for AE
     backImagePath: null,          // Path to back.png
@@ -313,6 +313,9 @@ function init() {
 
     // Load default poker layout (grid-based with slots)
     loadPokerLayout();
+
+    // Start in Board Setting mode with poker layout visible
+    setPhase('board-setting');
 
     // Scan and populate deck dropdown, then auto-load first deck
     scanAndPopulateDecks();
