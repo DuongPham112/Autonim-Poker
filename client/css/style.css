@@ -466,6 +466,13 @@ body {
     color: var(--accent-green);
 }
 
+.controls-separator {
+    color: var(--border-color);
+    margin: 0 2px;
+    font-size: 12px;
+    user-select: none;
+}
+
 /* Grid Flip Controls */
 .grid-flip-controls {
     display: flex;
@@ -1926,6 +1933,11 @@ body {
 .game-container.grid-mode .player-zone,
 .game-container.grid-mode .community-zone {
     display: none;
+}
+
+/* Poker-grid mode: show community zone as a pile drop target */
+.game-container.poker-grid-mode .community-zone {
+    display: flex;
 }
 
 /* Mode Badge variants */

@@ -1442,6 +1442,14 @@ function moveCardToZone(card, newZoneName, newRotation, newZoneElement) {
     const newZoneCards = appState.tableCards.filter(c => c.zone === newZoneName && c.id !== card.id);
     card.zonePosition = newZoneCards.length;
 
+    // For poker community zone: apply optional random rotation
+    if (appState.boardLayout.boardStyle === 'poker' && newZoneName === 'community') {
+        const randomCheckbox = document.getElementById('communityRandomRotation');
+        if (randomCheckbox && randomCheckbox.checked) {
+            card.rotation = Math.round((Math.random() - 0.5) * 30); // ±15°
+        }
+    }
+
     // Create visual card in new zone
     createZoneCardElement(card, newZoneElement);
 
@@ -1525,6 +1533,14 @@ function placeCardInZone(card, zoneName, rotation, zoneElement) {
 
     // Calculate overlap position
     card.zonePosition = position;
+
+    // For poker community zone: apply optional random rotation
+    if (appState.boardLayout.boardStyle === 'poker' && zoneName === 'community') {
+        const randomCheckbox = document.getElementById('communityRandomRotation');
+        if (randomCheckbox && randomCheckbox.checked) {
+            card.rotation = Math.round((Math.random() - 0.5) * 30); // ±15°
+        }
+    }
 
     // Add to table cards
     appState.tableCards.push(card);
@@ -1625,7 +1641,24 @@ function createZoneCardElement(card, zoneElement) {
     cardEl.dataset.cardId = card.id;
 
     // Different overlap direction based on zone
-    if (zoneName === 'left') {
+    if (appState.boardLayout.boardStyle === 'poker' && zoneName === 'community') {
+        // Poker community: pile stacking — cards on top of each other
+        cardEl.style.position = 'absolute';
+        cardEl.style.zIndex = 400 + (card.zonePosition || 0);
+
+        // Apply optional random offset for natural look
+        const randomCheckbox = document.getElementById('communityRandomRotation');
+        if (randomCheckbox && randomCheckbox.checked) {
+            // Random offset slightly so cards don't perfectly overlap
+            const offsetX = (Math.random() - 0.5) * 20; // ±10px
+            const offsetY = (Math.random() - 0.5) * 15; // ±7.5px
+            cardEl.style.transform = `translate(${offsetX}px, ${offsetY}px) rotate(${card.rotation || 0}deg)`;
+        } else {
+            // Neat stack with slight horizontal offset per card
+            const offsetX = (card.zonePosition || 0) * 8; // 8px shift per card
+            cardEl.style.transform = `translateX(${offsetX}px) rotate(${card.rotation || 0}deg)`;
+        }
+    } else if (zoneName === 'left') {
         // Left zone: cards stack top-to-bottom, later cards on top
         cardEl.style.marginTop = card.zonePosition > 0 ? `-${CARD_HEIGHT - appState.cardOverlap}px` : '0';
     } else if (zoneName === 'right') {
@@ -3673,31 +3706,22 @@ function loadPokerLayout() {
         });
     }
 
-    // --- Community zone: 7 slots, horizontal, centered ---
-    var commStartX = (UI_WIDTH / 2) - (3 * 50); // 50px spacing for community
-    for (var i = 0; i < 7; i++) {
-        places.push({
-            id: 'community-' + i,
-            zone: 'community',
-            x: commStartX + (i * 50),
-            y: UI_HEIGHT / 2,
-            rotation: 0,
-            zOrder: 400 + i,
-            label: 'C' + (i + 1)
-        });
-    }
+    // Community zone is NOT grid-based — it's a pile zone where
+    // unlimited cards can stack with chronological z-order.
+    // The HTML .community-zone element is shown via CSS poker-grid-mode.
 
     appState.boardLayout = {
         type: 'grid',
         name: 'Poker (4 Players)',
         boardStyle: 'poker',
         gridCols: 13,
-        gridRows: 5,
+        gridRows: 4,
         cardPlaces: places
     };
 
     gameContainer.classList.add('grid-mode');
-    setStatus('Loaded Poker layout (4 zones × 13 slots + 7 community)');
+    gameContainer.classList.add('poker-grid-mode');
+    setStatus('Loaded Poker layout (4 zones × 13 slots + community pile)');
 }
 
 /**

@@ -2,7 +2,7 @@
   "name": "Poker (4 Players)",
   "type": "grid",
   "boardStyle": "poker",
-  "description": "Poker layout with 13 card slots per player + 7 community slots",
+  "description": "Poker layout with 13 card slots per player + community pile zone",
   "config": {
     "cardSpacing": 45,
     "rotationSpread": 0
@@ -475,69 +475,6 @@
       "rotation": 0,
       "zOrder": 312,
       "label": "R13"
-    },
-    {
-      "id": "community-0",
-      "zone": "community",
-      "x": 460,
-      "y": 360,
-      "rotation": 0,
-      "zOrder": 400,
-      "label": "C1"
-    },
-    {
-      "id": "community-1",
-      "zone": "community",
-      "x": 510,
-      "y": 360,
-      "rotation": 0,
-      "zOrder": 401,
-      "label": "C2"
-    },
-    {
-      "id": "community-2",
-      "zone": "community",
-      "x": 560,
-      "y": 360,
-      "rotation": 0,
-      "zOrder": 402,
-      "label": "C3"
-    },
-    {
-      "id": "community-3",
-      "zone": "community",
-      "x": 610,
-      "y": 360,
-      "rotation": 0,
-      "zOrder": 403,
-      "label": "C4"
-    },
-    {
-      "id": "community-4",
-      "zone": "community",
-      "x": 660,
-      "y": 360,
-      "rotation": 0,
-      "zOrder": 404,
-      "label": "C5"
-    },
-    {
-      "id": "community-5",
-      "zone": "community",
-      "x": 710,
-      "y": 360,
-      "rotation": 0,
-      "zOrder": 405,
-      "label": "C6"
-    },
-    {
-      "id": "community-6",
-      "zone": "community",
-      "x": 760,
-      "y": 360,
-      "rotation": 0,
-      "zOrder": 406,
-      "label": "C7"
     }
   ]
 }
