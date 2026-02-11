@@ -170,14 +170,23 @@ function generateSequence(jsonString, assetsRootPath) {
         var controlLayer = createControlLayer(comp);
         var controlLayerName = controlLayer.name;
 
-        // Apply expressions to card layers
+        // Apply expressions and per-card controls to card layers
         for (var cardId in layerMap) {
             if (layerMap.hasOwnProperty(cardId)) {
                 var layer = layerMap[cardId];
                 var cardInfo = data.initialState[cardId];
 
-                // Apply Scale expression (links to Card Scale slider)
+                // Add per-card Expression Controls on the card layer in main comp
+                addPerCardControls(layer);
+
+                // Apply Scale expression (links to Card Scale + per-card Slam Scale)
                 applyScaleExpression(layer, controlLayerName);
+
+                // Apply Flip expression (combines keyframes + Flip checkbox)
+                applyFlipExpression(layer);
+
+                // Apply Selection Stroke expression (links pre-comp stroke to per-card slider)
+                applySelectionExpression(layer, controlLayerName, compName);
 
                 // Apply Zone Offset expression if card is in a zone
                 if (cardInfo && cardInfo.zone) {
@@ -330,26 +339,54 @@ function createCardPrecomp(mainComp, cardId, cardInfo, assetsPath, folderInfo) {
     }
 
     // 4. Set Initial Visibility based on Face State
-    // We use Opacity instead of Enabled so we can keyframe it later inside the pre-comp
-    // However, since we are inside a pre-comp, the time is relative.
-    // We will control the visibility by keyframing Opacity inside this pre-comp
-    // at time 0 based on isFaceUp.
-
     var isFaceUp = cardInfo.isFaceUp === true;
 
     if (frontLayer) frontLayer.property("Opacity").setValue(isFaceUp ? 100 : 0);
     if (backLayer) backLayer.property("Opacity").setValue(isFaceUp ? 0 : 100);
 
-    // 5. Add Pre-Comp to Main Comp
+    // 5. Create Selection Stroke shape layer (yellow inside border for selection highlight)
+    // Also hosts Stroke Size and Flip Control sliders for expression linking
+    var strokeShapeLayer = preComp.layers.addShape();
+    strokeShapeLayer.name = "Selection Stroke";
+    strokeShapeLayer.moveToBeginning(); // On top of Front/Back
+
+    // Position shape layer at comp center
+    strokeShapeLayer.property("Position").setValue([preComp.width / 2, preComp.height / 2]);
+
+    // Add Expression Control Sliders on this layer for linking from main comp
+    var strokeSizeCtrl = strokeShapeLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+    strokeSizeCtrl.name = "Stroke Size";
+    strokeSizeCtrl.property("Slider").setValue(0); // Default off
+
+    var flipCtrl = strokeShapeLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+    flipCtrl.name = "Flip Control";
+    flipCtrl.property("Slider").setValue(0); // Default 0 = no flip
+
+    // Build shape: Group → Rectangle + Stroke (no fill)
+    var contents = strokeShapeLayer.property("Contents");
+    var group = contents.addProperty("ADBE Vector Group");
+    group.name = "Border";
+
+    // Rectangle matching card/comp size
+    var rect = group.property("Contents").addProperty("ADBE Vector Shape - Rect");
+    rect.property("Size").setValue([preComp.width, preComp.height]);
+
+    // Yellow Stroke (no fill)
+    var strokeGfx = group.property("Contents").addProperty("ADBE Vector Graphic - Stroke");
+    strokeGfx.property("Color").setValue([1, 0.84, 0, 1]); // Yellow RGBA
+    strokeGfx.property("Stroke Width").setValue(0); // Default off
+
+    // Link stroke width to the Stroke Size slider on this layer
+    // Multiply by 2: pre-comp boundary clips outer half → effective "inside" stroke
+    strokeGfx.property("Stroke Width").expression =
+        'thisLayer.effect("Stroke Size")("Slider") * 2';
+
+    // 6. Add Pre-Comp to Main Comp
     var preCompLayer = mainComp.layers.add(preComp);
     preCompLayer.name = cardId;
 
     // Enable 3D for z-ordering - cards will use Z position to control stacking
     preCompLayer.threeDLayer = true;
-
-    // Note: collapseTransformation conflicts with 3D layer behavior
-    // Leaving it OFF to enable proper 3D z-ordering
-    // preCompLayer.collapseTransformation = true;
 
     // Set anchor point to center
     setAnchorPointToCenter(preCompLayer);
@@ -476,6 +513,11 @@ function createControlLayer(comp) {
     rightXEffect.name = "Right Zone X";
     rightXEffect.property("Slider").setValue(0);
 
+    // Selection Stroke Size (global default, default 0 = off)
+    var selectionEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+    selectionEffect.name = "Selection Stroke Size";
+    selectionEffect.property("Slider").setValue(0);
+
     return controlLayer;
 }
 
@@ -536,13 +578,115 @@ function createZoneNulls(comp, controlLayerName) {
 /**
  * Apply Scale expression to card layer
  * Multiplies keyframe scale (slam animation) with global Card Scale slider
- * This way slam keyframes work AND user can adjust overall size
+ * AND per-card Slam Scale slider for individual scale control
  */
 function applyScaleExpression(layer, controlLayerName) {
     var expr = 'var globalSize = thisComp.layer("' + controlLayerName + '").effect("Card Scale")("Slider");\n' +
+        'var localSlam = thisLayer.effect("Slam Scale")("Slider");\n' +
         'var s = value;\n' +
-        '[s[0] * (globalSize / 100), s[1] * (globalSize / 100), s.length > 2 ? s[2] : 100]';
+        '[s[0] * (globalSize / 100) * (localSlam / 100), s[1] * (globalSize / 100) * (localSlam / 100), s.length > 2 ? s[2] : 100]';
     layer.property("Scale").expression = expr;
+}
+
+/**
+ * Add per-card Expression Controls to card layer in main comp
+ * - Flip (Slider 0-100%): Gradual flip rotation + face swap at 50%
+ * - Slam Scale (Slider): Per-card scale multiplier (default 100%)
+ * - Selection Size (Slider): Controls stroke highlight size (default 0 = off, 6 = on)
+ */
+function addPerCardControls(layer) {
+    var effects = layer.property("ADBE Effect Parade");
+
+    // Flip slider (0-100%, default 0 = no extra flip)
+    // 0% = original rotation, 50% = faces swap, 100% = +180° rotation
+    var flipCtrl = effects.addProperty("ADBE Slider Control");
+    flipCtrl.name = "Flip";
+    flipCtrl.property("Slider").setValue(0);
+
+    // Slam Scale slider (default 100%)
+    var slamCtrl = effects.addProperty("ADBE Slider Control");
+    slamCtrl.name = "Slam Scale";
+    slamCtrl.property("Slider").setValue(100);
+
+    // Selection Size slider (default 0 = off)
+    var selCtrl = effects.addProperty("ADBE Slider Control");
+    selCtrl.name = "Selection Size";
+    selCtrl.property("Slider").setValue(0);
+}
+
+/**
+ * Apply Flip expression to Y Rotation
+ * Combines keyframe-driven flip animation (from processFlipEffect)
+ * with user-adjustable Flip slider (0-100%)
+ * Slider 0% = no change, 100% = +180° rotation
+ * Face swap (opacity) is handled separately inside the pre-comp
+ */
+function applyFlipExpression(layer) {
+    var expr = 'var flipPct = thisLayer.effect("Flip")("Slider");\n' +
+        'value + (flipPct / 100 * 180)';
+    layer.property("Y Rotation").expression = expr;
+}
+
+/**
+ * Apply pre-comp internal expressions for Selection Stroke and Flip Control
+ * Links sliders on "Selection Stroke" shape layer inside the pre-comp
+ * to the card layer in the main comp
+ * Also sets up Front/Back opacity expressions for flip face swap at 50%
+ * @param {Layer} layer - Card pre-comp layer in main comp
+ * @param {string} controlLayerName - Name of the global control layer
+ * @param {string} mainCompName - Name of the main composition
+ */
+function applySelectionExpression(layer, controlLayerName, mainCompName) {
+    // Access the pre-comp
+    var preComp = layer.source;
+    if (!preComp || !(preComp instanceof CompItem)) return;
+
+    // Find layers inside pre-comp
+    var strokeLayer = null;
+    var frontLayer = null;
+    var backLayer = null;
+    for (var i = 1; i <= preComp.numLayers; i++) {
+        var lname = preComp.layer(i).name;
+        if (lname === "Selection Stroke") strokeLayer = preComp.layer(i);
+        else if (lname === "Front") frontLayer = preComp.layer(i);
+        else if (lname === "Back") backLayer = preComp.layer(i);
+    }
+
+    var cardLayerName = layer.name;
+
+    // --- Selection Stroke Size linking ---
+    if (strokeLayer) {
+        var strokeSlider = strokeLayer.property("ADBE Effect Parade").property("Stroke Size");
+        if (strokeSlider) {
+            var selExpr = 'var mainComp = comp("' + mainCompName + '");\n' +
+                'var cardLayer = mainComp.layer("' + cardLayerName + '");\n' +
+                'var perCard = cardLayer.effect("Selection Size")("Slider");\n' +
+                'var globalCtrl = mainComp.layer("' + controlLayerName + '");\n' +
+                'var globalVal = globalCtrl.effect("Selection Stroke Size")("Slider");\n' +
+                'perCard > 0 ? perCard : globalVal';
+            strokeSlider.property("Slider").expression = selExpr;
+        }
+
+        // --- Flip Control linking ---
+        var flipSlider = strokeLayer.property("ADBE Effect Parade").property("Flip Control");
+        if (flipSlider) {
+            var flipExpr = 'comp("' + mainCompName + '").layer("' + cardLayerName + '").effect("Flip")("Slider")';
+            flipSlider.property("Slider").expression = flipExpr;
+        }
+    }
+
+    // --- Front/Back Opacity expressions for face swap ---
+    // When Flip Control >= 50%, invert opacity: 100 becomes 0, 0 becomes 100
+    // This swaps which face is visible when the user drags the Flip slider past 50%
+    var flipOpacityExpr = 'var fc = thisComp.layer("Selection Stroke").effect("Flip Control")("Slider");\n' +
+        'fc >= 50 ? (100 - value) : value';
+
+    if (frontLayer) {
+        frontLayer.property("Opacity").expression = flipOpacityExpr;
+    }
+    if (backLayer) {
+        backLayer.property("Opacity").expression = flipOpacityExpr;
+    }
 }
 
 /**
