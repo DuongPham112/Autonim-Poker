@@ -294,6 +294,59 @@ function setupInitialScene(comp, initialState, assetsRootPath, layerMap, folderI
 }
 
 /**
+ * Recursively search shape layer Contents tree for a Stroke Width property
+ * Works regardless of group nesting structure from AI conversion
+ * @param {PropertyGroup} parentProp - Shape Contents property to search
+ * @param {number} [depth] - Current recursion depth (safety limit)
+ * @returns {Property|null} The Stroke Width property, or null if not found
+ */
+function findStrokeWidthInShape(parentProp, depth) {
+    if (!depth) depth = 0;
+    if (depth > 6) return null; // Safety limit
+    try {
+        for (var i = 1; i <= parentProp.numProperties; i++) {
+            var p = parentProp.property(i);
+            if (p.matchName === "ADBE Vector Graphic - Stroke") {
+                return p.property("ADBE Vector Stroke Width");
+            }
+            try {
+                if (p.numProperties > 0) {
+                    var found = findStrokeWidthInShape(p, depth + 1);
+                    if (found) return found;
+                }
+            } catch (inner) { }
+        }
+    } catch (e) { }
+    return null;
+}
+
+/**
+ * Recursively search shape layer Contents tree for a Stroke Color property
+ * @param {PropertyGroup} parentProp - Shape Contents property to search
+ * @param {number} [depth] - Current recursion depth (safety limit)
+ * @returns {Property|null} The Stroke Color property, or null if not found
+ */
+function findStrokeColorInShape(parentProp, depth) {
+    if (!depth) depth = 0;
+    if (depth > 6) return null;
+    try {
+        for (var i = 1; i <= parentProp.numProperties; i++) {
+            var p = parentProp.property(i);
+            if (p.matchName === "ADBE Vector Graphic - Stroke") {
+                return p.property("ADBE Vector Stroke Color");
+            }
+            try {
+                if (p.numProperties > 0) {
+                    var found = findStrokeColorInShape(p, depth + 1);
+                    if (found) return found;
+                }
+            } catch (inner) { }
+        }
+    } catch (e) { }
+    return null;
+}
+
+/**
  * Create a Pre-Composition for a card containing Front and Back layers
  * @param {CompItem} mainComp - Main composition
  * @param {string} cardId - Unique Card ID
@@ -344,42 +397,90 @@ function createCardPrecomp(mainComp, cardId, cardInfo, assetsPath, folderInfo) {
     if (frontLayer) frontLayer.property("Opacity").setValue(isFaceUp ? 100 : 0);
     if (backLayer) backLayer.property("Opacity").setValue(isFaceUp ? 0 : 100);
 
-    // 5. Create Selection Stroke shape layer (yellow inside border for selection highlight)
-    // Also hosts Stroke Size and Flip Control sliders for expression linking
-    var strokeShapeLayer = preComp.layers.addShape();
-    strokeShapeLayer.name = "Selection Stroke";
-    strokeShapeLayer.moveToBeginning(); // On top of Front/Back
+    // 5. Import stroke.ai vector and convert to Shape Layer for full stroke control
+    // Each deck provides its own stroke.ai matching the card shape (rounded corners, etc.)
+    var strokeLayer = importAndAddLayer(preComp, "stroke.ai", assetsPath, "Selection Stroke");
+    if (strokeLayer) {
+        strokeLayer.moveToBeginning();
 
-    // Position shape layer at comp center
-    strokeShapeLayer.property("Position").setValue([preComp.width / 2, preComp.height / 2]);
+        // Re-center
+        if (preComp.width && preComp.height) {
+            strokeLayer.property("Position").setValue([preComp.width / 2, preComp.height / 2]);
+        }
 
-    // Add Expression Control Sliders on this layer for linking from main comp
-    var strokeSizeCtrl = strokeShapeLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
-    strokeSizeCtrl.name = "Stroke Size";
-    strokeSizeCtrl.property("Slider").setValue(0); // Default off
+        // Convert AI → AE Shape Layer via "Create Shapes from Vector Layer"
+        // This gives us native control over Stroke Width, Color, etc.
+        try {
+            // Select only the AI layer
+            for (var si = 1; si <= preComp.numLayers; si++) {
+                preComp.layer(si).selected = false;
+            }
+            strokeLayer.selected = true;
+            preComp.openInViewer();
 
-    var flipCtrl = strokeShapeLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
-    flipCtrl.name = "Flip Control";
-    flipCtrl.property("Slider").setValue(0); // Default 0 = no flip
+            app.executeCommand(3973); // "Create Shapes from Vector Layer"
 
-    // Build shape: Group → Rectangle + Stroke (no fill)
-    var contents = strokeShapeLayer.property("Contents");
-    var group = contents.addProperty("ADBE Vector Group");
-    group.name = "Border";
+            // Find the new shape layer (AE names it "{original} Outlines")
+            var shapesLayer = null;
+            for (var si = 1; si <= preComp.numLayers; si++) {
+                var sl = preComp.layer(si);
+                if (sl.name.indexOf("Outlines") !== -1) {
+                    shapesLayer = sl;
+                    break;
+                }
+            }
 
-    // Rectangle matching card/comp size
-    var rect = group.property("Contents").addProperty("ADBE Vector Shape - Rect");
-    rect.property("Size").setValue([preComp.width, preComp.height]);
+            if (shapesLayer) {
+                // Remove original AI footage layer
+                strokeLayer.remove();
 
-    // Yellow Stroke (no fill)
-    var strokeGfx = group.property("Contents").addProperty("ADBE Vector Graphic - Stroke");
-    strokeGfx.property("Color").setValue([1, 0.84, 0, 1]); // Yellow RGBA
-    strokeGfx.property("Stroke Width").setValue(0); // Default off
+                // Rename for expression compatibility
+                shapesLayer.name = "Selection Stroke";
+                shapesLayer.moveToBeginning();
 
-    // Link stroke width to the Stroke Size slider on this layer
-    // Multiply by 2: pre-comp boundary clips outer half → effective "inside" stroke
-    strokeGfx.property("Stroke Width").expression =
-        'thisLayer.effect("Stroke Size")("Slider") * 2';
+                // Add Expression Control Sliders
+                var strokeSizeCtrl = shapesLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+                strokeSizeCtrl.name = "Stroke Size";
+                strokeSizeCtrl.property("Slider").setValue(0);
+
+                var flipCtrl = shapesLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+                flipCtrl.name = "Flip Control";
+                flipCtrl.property("Slider").setValue(0);
+
+                // Find Stroke Width property in the shape tree and link to Stroke Size slider
+                var strokeWidthProp = findStrokeWidthInShape(shapesLayer.property("Contents"));
+                if (strokeWidthProp) {
+                    strokeWidthProp.expression = 'thisLayer.effect("Stroke Size")("Slider")';
+                }
+
+                // Find Stroke Color property and add a Color Control for expression linking
+                var strokeColorProp = findStrokeColorInShape(shapesLayer.property("Contents"));
+                if (strokeColorProp) {
+                    var colorCtrl = shapesLayer.property("ADBE Effect Parade").addProperty("ADBE Color Control");
+                    colorCtrl.name = "Stroke Color";
+                    colorCtrl.property("Color").setValue([1, 0.859, 0.271]); // #ffdb45 default
+                    strokeColorProp.expression = 'thisLayer.effect("Stroke Color")("Color")';
+                }
+
+                // Opacity: visible when Stroke Size > 0
+                shapesLayer.property("Opacity").expression =
+                    'thisLayer.effect("Stroke Size")("Slider") > 0 ? 100 : 0';
+            }
+        } catch (convertErr) {
+            $.writeln("AI→Shape conversion warning: " + convertErr.toString());
+            // Fallback: keep the AI layer as-is with opacity toggle
+            var strokeSizeCtrl = strokeLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+            strokeSizeCtrl.name = "Stroke Size";
+            strokeSizeCtrl.property("Slider").setValue(0);
+
+            var flipCtrl = strokeLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+            flipCtrl.name = "Flip Control";
+            flipCtrl.property("Slider").setValue(0);
+
+            strokeLayer.property("Opacity").expression =
+                'thisLayer.effect("Stroke Size")("Slider") > 0 ? 100 : 0';
+        }
+    }
 
     // 6. Add Pre-Comp to Main Comp
     var preCompLayer = mainComp.layers.add(preComp);
@@ -458,13 +559,17 @@ function applyInitialTransform(layer, assetInfo, comp) {
     var zPos = INITIAL_Z_OFFSET - (zOrderValue * Z_SPACING);
 
     // Position (3D: X, Y, Z)
+    // IMPORTANT: Use setValueAtTime(0) instead of setValue() so this is a proper keyframe.
+    // If we use setValue(), processTransformAction's later setValueAtTime() calls
+    // would create the FIRST keyframe, and AE extends that value backward to frame 0,
+    // overriding our initial position. A keyframe at t=0 holds until the next keyframe.
     var posX = assetInfo.x !== undefined ? assetInfo.x : comp.width / 2;
     var posY = assetInfo.y !== undefined ? assetInfo.y : comp.height / 2;
-    layer.property("Position").setValue([posX, posY, zPos]);
+    layer.property("Position").setValueAtTime(0, [posX, posY, zPos]);
 
-    // Z Rotation (table rotation)
+    // Z Rotation (table rotation) — also as keyframe to hold
     var rotation = assetInfo.rotation !== undefined ? assetInfo.rotation : 0;
-    layer.property("Z Rotation").setValue(rotation);
+    layer.property("Z Rotation").setValueAtTime(0, rotation);
 
     // Y Rotation for card face: Face-up = 0°, Face-down = 180°
     var yRotation = assetInfo.isFaceUp ? 0 : 180;
@@ -517,6 +622,11 @@ function createControlLayer(comp) {
     var selectionEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
     selectionEffect.name = "Selection Stroke Size";
     selectionEffect.property("Slider").setValue(0);
+
+    // Stroke Color (default #ffdb45 = [1, 0.859, 0.271])
+    var strokeColorEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Color Control");
+    strokeColorEffect.name = "Stroke Color";
+    strokeColorEffect.property("Color").setValue([1, 0.859, 0.271]);
 
     return controlLayer;
 }
@@ -665,6 +775,13 @@ function applySelectionExpression(layer, controlLayerName, mainCompName) {
                 'var globalVal = globalCtrl.effect("Selection Stroke Size")("Slider");\n' +
                 'perCard > 0 ? perCard : globalVal';
             strokeSlider.property("Slider").expression = selExpr;
+        }
+
+        // --- Stroke Color linking (global) ---
+        var strokeColorCtrl = strokeLayer.property("ADBE Effect Parade").property("Stroke Color");
+        if (strokeColorCtrl) {
+            var colorExpr = 'comp("' + mainCompName + '").layer("' + controlLayerName + '").effect("Stroke Color")("Color")';
+            strokeColorCtrl.property("Color").expression = colorExpr;
         }
 
         // --- Flip Control linking ---

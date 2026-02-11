@@ -2323,9 +2323,9 @@ function saveInitialStateForExport() {
             // Card was added from tray during recording - start off-screen left
             posX = -500;
             posY = PROJECT_INFO.height / 2;
-        } else if (card.zone && card.zone !== 'table') {
-            // For zone cards, use calculated AE position
-            const aePos = getAEZonePosition(card.zone, initialSnap[card.id].zonePosition || 0);
+        } else if (initialSnap[card.id].zone && initialSnap[card.id].zone !== 'table') {
+            // For zone cards, use INITIAL zone and position (not current card.zone which may have changed)
+            const aePos = getAEZonePosition(initialSnap[card.id].zone, initialSnap[card.id].zonePosition || 0);
             posX = aePos.x;
             posY = aePos.y;
         }
