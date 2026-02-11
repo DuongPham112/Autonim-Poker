@@ -1,6 +1,9 @@
 # Reference files (do not commit)
 reference/
 
+# Released builds (local only)
+released/
+
 # Node modules (if you add npm packages later)
 node_modules/
 npm-debug.log*
