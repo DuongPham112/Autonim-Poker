@@ -814,6 +814,15 @@ function applySelectionExpression(layer, controlLayerName, mainCompName) {
  * @param {string} zoneName - Zone the card belongs to (top, bottom, left, right)
  */
 function applyZoneOffsetExpression(cardLayer, controlLayerName, zoneName) {
+    // Resolve grid zone names to parent zone (e.g. "grid-top-5" → "top")
+    if (zoneName && zoneName.indexOf("grid-") === 0) {
+        var parts = zoneName.replace("grid-", "").split("-");
+        // parts = ["top", "5"] or ["bottom", "3"] etc.
+        if (parts.length >= 2) {
+            zoneName = parts[0]; // "top", "bottom", "left", "right"
+        }
+    }
+
     var expr = "";
     // Expression that only adds offset to FIRST keyframe
     // After first animation, uses original values
