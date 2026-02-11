@@ -311,6 +311,9 @@ function init() {
     getDOMElements();
     bindEvents();
 
+    // Load default poker layout (grid-based with slots)
+    loadPokerLayout();
+
     // Scan and populate deck dropdown, then auto-load first deck
     scanAndPopulateDecks();
 
@@ -746,12 +749,12 @@ function updateLayoutInfoDisplay() {
  * Update flip controls visibility based on board layout type
  */
 function updateFlipControlsVisibility() {
-    if (appState.boardLayout.type === 'grid') {
-        // Show grid controls, hide poker controls
+    if (appState.boardLayout.type === 'grid' && appState.boardLayout.boardStyle !== 'poker') {
+        // Non-poker grid (Pusoy, card-sorting): show grid controls, hide poker controls
         if (pokerFlipControls) pokerFlipControls.classList.add('hidden');
         if (gridFlipControls) gridFlipControls.classList.remove('hidden');
     } else {
-        // Show poker controls, hide grid controls
+        // Poker (including poker-grid) or legacy: show poker controls, hide grid controls
         if (pokerFlipControls) pokerFlipControls.classList.remove('hidden');
         if (gridFlipControls) gridFlipControls.classList.add('hidden');
     }
@@ -1404,8 +1407,19 @@ function moveCardToZone(card, newZoneName, newRotation, newZoneElement) {
     if (appState.phase === 'record' && card.flipAction) {
         card.isFaceUp = false; // Start face-down for animation
     } else {
-        // Setup mode or no flipAction: use zone checkbox
-        const flipCheckbox = document.querySelector(`#flip${newZoneName.charAt(0).toUpperCase() + newZoneName.slice(1)}`);
+        // Setup mode or no flipAction: determine face state from zone checkbox
+        let flipCheckbox = null;
+        if (newZoneName.startsWith('grid-') && appState.boardLayout.boardStyle === 'poker' && appState.boardLayout.cardPlaces) {
+            // Poker-grid: resolve parent zone for flip checkbox
+            const placeId = newZoneName.replace('grid-', '');
+            const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
+            if (place && place.zone) {
+                flipCheckbox = document.querySelector(`#flip${place.zone.charAt(0).toUpperCase() + place.zone.slice(1)}`);
+            }
+        } else if (!newZoneName.startsWith('grid-')) {
+            // Legacy poker zone
+            flipCheckbox = document.querySelector(`#flip${newZoneName.charAt(0).toUpperCase() + newZoneName.slice(1)}`);
+        }
         if (flipCheckbox) {
             card.isFaceUp = flipCheckbox.checked;
         }
@@ -1483,10 +1497,24 @@ function placeCardInZone(card, zoneName, rotation, zoneElement) {
 
     // Determine face up/down state based on layout type
     if (zoneName.startsWith('grid-')) {
-        // Grid layout: use gridDefaultFaceUp checkbox
-        card.isFaceUp = gridDefaultFaceUp ? gridDefaultFaceUp.checked : false;
+        // Grid layout: check if poker-style (has parent zone flip controls)
+        if (appState.boardLayout.boardStyle === 'poker' && appState.boardLayout.cardPlaces) {
+            const placeId = zoneName.replace('grid-', '');
+            const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
+            if (place && place.zone) {
+                // Use the parent zone's flip checkbox (e.g. flipTop, flipBottom)
+                const parentZone = place.zone;
+                const flipCheckbox = document.querySelector(`#flip${parentZone.charAt(0).toUpperCase() + parentZone.slice(1)}`);
+                card.isFaceUp = flipCheckbox ? flipCheckbox.checked : false;
+            } else {
+                card.isFaceUp = gridDefaultFaceUp ? gridDefaultFaceUp.checked : false;
+            }
+        } else {
+            // Non-poker grid (Pusoy, etc): use gridDefaultFaceUp checkbox
+            card.isFaceUp = gridDefaultFaceUp ? gridDefaultFaceUp.checked : false;
+        }
     } else {
-        // Poker layout: use zone-specific checkbox
+        // Legacy poker layout: use zone-specific checkbox
         const flipCheckbox = document.querySelector(`#flip${zoneName.charAt(0).toUpperCase() + zoneName.slice(1)}`);
         card.isFaceUp = flipCheckbox ? flipCheckbox.checked : false;
     }
@@ -2397,7 +2425,7 @@ function handleExportToAE() {
     const exportData = {
         ...scenarioData,
         initialState: saveInitialStateForExport(),
-        boardType: appState.boardLayout.type || 'poker',
+        boardType: appState.boardLayout.boardStyle || appState.boardLayout.type || 'poker',
         stepBlending: appState.stepBlending || 0,  // Overlap % between steps
         enableVisualMouse: true  // Create mouse cursor null for swap animations
     };
@@ -3581,19 +3609,95 @@ function handleLoadPreset() {
 }
 
 /**
- * Load default poker layout
+ * Load default poker layout with fixed card slots
+ * Each player zone has 13 slots, community has 7
+ * Uses grid type so all grid infrastructure (drop zones, z-order, AE export) applies
  */
 function loadPokerLayout() {
+    var places = [];
+    var spacing = 45; // Card overlap spacing in UI pixels
+
+    // --- Top zone: 13 slots, horizontal, centered ---
+    var topStartX = (UI_WIDTH / 2) - (6 * spacing); // Center 13 cards
+    for (var i = 0; i < 13; i++) {
+        places.push({
+            id: 'top-' + i,
+            zone: 'top',
+            x: topStartX + (i * spacing),
+            y: 80,
+            rotation: 0,
+            zOrder: i,
+            label: 'T' + (i + 1)
+        });
+    }
+
+    // --- Bottom zone: 13 slots, horizontal, centered ---
+    var bottomStartX = (UI_WIDTH / 2) - (6 * spacing);
+    for (var i = 0; i < 13; i++) {
+        places.push({
+            id: 'bottom-' + i,
+            zone: 'bottom',
+            x: bottomStartX + (i * spacing),
+            y: UI_HEIGHT - 80,
+            rotation: 0,
+            zOrder: 100 + i,
+            label: 'B' + (i + 1)
+        });
+    }
+
+    // --- Left zone: 13 slots, vertical ---
+    var leftStartY = 130;
+    for (var i = 0; i < 13; i++) {
+        places.push({
+            id: 'left-' + i,
+            zone: 'left',
+            x: 120,
+            y: leftStartY + (i * spacing),
+            rotation: 0,
+            zOrder: 200 + i,
+            label: 'L' + (i + 1)
+        });
+    }
+
+    // --- Right zone: 13 slots, vertical ---
+    var rightStartY = 130;
+    for (var i = 0; i < 13; i++) {
+        places.push({
+            id: 'right-' + i,
+            zone: 'right',
+            x: UI_WIDTH - 120,
+            y: rightStartY + (i * spacing),
+            rotation: 0,
+            zOrder: 300 + i,
+            label: 'R' + (i + 1)
+        });
+    }
+
+    // --- Community zone: 7 slots, horizontal, centered ---
+    var commStartX = (UI_WIDTH / 2) - (3 * 50); // 50px spacing for community
+    for (var i = 0; i < 7; i++) {
+        places.push({
+            id: 'community-' + i,
+            zone: 'community',
+            x: commStartX + (i * 50),
+            y: UI_HEIGHT / 2,
+            rotation: 0,
+            zOrder: 400 + i,
+            label: 'C' + (i + 1)
+        });
+    }
+
     appState.boardLayout = {
-        type: 'poker',
+        type: 'grid',
         name: 'Poker (4 Players)',
-        gridCols: 0,
-        gridRows: 0,
-        cardPlaces: []
+        boardStyle: 'poker',
+        gridCols: 13,
+        gridRows: 5,
+        cardPlaces: places
     };
 
-    gameContainer.classList.remove('grid-mode');
-    setStatus('Loaded Poker layout (4 player zones + community)');
+    gameContainer.classList.add('grid-mode');
+    setStatus('Loaded Poker layout (4 zones × 13 slots + 7 community)');
 }
 
 /**

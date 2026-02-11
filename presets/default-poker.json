@@ -1,12 +1,543 @@
 {
   "name": "Poker (4 Players)",
-  "type": "poker",
-  "description": "Standard poker layout with 4 player zones and community cards",
-  "zones": [
-    { "id": "top", "type": "player", "label": "Player 1 (Top)", "position": { "x": 50, "y": 8 }},
-    { "id": "bottom", "type": "player", "label": "Player 3 (Bottom)", "position": { "x": 50, "y": 92 }},
-    { "id": "left", "type": "player", "label": "Player 4 (Left)", "position": { "x": 8, "y": 50 }},
-    { "id": "right", "type": "player", "label": "Player 2 (Right)", "position": { "x": 92, "y": 50 }},
-    { "id": "community", "type": "community", "label": "Community Cards", "position": { "x": 50, "y": 50 }}
+  "type": "grid",
+  "boardStyle": "poker",
+  "description": "Poker layout with 13 card slots per player + 7 community slots",
+  "config": {
+    "cardSpacing": 45,
+    "rotationSpread": 0
+  },
+  "cardPlaces": [
+    {
+      "id": "top-0",
+      "zone": "top",
+      "x": 355,
+      "y": 80,
+      "rotation": 0,
+      "zOrder": 0,
+      "label": "T1"
+    },
+    {
+      "id": "top-1",
+      "zone": "top",
+      "x": 400,
+      "y": 80,
+      "rotation": 0,
+      "zOrder": 1,
+      "label": "T2"
+    },
+    {
+      "id": "top-2",
+      "zone": "top",
+      "x": 445,
+      "y": 80,
+      "rotation": 0,
+      "zOrder": 2,
+      "label": "T3"
+    },
+    {
+      "id": "top-3",
+      "zone": "top",
+      "x": 490,
+      "y": 80,
+      "rotation": 0,
+      "zOrder": 3,
+      "label": "T4"
+    },
+    {
+      "id": "top-4",
+      "zone": "top",
+      "x": 535,
+      "y": 80,
+      "rotation": 0,
+      "zOrder": 4,
+      "label": "T5"
+    },
+    {
+      "id": "top-5",
+      "zone": "top",
+      "x": 580,
+      "y": 80,
+      "rotation": 0,
+      "zOrder": 5,
+      "label": "T6"
+    },
+    {
+      "id": "top-6",
+      "zone": "top",
+      "x": 625,
+      "y": 80,
+      "rotation": 0,
+      "zOrder": 6,
+      "label": "T7"
+    },
+    {
+      "id": "top-7",
+      "zone": "top",
+      "x": 670,
+      "y": 80,
+      "rotation": 0,
+      "zOrder": 7,
+      "label": "T8"
+    },
+    {
+      "id": "top-8",
+      "zone": "top",
+      "x": 715,
+      "y": 80,
+      "rotation": 0,
+      "zOrder": 8,
+      "label": "T9"
+    },
+    {
+      "id": "top-9",
+      "zone": "top",
+      "x": 760,
+      "y": 80,
+      "rotation": 0,
+      "zOrder": 9,
+      "label": "T10"
+    },
+    {
+      "id": "top-10",
+      "zone": "top",
+      "x": 805,
+      "y": 80,
+      "rotation": 0,
+      "zOrder": 10,
+      "label": "T11"
+    },
+    {
+      "id": "top-11",
+      "zone": "top",
+      "x": 850,
+      "y": 80,
+      "rotation": 0,
+      "zOrder": 11,
+      "label": "T12"
+    },
+    {
+      "id": "top-12",
+      "zone": "top",
+      "x": 895,
+      "y": 80,
+      "rotation": 0,
+      "zOrder": 12,
+      "label": "T13"
+    },
+    {
+      "id": "bottom-0",
+      "zone": "bottom",
+      "x": 355,
+      "y": 640,
+      "rotation": 0,
+      "zOrder": 100,
+      "label": "B1"
+    },
+    {
+      "id": "bottom-1",
+      "zone": "bottom",
+      "x": 400,
+      "y": 640,
+      "rotation": 0,
+      "zOrder": 101,
+      "label": "B2"
+    },
+    {
+      "id": "bottom-2",
+      "zone": "bottom",
+      "x": 445,
+      "y": 640,
+      "rotation": 0,
+      "zOrder": 102,
+      "label": "B3"
+    },
+    {
+      "id": "bottom-3",
+      "zone": "bottom",
+      "x": 490,
+      "y": 640,
+      "rotation": 0,
+      "zOrder": 103,
+      "label": "B4"
+    },
+    {
+      "id": "bottom-4",
+      "zone": "bottom",
+      "x": 535,
+      "y": 640,
+      "rotation": 0,
+      "zOrder": 104,
+      "label": "B5"
+    },
+    {
+      "id": "bottom-5",
+      "zone": "bottom",
+      "x": 580,
+      "y": 640,
+      "rotation": 0,
+      "zOrder": 105,
+      "label": "B6"
+    },
+    {
+      "id": "bottom-6",
+      "zone": "bottom",
+      "x": 625,
+      "y": 640,
+      "rotation": 0,
+      "zOrder": 106,
+      "label": "B7"
+    },
+    {
+      "id": "bottom-7",
+      "zone": "bottom",
+      "x": 670,
+      "y": 640,
+      "rotation": 0,
+      "zOrder": 107,
+      "label": "B8"
+    },
+    {
+      "id": "bottom-8",
+      "zone": "bottom",
+      "x": 715,
+      "y": 640,
+      "rotation": 0,
+      "zOrder": 108,
+      "label": "B9"
+    },
+    {
+      "id": "bottom-9",
+      "zone": "bottom",
+      "x": 760,
+      "y": 640,
+      "rotation": 0,
+      "zOrder": 109,
+      "label": "B10"
+    },
+    {
+      "id": "bottom-10",
+      "zone": "bottom",
+      "x": 805,
+      "y": 640,
+      "rotation": 0,
+      "zOrder": 110,
+      "label": "B11"
+    },
+    {
+      "id": "bottom-11",
+      "zone": "bottom",
+      "x": 850,
+      "y": 640,
+      "rotation": 0,
+      "zOrder": 111,
+      "label": "B12"
+    },
+    {
+      "id": "bottom-12",
+      "zone": "bottom",
+      "x": 895,
+      "y": 640,
+      "rotation": 0,
+      "zOrder": 112,
+      "label": "B13"
+    },
+    {
+      "id": "left-0",
+      "zone": "left",
+      "x": 120,
+      "y": 130,
+      "rotation": 0,
+      "zOrder": 200,
+      "label": "L1"
+    },
+    {
+      "id": "left-1",
+      "zone": "left",
+      "x": 120,
+      "y": 175,
+      "rotation": 0,
+      "zOrder": 201,
+      "label": "L2"
+    },
+    {
+      "id": "left-2",
+      "zone": "left",
+      "x": 120,
+      "y": 220,
+      "rotation": 0,
+      "zOrder": 202,
+      "label": "L3"
+    },
+    {
+      "id": "left-3",
+      "zone": "left",
+      "x": 120,
+      "y": 265,
+      "rotation": 0,
+      "zOrder": 203,
+      "label": "L4"
+    },
+    {
+      "id": "left-4",
+      "zone": "left",
+      "x": 120,
+      "y": 310,
+      "rotation": 0,
+      "zOrder": 204,
+      "label": "L5"
+    },
+    {
+      "id": "left-5",
+      "zone": "left",
+      "x": 120,
+      "y": 355,
+      "rotation": 0,
+      "zOrder": 205,
+      "label": "L6"
+    },
+    {
+      "id": "left-6",
+      "zone": "left",
+      "x": 120,
+      "y": 400,
+      "rotation": 0,
+      "zOrder": 206,
+      "label": "L7"
+    },
+    {
+      "id": "left-7",
+      "zone": "left",
+      "x": 120,
+      "y": 445,
+      "rotation": 0,
+      "zOrder": 207,
+      "label": "L8"
+    },
+    {
+      "id": "left-8",
+      "zone": "left",
+      "x": 120,
+      "y": 490,
+      "rotation": 0,
+      "zOrder": 208,
+      "label": "L9"
+    },
+    {
+      "id": "left-9",
+      "zone": "left",
+      "x": 120,
+      "y": 535,
+      "rotation": 0,
+      "zOrder": 209,
+      "label": "L10"
+    },
+    {
+      "id": "left-10",
+      "zone": "left",
+      "x": 120,
+      "y": 580,
+      "rotation": 0,
+      "zOrder": 210,
+      "label": "L11"
+    },
+    {
+      "id": "left-11",
+      "zone": "left",
+      "x": 120,
+      "y": 625,
+      "rotation": 0,
+      "zOrder": 211,
+      "label": "L12"
+    },
+    {
+      "id": "left-12",
+      "zone": "left",
+      "x": 120,
+      "y": 670,
+      "rotation": 0,
+      "zOrder": 212,
+      "label": "L13"
+    },
+    {
+      "id": "right-0",
+      "zone": "right",
+      "x": 1160,
+      "y": 130,
+      "rotation": 0,
+      "zOrder": 300,
+      "label": "R1"
+    },
+    {
+      "id": "right-1",
+      "zone": "right",
+      "x": 1160,
+      "y": 175,
+      "rotation": 0,
+      "zOrder": 301,
+      "label": "R2"
+    },
+    {
+      "id": "right-2",
+      "zone": "right",
+      "x": 1160,
+      "y": 220,
+      "rotation": 0,
+      "zOrder": 302,
+      "label": "R3"
+    },
+    {
+      "id": "right-3",
+      "zone": "right",
+      "x": 1160,
+      "y": 265,
+      "rotation": 0,
+      "zOrder": 303,
+      "label": "R4"
+    },
+    {
+      "id": "right-4",
+      "zone": "right",
+      "x": 1160,
+      "y": 310,
+      "rotation": 0,
+      "zOrder": 304,
+      "label": "R5"
+    },
+    {
+      "id": "right-5",
+      "zone": "right",
+      "x": 1160,
+      "y": 355,
+      "rotation": 0,
+      "zOrder": 305,
+      "label": "R6"
+    },
+    {
+      "id": "right-6",
+      "zone": "right",
+      "x": 1160,
+      "y": 400,
+      "rotation": 0,
+      "zOrder": 306,
+      "label": "R7"
+    },
+    {
+      "id": "right-7",
+      "zone": "right",
+      "x": 1160,
+      "y": 445,
+      "rotation": 0,
+      "zOrder": 307,
+      "label": "R8"
+    },
+    {
+      "id": "right-8",
+      "zone": "right",
+      "x": 1160,
+      "y": 490,
+      "rotation": 0,
+      "zOrder": 308,
+      "label": "R9"
+    },
+    {
+      "id": "right-9",
+      "zone": "right",
+      "x": 1160,
+      "y": 535,
+      "rotation": 0,
+      "zOrder": 309,
+      "label": "R10"
+    },
+    {
+      "id": "right-10",
+      "zone": "right",
+      "x": 1160,
+      "y": 580,
+      "rotation": 0,
+      "zOrder": 310,
+      "label": "R11"
+    },
+    {
+      "id": "right-11",
+      "zone": "right",
+      "x": 1160,
+      "y": 625,
+      "rotation": 0,
+      "zOrder": 311,
+      "label": "R12"
+    },
+    {
+      "id": "right-12",
+      "zone": "right",
+      "x": 1160,
+      "y": 670,
+      "rotation": 0,
+      "zOrder": 312,
+      "label": "R13"
+    },
+    {
+      "id": "community-0",
+      "zone": "community",
+      "x": 460,
+      "y": 360,
+      "rotation": 0,
+      "zOrder": 400,
+      "label": "C1"
+    },
+    {
+      "id": "community-1",
+      "zone": "community",
+      "x": 510,
+      "y": 360,
+      "rotation": 0,
+      "zOrder": 401,
+      "label": "C2"
+    },
+    {
+      "id": "community-2",
+      "zone": "community",
+      "x": 560,
+      "y": 360,
+      "rotation": 0,
+      "zOrder": 402,
+      "label": "C3"
+    },
+    {
+      "id": "community-3",
+      "zone": "community",
+      "x": 610,
+      "y": 360,
+      "rotation": 0,
+      "zOrder": 403,
+      "label": "C4"
+    },
+    {
+      "id": "community-4",
+      "zone": "community",
+      "x": 660,
+      "y": 360,
+      "rotation": 0,
+      "zOrder": 404,
+      "label": "C5"
+    },
+    {
+      "id": "community-5",
+      "zone": "community",
+      "x": 710,
+      "y": 360,
+      "rotation": 0,
+      "zOrder": 405,
+      "label": "C6"
+    },
+    {
+      "id": "community-6",
+      "zone": "community",
+      "x": 760,
+      "y": 360,
+      "rotation": 0,
+      "zOrder": 406,
+      "label": "C7"
+    }
   ]
 }
