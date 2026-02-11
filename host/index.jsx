@@ -62,7 +62,7 @@ var SLAM_OVERSHOOT_SCALE = 130;  // 130% of original
 var SLAM_DURATION_FRAMES = 5;    // 5 frames for slam bounce
 var MOVE_DURATION_FRAMES = 10;   // 10 frames (~0.33s) for position animation
 var FLIP_DURATION_FRAMES = 5;    // 5 frames (~0.17s) for rotation/flip animation
-var Z_SPACING = 10;              // Z spacing between cards (3D ordering)
+var Z_SPACING = 1;               // Z spacing between cards (3D ordering - small to avoid perspective size differences)
 var INITIAL_Z_OFFSET = 0;        // Initial Z position for all cards
 
 // Zone center positions for poker layout (1920x1080)
@@ -833,56 +833,92 @@ function applyZoneOffsetExpression(cardLayer, controlLayerName, zoneName) {
             'var offset = ctrl.effect("Top Zone Y")("Slider");\n' +
             'if (numKeys < 2) { [value[0], value[1] + offset, value[2]] }\n' +
             'else {\n' +
-            '  var k1 = key(1); var k2 = key(2);\n' +
-            '  if (time <= k1.time) { [k1.value[0], k1.value[1] + offset, k1.value[2]] }\n' +
-            '  else if (time < k2.time) {\n' +
-            '    var t = (time - k1.time) / (k2.time - k1.time);\n' +
-            '    var startY = k1.value[1] + offset;\n' +
-            '    var endY = k2.value[1];\n' +
-            '    [linear(t, 0, 1, k1.value[0], k2.value[0]), linear(t, 0, 1, startY, endY), linear(t, 0, 1, k1.value[2], k2.value[2])]\n' +
-            '  } else { value }\n' +
+            '  var k1 = key(1);\n' +
+            '  var kLast = key(numKeys);\n' +
+            '  if (numKeys == 2 && k1.value[0] == kLast.value[0] && k1.value[1] == kLast.value[1]) {\n' +
+            '    [value[0], value[1] + offset, value[2]]\n' +
+            '  } else if (time <= k1.time) {\n' +
+            '    [k1.value[0], k1.value[1] + offset, k1.value[2]]\n' +
+            '  } else {\n' +
+            '    var animStartIdx = 1;\n' +
+            '    for (var i = 2; i <= numKeys; i++) { if (key(i).value[0] != k1.value[0] || key(i).value[1] != k1.value[1]) { animStartIdx = i - 1; break; } }\n' +
+            '    var kAnim = key(animStartIdx);\n' +
+            '    var kNext = key(Math.min(animStartIdx + 1, numKeys));\n' +
+            '    if (time <= kAnim.time) { [value[0], value[1] + offset, value[2]] }\n' +
+            '    else if (time < kNext.time) {\n' +
+            '      var t = (time - kAnim.time) / (kNext.time - kAnim.time);\n' +
+            '      [linear(t, 0, 1, kAnim.value[0], kNext.value[0]), linear(t, 0, 1, kAnim.value[1] + offset, kNext.value[1]), linear(t, 0, 1, kAnim.value[2], kNext.value[2])]\n' +
+            '    } else { value }\n' +
+            '  }\n' +
             '}';
     } else if (zoneName === "bottom") {
         expr = baseExpr +
             'var offset = ctrl.effect("Bottom Zone Y")("Slider");\n' +
             'if (numKeys < 2) { [value[0], value[1] + offset, value[2]] }\n' +
             'else {\n' +
-            '  var k1 = key(1); var k2 = key(2);\n' +
-            '  if (time <= k1.time) { [k1.value[0], k1.value[1] + offset, k1.value[2]] }\n' +
-            '  else if (time < k2.time) {\n' +
-            '    var t = (time - k1.time) / (k2.time - k1.time);\n' +
-            '    var startY = k1.value[1] + offset;\n' +
-            '    var endY = k2.value[1];\n' +
-            '    [linear(t, 0, 1, k1.value[0], k2.value[0]), linear(t, 0, 1, startY, endY), linear(t, 0, 1, k1.value[2], k2.value[2])]\n' +
-            '  } else { value }\n' +
+            '  var k1 = key(1);\n' +
+            '  var kLast = key(numKeys);\n' +
+            '  if (numKeys == 2 && k1.value[0] == kLast.value[0] && k1.value[1] == kLast.value[1]) {\n' +
+            '    [value[0], value[1] + offset, value[2]]\n' +
+            '  } else if (time <= k1.time) {\n' +
+            '    [k1.value[0], k1.value[1] + offset, k1.value[2]]\n' +
+            '  } else {\n' +
+            '    var animStartIdx = 1;\n' +
+            '    for (var i = 2; i <= numKeys; i++) { if (key(i).value[0] != k1.value[0] || key(i).value[1] != k1.value[1]) { animStartIdx = i - 1; break; } }\n' +
+            '    var kAnim = key(animStartIdx);\n' +
+            '    var kNext = key(Math.min(animStartIdx + 1, numKeys));\n' +
+            '    if (time <= kAnim.time) { [value[0], value[1] + offset, value[2]] }\n' +
+            '    else if (time < kNext.time) {\n' +
+            '      var t = (time - kAnim.time) / (kNext.time - kAnim.time);\n' +
+            '      [linear(t, 0, 1, kAnim.value[0], kNext.value[0]), linear(t, 0, 1, kAnim.value[1] + offset, kNext.value[1]), linear(t, 0, 1, kAnim.value[2], kNext.value[2])]\n' +
+            '    } else { value }\n' +
+            '  }\n' +
             '}';
     } else if (zoneName === "left") {
         expr = baseExpr +
             'var offset = ctrl.effect("Left Zone X")("Slider");\n' +
             'if (numKeys < 2) { [value[0] + offset, value[1], value[2]] }\n' +
             'else {\n' +
-            '  var k1 = key(1); var k2 = key(2);\n' +
-            '  if (time <= k1.time) { [k1.value[0] + offset, k1.value[1], k1.value[2]] }\n' +
-            '  else if (time < k2.time) {\n' +
-            '    var t = (time - k1.time) / (k2.time - k1.time);\n' +
-            '    var startX = k1.value[0] + offset;\n' +
-            '    var endX = k2.value[0];\n' +
-            '    [linear(t, 0, 1, startX, endX), linear(t, 0, 1, k1.value[1], k2.value[1]), linear(t, 0, 1, k1.value[2], k2.value[2])]\n' +
-            '  } else { value }\n' +
+            '  var k1 = key(1);\n' +
+            '  var kLast = key(numKeys);\n' +
+            '  if (numKeys == 2 && k1.value[0] == kLast.value[0] && k1.value[1] == kLast.value[1]) {\n' +
+            '    [value[0] + offset, value[1], value[2]]\n' +
+            '  } else if (time <= k1.time) {\n' +
+            '    [k1.value[0] + offset, k1.value[1], k1.value[2]]\n' +
+            '  } else {\n' +
+            '    var animStartIdx = 1;\n' +
+            '    for (var i = 2; i <= numKeys; i++) { if (key(i).value[0] != k1.value[0] || key(i).value[1] != k1.value[1]) { animStartIdx = i - 1; break; } }\n' +
+            '    var kAnim = key(animStartIdx);\n' +
+            '    var kNext = key(Math.min(animStartIdx + 1, numKeys));\n' +
+            '    if (time <= kAnim.time) { [value[0] + offset, value[1], value[2]] }\n' +
+            '    else if (time < kNext.time) {\n' +
+            '      var t = (time - kAnim.time) / (kNext.time - kAnim.time);\n' +
+            '      [linear(t, 0, 1, kAnim.value[0] + offset, kNext.value[0]), linear(t, 0, 1, kAnim.value[1], kNext.value[1]), linear(t, 0, 1, kAnim.value[2], kNext.value[2])]\n' +
+            '    } else { value }\n' +
+            '  }\n' +
             '}';
     } else if (zoneName === "right") {
         expr = baseExpr +
             'var offset = ctrl.effect("Right Zone X")("Slider");\n' +
             'if (numKeys < 2) { [value[0] + offset, value[1], value[2]] }\n' +
             'else {\n' +
-            '  var k1 = key(1); var k2 = key(2);\n' +
-            '  if (time <= k1.time) { [k1.value[0] + offset, k1.value[1], k1.value[2]] }\n' +
-            '  else if (time < k2.time) {\n' +
-            '    var t = (time - k1.time) / (k2.time - k1.time);\n' +
-            '    var startX = k1.value[0] + offset;\n' +
-            '    var endX = k2.value[0];\n' +
-            '    [linear(t, 0, 1, startX, endX), linear(t, 0, 1, k1.value[1], k2.value[1]), linear(t, 0, 1, k1.value[2], k2.value[2])]\n' +
-            '  } else { value }\n' +
+            '  var k1 = key(1);\n' +
+            '  var kLast = key(numKeys);\n' +
+            '  if (numKeys == 2 && k1.value[0] == kLast.value[0] && k1.value[1] == kLast.value[1]) {\n' +
+            '    [value[0] + offset, value[1], value[2]]\n' +
+            '  } else if (time <= k1.time) {\n' +
+            '    [k1.value[0] + offset, k1.value[1], k1.value[2]]\n' +
+            '  } else {\n' +
+            '    var animStartIdx = 1;\n' +
+            '    for (var i = 2; i <= numKeys; i++) { if (key(i).value[0] != k1.value[0] || key(i).value[1] != k1.value[1]) { animStartIdx = i - 1; break; } }\n' +
+            '    var kAnim = key(animStartIdx);\n' +
+            '    var kNext = key(Math.min(animStartIdx + 1, numKeys));\n' +
+            '    if (time <= kAnim.time) { [value[0] + offset, value[1], value[2]] }\n' +
+            '    else if (time < kNext.time) {\n' +
+            '      var t = (time - kAnim.time) / (kNext.time - kAnim.time);\n' +
+            '      [linear(t, 0, 1, kAnim.value[0] + offset, kNext.value[0]), linear(t, 0, 1, kAnim.value[1], kNext.value[1]), linear(t, 0, 1, kAnim.value[2], kNext.value[2])]\n' +
+            '    } else { value }\n' +
+            '  }\n' +
             '}';
     } else {
         return;
