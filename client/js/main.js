@@ -1406,24 +1406,10 @@ function moveCardToZone(card, newZoneName, newRotation, newZoneElement) {
     // In Record mode with flipAction: start face-down, then animate flip
     if (appState.phase === 'record' && card.flipAction) {
         card.isFaceUp = false; // Start face-down for animation
-    } else {
-        // Setup mode or no flipAction: determine face state from zone checkbox
-        let flipCheckbox = null;
-        if (newZoneName.startsWith('grid-') && appState.boardLayout.boardStyle === 'poker' && appState.boardLayout.cardPlaces) {
-            // Poker-grid: resolve parent zone for flip checkbox
-            const placeId = newZoneName.replace('grid-', '');
-            const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
-            if (place && place.zone) {
-                flipCheckbox = document.querySelector(`#flip${place.zone.charAt(0).toUpperCase() + place.zone.slice(1)}`);
-            }
-        } else if (!newZoneName.startsWith('grid-')) {
-            // Legacy poker zone
-            flipCheckbox = document.querySelector(`#flip${newZoneName.charAt(0).toUpperCase() + newZoneName.slice(1)}`);
-        }
-        if (flipCheckbox) {
-            card.isFaceUp = flipCheckbox.checked;
-        }
     }
+    // When moving cards between zones, PRESERVE the card's current face state.
+    // Face state is only set from zone flip checkbox during initial placement (placeCardInZone).
+    // Users control flipping explicitly via right-click > flip or the flip checkbox.
 
     // Recalculate zone positions for old zone (fill gaps)
     if (oldZone && oldZone !== newZoneName) {
@@ -4382,6 +4368,7 @@ function initTimelineModulesIntegration() {
             timelineUI.on('clearTimeline', function () {
                 scenarioData.scenario = [];
                 stepSnapshots = [];
+                pendingChangeSnapshot = null; // Clear stale snapshot to prevent ghost steps
                 if (timelineModules.timelineManager) {
                     timelineModules.timelineManager.clearSteps();
                 }
@@ -4390,6 +4377,12 @@ function initTimelineModulesIntegration() {
                 if (typeof restoreToInitialState === 'function') {
                     restoreToInitialState();
                 }
+                // Re-save initial state so new recordings start fresh
+                if (typeof saveInitialStateForExport === 'function') {
+                    saveInitialStateForExport();
+                }
+                // Save a fresh snapshot[0] for the new recording session
+                stepSnapshots.push(JSON.parse(JSON.stringify(scenarioData.initialState)));
                 setStatus('Timeline cleared');
                 console.log('[Timeline] All steps cleared');
             });
