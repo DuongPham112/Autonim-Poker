@@ -960,6 +960,11 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending) {
         var stepDuration = step.duration || 1.0;
         var actions = step.actions || [];
 
+        // Calculate the time when the next step starts (hold keyframes until this time)
+        // This prevents AE from interpolating during the wait period between steps
+        // Note: nextStepTime is recalculated below for swap pairs which may need longer duration
+        var nextStepTime = currentTime + (stepDuration * (1 - blendFactor));
+
         // Separate SELECT/DESELECT from TRANSFORM actions
         var selectActions = [];
         var transformActions = [];
@@ -976,7 +981,7 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending) {
             var selAction = selectActions[si];
             var selLayer = layerMap[selAction.targetId];
             if (selLayer) {
-                processSelectionAction(selLayer, selAction, currentTime, stepDuration, cardSelectionState);
+                processSelectionAction(selLayer, selAction, currentTime, stepDuration, cardSelectionState, nextStepTime);
             }
         }
 
@@ -998,6 +1003,11 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending) {
         }
 
         if (swapPairs.length > 0) {
+            // Recalculate nextStepTime for swap pairs - swap animation may be longer than stepDuration
+            var swapTotalDur = (moveDuration * 2) + pauseDuration;
+            var effectiveSwapDuration = Math.max(stepDuration, swapTotalDur + 0.1);
+            nextStepTime = currentTime + (effectiveSwapDuration * (1 - blendFactor));
+
             // Process swap pairs sequentially
             for (var sp = 0; sp < swapPairs.length; sp++) {
                 var pair = swapPairs[sp];
@@ -1017,11 +1027,11 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending) {
 
                 // Phase 1: Initiator moves (lifts to very front Z, moves to target)
                 var initiatorStartTime = currentTime;
-                processSwapInitiator(initiatorLayer, initiator, initiatorStartTime, moveDuration, initiatorTargetZ, cardSelectionState);
+                processSwapInitiator(initiatorLayer, initiator, initiatorStartTime, moveDuration, initiatorTargetZ, cardSelectionState, nextStepTime);
 
                 // Process initiator FLIP/SLAM at initiator start time
                 if (initiator.flip === true) {
-                    processFlipEffect(initiatorLayer, initiatorStartTime, stepDuration, initiator.flipToFaceUp);
+                    processFlipEffect(initiatorLayer, initiatorStartTime, stepDuration, initiator.flipToFaceUp, nextStepTime);
                 }
                 if (initiator.effect === "SLAM") {
                     processSlamEffect(initiatorLayer, initiatorStartTime, stepDuration, comp);
@@ -1029,11 +1039,11 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending) {
 
                 // Phase 2: Displaced card moves after initiator finishes + pause
                 var displacedStartTime = initiatorStartTime + moveDuration + pauseDuration;
-                processSwapDisplaced(displacedLayer, displaced, displacedStartTime, moveDuration, displacedTargetZ, cardSelectionState);
+                processSwapDisplaced(displacedLayer, displaced, displacedStartTime, moveDuration, displacedTargetZ, cardSelectionState, nextStepTime);
 
                 // Process displaced FLIP/SLAM at displaced start time
                 if (displaced.flip === true) {
-                    processFlipEffect(displacedLayer, displacedStartTime, stepDuration, displaced.flipToFaceUp);
+                    processFlipEffect(displacedLayer, displacedStartTime, stepDuration, displaced.flipToFaceUp, nextStepTime);
                 }
                 if (displaced.effect === "SLAM") {
                     processSlamEffect(displacedLayer, displacedStartTime, stepDuration, comp);
@@ -1070,14 +1080,14 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending) {
                 var targetZ = calculateTargetZ(action, baseZForMovingCards, moveCounter);
                 moveCounter++;
 
-                processTransformAction(layer, action, currentTime, stepDuration, targetZ, cardSelectionState);
+                processTransformAction(layer, action, currentTime, stepDuration, targetZ, cardSelectionState, nextStepTime);
 
                 if (cardSelectionState[action.targetId]) {
                     cardSelectionState[action.targetId] = false;
                 }
 
                 if (action.flip === true) {
-                    processFlipEffect(layer, currentTime, stepDuration, action.flipToFaceUp);
+                    processFlipEffect(layer, currentTime, stepDuration, action.flipToFaceUp, nextStepTime);
                 }
                 if (action.effect === "SLAM") {
                     processSlamEffect(layer, currentTime, stepDuration, comp);
@@ -1118,8 +1128,9 @@ function calculateTargetZ(action, baseZForMovingCards, moveCounter) {
 /**
  * Process swap initiator card - lifts to very front Z and moves to target
  * Initiator is the card the user dragged, it moves FIRST
+ * @param holdUntilTime - Time to hold end position until (next step start)
  */
-function processSwapInitiator(layer, action, startTime, moveDuration, targetZ, selectionState) {
+function processSwapInitiator(layer, action, startTime, moveDuration, targetZ, selectionState, holdUntilTime) {
     var frameDuration = 1 / FRAME_RATE;
     var rotDuration = FLIP_DURATION_FRAMES * frameDuration;
 
@@ -1173,10 +1184,20 @@ function processSwapInitiator(layer, action, startTime, moveDuration, targetZ, s
     // Keyframe 3: End position with targetZ
     positionProp.setValueAtTime(posEndTime, [endX, endY, targetZ]);
 
+    // Keyframe 4: Hold end position until next step starts
+    if (holdUntilTime !== undefined && holdUntilTime > posEndTime + frameDuration) {
+        positionProp.setValueAtTime(holdUntilTime, [endX, endY, targetZ]);
+    }
+
     // Rotation
     var rotEndTime = startTime + rotDuration;
     rotationProp.setValueAtTime(startTime, startRot);
     rotationProp.setValueAtTime(rotEndTime, endRot);
+
+    // Hold rotation until next step
+    if (holdUntilTime !== undefined && holdUntilTime > rotEndTime + frameDuration) {
+        rotationProp.setValueAtTime(holdUntilTime, endRot);
+    }
 
     applyBezierEasing(positionProp);
     applyBezierEasing(rotationProp);
@@ -1185,8 +1206,9 @@ function processSwapInitiator(layer, action, startTime, moveDuration, targetZ, s
 /**
  * Process swap displaced card - waits for initiator, then moves to new position
  * Displaced card is the one being "pushed out" by the initiator
+ * @param holdUntilTime - Time to hold end position until (next step start)
  */
-function processSwapDisplaced(layer, action, startTime, moveDuration, targetZ, selectionState) {
+function processSwapDisplaced(layer, action, startTime, moveDuration, targetZ, selectionState, holdUntilTime) {
     var frameDuration = 1 / FRAME_RATE;
     var rotDuration = FLIP_DURATION_FRAMES * frameDuration;
 
@@ -1228,10 +1250,20 @@ function processSwapDisplaced(layer, action, startTime, moveDuration, targetZ, s
     // Keyframe 2: End position with targetZ
     positionProp.setValueAtTime(posEndTime, [endX, endY, targetZ]);
 
+    // Keyframe 3: Hold end position until next step starts
+    if (holdUntilTime !== undefined && holdUntilTime > posEndTime + frameDuration) {
+        positionProp.setValueAtTime(holdUntilTime, [endX, endY, targetZ]);
+    }
+
     // Rotation
     var rotEndTime = startTime + rotDuration;
     rotationProp.setValueAtTime(startTime, startRot);
     rotationProp.setValueAtTime(rotEndTime, endRot);
+
+    // Hold rotation until next step
+    if (holdUntilTime !== undefined && holdUntilTime > rotEndTime + frameDuration) {
+        rotationProp.setValueAtTime(holdUntilTime, endRot);
+    }
 
     applyBezierEasing(positionProp);
     applyBezierEasing(rotationProp);
@@ -1243,8 +1275,9 @@ function processSwapDisplaced(layer, action, startTime, moveDuration, targetZ, s
  * SELECT: moves card up by 25px (scaled to AE coordinates)
  * DESELECT: moves card back down to original position
  * Uses position from action data (calculated in computeActions via getAEPosition)
+ * @param holdUntilTime - Time to hold end position until (next step start)
  */
-function processSelectionAction(layer, action, startTime, stepDuration, selectionState) {
+function processSelectionAction(layer, action, startTime, stepDuration, selectionState, holdUntilTime) {
     var frameDuration = 1 / FRAME_RATE;
     var selectDuration = 5 * frameDuration; // 5 frames for selection animation
 
@@ -1282,6 +1315,11 @@ function processSelectionAction(layer, action, startTime, stepDuration, selectio
     positionProp.setValueAtTime(startTime, [baseX, startY, baseZ]);
     positionProp.setValueAtTime(endTime, [baseX, endY, baseZ]);
 
+    // Hold end position until next step starts
+    if (holdUntilTime !== undefined && holdUntilTime > endTime + frameDuration) {
+        positionProp.setValueAtTime(holdUntilTime, [baseX, endY, baseZ]);
+    }
+
     // Apply smooth easing
     applyBezierEasing(positionProp);
 }
@@ -1292,8 +1330,9 @@ function processSelectionAction(layer, action, startTime, stepDuration, selectio
  * Process transform (position, rotation) animation (3D)
  * Includes Z-position animation for stacking order
  * @param selectionState - tracks which cards are currently "lifted" from SELECT action
+ * @param holdUntilTime - Time to hold end position until (next step start)
  */
-function processTransformAction(layer, action, startTime, duration, targetZ, selectionState) {
+function processTransformAction(layer, action, startTime, duration, targetZ, selectionState, holdUntilTime) {
     var frameDuration = 1 / FRAME_RATE;
     var moveDuration = MOVE_DURATION_FRAMES * frameDuration;  // ~0.33s for movement
     var rotDuration = FLIP_DURATION_FRAMES * frameDuration;   // ~0.17s for rotation
@@ -1365,10 +1404,21 @@ function processTransformAction(layer, action, startTime, duration, targetZ, sel
     // Keyframe 3: End position with targetZ
     positionProp.setValueAtTime(posEndTime, [endX, endY, targetZ]);
 
+    // Keyframe 4: Hold end position until next step starts
+    // This prevents AE from interpolating during the wait period between steps
+    if (holdUntilTime !== undefined && holdUntilTime > posEndTime + frameDuration) {
+        positionProp.setValueAtTime(holdUntilTime, [endX, endY, targetZ]);
+    }
+
     // Rotation animation: 5 frames (~0.17s) - quick and decisive
     var rotEndTime = startTime + rotDuration;
     rotationProp.setValueAtTime(startTime, startRot);
     rotationProp.setValueAtTime(rotEndTime, endRot);
+
+    // Hold rotation until next step
+    if (holdUntilTime !== undefined && holdUntilTime > rotEndTime + frameDuration) {
+        rotationProp.setValueAtTime(holdUntilTime, endRot);
+    }
 
     // Apply Bezier interpolation
     applyBezierEasing(positionProp);
@@ -1383,8 +1433,9 @@ function processTransformAction(layer, action, startTime, duration, targetZ, sel
  * Switch visibility at 90° (perpendicular to view)
  * 
  * TIMING: Flip starts 1 frame before move ends, so card flips as it lands
+ * @param holdUntilTime - Time to hold end rotation until (next step start)
  */
-function processFlipEffect(layer, startTime, duration, flipToFaceUp) {
+function processFlipEffect(layer, startTime, duration, flipToFaceUp, holdUntilTime) {
     var yRotProp = layer.property("Y Rotation");
 
     var frameDuration = 1 / FRAME_RATE;
@@ -1398,14 +1449,22 @@ function processFlipEffect(layer, startTime, duration, flipToFaceUp) {
 
     // 1. ANIMATE Y ROTATION (Flip effect)
     // Face-down = 180°, Face-up = 0°
+    var endRotValue;
     if (flipToFaceUp) {
         // Flip to face up: 180° -> 0°
         yRotProp.setValueAtTime(flipStartTime, 180);
         yRotProp.setValueAtTime(endTime, 0);
+        endRotValue = 0;
     } else {
         // Flip to face down: 0° -> 180°
         yRotProp.setValueAtTime(flipStartTime, 0);
         yRotProp.setValueAtTime(endTime, 180);
+        endRotValue = 180;
+    }
+
+    // Hold Y rotation until next step starts
+    if (holdUntilTime !== undefined && holdUntilTime > endTime + frameDuration) {
+        yRotProp.setValueAtTime(holdUntilTime, endRotValue);
     }
 
     applyBezierEasing(yRotProp);
