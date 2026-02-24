@@ -164,6 +164,9 @@ let countdownDisplay, countdownTimer, countdownBarFill, cancelCountdownBtn, grou
 // Status
 let statusMessage;
 
+// Help Modal Elements
+let helpModal, closeHelpBtn, helpModalOverlay;
+
 // Step snapshots for replay and restore
 let stepSnapshots = [];
 
@@ -551,6 +554,15 @@ function bindEvents() {
     if (confirmWarningBtn) confirmWarningBtn.addEventListener('click', confirmWarning);
     if (cancelWarningBtn) cancelWarningBtn.addEventListener('click', hideWarningModal);
 
+    // Help Modal
+    helpModal = document.getElementById('helpModal');
+    closeHelpBtn = document.getElementById('closeHelpBtn');
+    helpModalOverlay = helpModal ? helpModal.querySelector('.help-modal-overlay') : null;
+    const btnHelp = document.getElementById('btn-help');
+    if (btnHelp) btnHelp.addEventListener('click', showHelpModal);
+    if (closeHelpBtn) closeHelpBtn.addEventListener('click', hideHelpModal);
+    if (helpModalOverlay) helpModalOverlay.addEventListener('click', hideHelpModal);
+
     // Auto-Step Popup
     if (autoStepYes) autoStepYes.addEventListener('click', handleAutoStepYes);
     if (autoStepNo) autoStepNo.addEventListener('click', handleAutoStepNo);
@@ -619,6 +631,9 @@ function bindEvents() {
 
     // Pusoy Layout Slider Controls
     setupPusoySliderControls();
+
+    // Card Sorting Grid Slider Controls
+    setupCardSortingSliderControls();
 }
 
 
@@ -3311,6 +3326,33 @@ function confirmWarning() {
 // AUTO-STEP POPUP
 // ============================================
 
+// ============================================
+// HELP MODAL
+// ============================================
+
+function showHelpModal() {
+    if (!helpModal) return;
+    helpModal.classList.remove('hidden');
+}
+
+function hideHelpModal() {
+    if (!helpModal) return;
+    helpModal.classList.add('hidden');
+
+    // Stop YouTube playback by clearing iframe src temporarily
+    helpModal.querySelectorAll('iframe').forEach(iframe => {
+        const src = iframe.getAttribute('src');
+        if (src) {
+            iframe.setAttribute('data-src', src);
+            iframe.setAttribute('src', '');
+        }
+    });
+}
+
+// ============================================
+// AUTO-STEP POPUP
+// ============================================
+
 /**
  * Show auto-step popup when card is moved in Record mode
  */
@@ -3615,6 +3657,11 @@ function toggleCtxSlamAll() {
 function handleLoadPreset() {
     const presetValue = presetSelect.value;
 
+    // Clean up previous layout before loading new one
+    clearCardPlaceMarkers();
+    clearCardDropZones();
+    gameContainer.classList.remove('grid-mode', 'poker-grid-mode');
+
     if (presetValue === 'poker') {
         loadPokerLayout();
     } else if (presetValue === 'pusoy') {
@@ -3625,6 +3672,9 @@ function handleLoadPreset() {
         // Keep current custom layout
         setStatus('Custom layout - modify as needed');
     }
+
+    // Toggle Grid Size controls visibility (only for card-sorting/custom)
+    toggleGridControlsVisibility(presetValue);
 
     updateCardPlacesList();
     renderCardPlaceMarkers();
@@ -3852,12 +3902,18 @@ function setupPusoySliderControls() {
     };
 
     // Show/hide on preset change
-    presetSelect.addEventListener('change', togglePusoyControls);
+    presetSelect.addEventListener('change', () => {
+        togglePusoyControls();
+        toggleGridControlsVisibility(presetSelect.value);
+    });
 
     // Show controls after preset is loaded
     if (loadPresetBtn) {
         loadPresetBtn.addEventListener('click', () => {
-            setTimeout(togglePusoyControls, 100);
+            setTimeout(() => {
+                togglePusoyControls();
+                toggleGridControlsVisibility(presetSelect.value);
+            }, 100);
         });
     }
 
@@ -3869,20 +3925,18 @@ function setupPusoySliderControls() {
 
 /**
  * Load grid layout with specified columns and rows
+ * Uses UI coordinates (1280x720) — consistent with loadPokerLayout/loadPusoyLayout
  */
 function loadGridLayout(cols, rows) {
     const places = [];
 
-    // Use pokerTable dimensions (same reference as drag handler)
-    const pokerTable = document.getElementById('pokerTable');
-    const tableWidth = pokerTable ? pokerTable.offsetWidth : 600;
-    const tableHeight = pokerTable ? pokerTable.offsetHeight : 400;
-
-    // Calculate spacing based on card dimensions and table size
-    const spacingX = 80;
-    const spacingY = 100;
-    const startX = (tableWidth - (cols * spacingX)) / 2 + CARD_WIDTH / 2;
-    const startY = (tableHeight - (rows * spacingY)) / 2 + CARD_HEIGHT / 2;
+    // Use UI coordinate system (1280x720) for consistency with other layouts
+    const spacingX = 100;  // Horizontal spacing between cards in UI coords
+    const spacingY = 120;  // Vertical spacing between cards in UI coords
+    const totalW = cols * spacingX;
+    const totalH = rows * spacingY;
+    const startX = (UI_WIDTH - totalW) / 2 + spacingX / 2;
+    const startY = (UI_HEIGHT - totalH) / 2 + spacingY / 2;
 
     let placeId = 0;
     for (let row = 0; row < rows; row++) {
@@ -3902,6 +3956,7 @@ function loadGridLayout(cols, rows) {
     appState.boardLayout = {
         type: 'grid',
         name: `Card Sorting (${cols}x${rows})`,
+        boardStyle: 'card-sorting',
         gridCols: cols,
         gridRows: rows,
         cardPlaces: places
@@ -3909,6 +3964,92 @@ function loadGridLayout(cols, rows) {
 
     gameContainer.classList.add('grid-mode');
     setStatus(`Loaded ${cols}x${rows} grid layout`);
+}
+
+/** 
+ * Toggle Grid Size / Card Sorting controls visibility based on preset
+ */
+function toggleGridControlsVisibility(presetValue) {
+    const gridControlsEl = document.querySelector('.grid-controls');
+    const cardSortingControls = document.getElementById('cardSortingControls');
+
+    const showGrid = (presetValue === 'card-sorting' || presetValue === 'custom');
+    if (gridControlsEl) gridControlsEl.classList.toggle('hidden', !showGrid);
+
+    const showSorting = (presetValue === 'card-sorting');
+    if (cardSortingControls) cardSortingControls.classList.toggle('hidden', !showSorting);
+}
+
+/** 
+ * Snap/redistribute card places using current slider spacing values
+ */
+function snapCardPlacesToGrid(spacingX, spacingY) {
+    const places = appState.boardLayout.cardPlaces;
+    if (!places || places.length === 0) return;
+
+    const cols = appState.boardLayout.gridCols || 4;
+    const rows = appState.boardLayout.gridRows || Math.ceil(places.length / cols);
+
+    const totalW = cols * spacingX;
+    const totalH = rows * spacingY;
+    const startX = (UI_WIDTH - totalW) / 2 + spacingX / 2;
+    const startY = (UI_HEIGHT - totalH) / 2 + spacingY / 2;
+
+    places.forEach((place, idx) => {
+        const col = idx % cols;
+        const row = Math.floor(idx / cols);
+        place.x = startX + col * spacingX;
+        place.y = startY + row * spacingY;
+        place.col = col;
+        place.row = row;
+        place.rotation = 0;
+    });
+
+    renderCardPlaceMarkers();
+    updateCardPlacesList();
+    setStatus(`Snapped ${places.length} cards to ${cols}×${rows} grid`);
+}
+
+/** 
+ * Reset card sorting sliders to defaults and redistribute
+ */
+function handleGridResetDefault() {
+    const hSlider = document.getElementById('gridHSpacing');
+    const vSlider = document.getElementById('gridVSpacing');
+    const hValue = document.getElementById('gridHSpacingValue');
+    const vValue = document.getElementById('gridVSpacingValue');
+
+    if (hSlider) { hSlider.value = 100; if (hValue) hValue.textContent = '100'; }
+    if (vSlider) { vSlider.value = 120; if (vValue) vValue.textContent = '120'; }
+
+    snapCardPlacesToGrid(100, 120);
+    setStatus('Reset grid to default spacing');
+}
+
+/** 
+ * Setup card sorting slider controls (H/V spacing) — similar to Pusoy slider pattern
+ */
+function setupCardSortingSliderControls() {
+    const hSlider = document.getElementById('gridHSpacing');
+    const vSlider = document.getElementById('gridVSpacing');
+    const hValue = document.getElementById('gridHSpacingValue');
+    const vValue = document.getElementById('gridVSpacingValue');
+    const resetBtn = document.getElementById('gridResetDefaultBtn');
+
+    const updateGridFromSliders = () => {
+        const sx = hSlider ? parseInt(hSlider.value) : 100;
+        const sy = vSlider ? parseInt(vSlider.value) : 120;
+        if (hValue) hValue.textContent = String(sx);
+        if (vValue) vValue.textContent = String(sy);
+
+        if (appState.boardLayout.boardStyle === 'card-sorting') {
+            snapCardPlacesToGrid(sx, sy);
+        }
+    };
+
+    if (hSlider) hSlider.addEventListener('input', updateGridFromSliders);
+    if (vSlider) vSlider.addEventListener('input', updateGridFromSliders);
+    if (resetBtn) resetBtn.addEventListener('click', handleGridResetDefault);
 }
 
 /**

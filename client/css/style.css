@@ -2898,3 +2898,212 @@ body.grouping-mode-active .zone-card:hover:not(.grouped) {
 .update-status--idle {
     display: none;
 }
+
+/* ============================================
+   HELP BUTTON
+   ============================================ */
+.btn-help {
+    position: relative;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    padding: 0;
+}
+
+.btn-help:hover {
+    border-color: var(--accent-blue);
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+}
+
+/* ============================================
+   HELP MODAL
+   ============================================ */
+.help-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: helpModalFadeIn 0.2s ease;
+}
+
+.help-modal.hidden {
+    display: none;
+}
+
+@keyframes helpModalFadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+.help-modal-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+}
+
+.help-modal-content {
+    position: relative;
+    width: 90%;
+    max-width: 860px;
+    max-height: 90vh;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.help-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.help-modal-header h2 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.help-modal-close {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.help-modal-close:hover {
+    border-color: var(--accent-red);
+    color: var(--accent-red);
+    background: rgba(241, 76, 76, 0.1);
+}
+
+/* Video Grid — 2×2 */
+.help-video-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    padding: 20px 24px;
+}
+
+/* Individual Video Card */
+.help-video-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+}
+
+.help-video-card:hover {
+    border-color: var(--accent-blue);
+}
+
+.help-video-card.coming-soon {
+    opacity: 0.6;
+}
+
+.help-video-title {
+    padding: 10px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.coming-soon-badge {
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 2px 6px;
+    background: rgba(206, 145, 120, 0.2);
+    color: var(--accent-orange);
+    border-radius: 3px;
+}
+
+/* 16:9 aspect-ratio wrapper for video */
+.help-video-wrapper {
+    position: relative;
+    width: 100%;
+    padding-bottom: 56.25%;
+    /* 16:9 */
+    background: #111;
+}
+
+.help-video-wrapper iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
+/* Placeholder shown when no video URL is set */
+.help-video-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.help-video-placeholder .placeholder-icon {
+    font-size: 32px;
+    opacity: 0.5;
+}
+
+.help-video-placeholder.ai-placeholder {
+    background: linear-gradient(135deg, rgba(14, 99, 156, 0.1) 0%, rgba(78, 201, 176, 0.08) 100%);
+}
+
+/* Hide placeholder when iframe has src */
+.help-video-wrapper iframe[src]:not([src=""])~.help-video-placeholder {
+    display: none;
+}
+
+/* Responsive — single column on smaller panels */
+@media (max-width: 700px) {
+    .help-video-grid {
+        grid-template-columns: 1fr;
+    }
+}

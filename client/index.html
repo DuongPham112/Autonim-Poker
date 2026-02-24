@@ -95,7 +95,7 @@
                 <header class="header">
                     <div class="header-left">
                         <h1 class="logo">🎴 Autonim-Poker</h1>
-                        <span class="version" id="pluginVersion">v2.0.1-alpha</span>
+                        <span class="version" id="pluginVersion">v2.0.2</span>
                     </div>
                     <div class="header-center">
                         <div class="phase-indicator">
@@ -105,6 +105,10 @@
                         </div>
                     </div>
                     <div class="header-right">
+                        <!-- Help Button -->
+                        <button id="btn-help" class="btn-help" title="Tutorial Videos">
+                            ❓
+                        </button>
                         <!-- Update Button -->
                         <button id="btn-check-update" class="btn-update" title="Check for Updates">
                             🔄
@@ -317,8 +321,8 @@
                             </div>
                         </div>
 
-                        <!-- Grid Controls -->
-                        <div class="control-group grid-controls">
+                        <!-- Grid Controls (hidden for poker/pusoy, visible for card-sorting/custom) -->
+                        <div class="control-group grid-controls hidden" id="gridControls">
                             <label>Grid Size:</label>
                             <div class="grid-inputs">
                                 <input type="number" id="gridCols" value="4" min="1" max="8">
@@ -361,6 +365,28 @@
                                     <option value="image">Custom Image</option>
                                 </select>
                             </div>
+                        </div>
+
+                        <!-- Card Sorting Grid Controls (visible when card-sorting preset) -->
+                        <div class="control-group card-sorting-controls hidden" id="cardSortingControls">
+                            <label>📐 Grid Spacing:</label>
+
+                            <div class="slider-control">
+                                <span class="slider-label">H Spacing:</span>
+                                <input type="range" id="gridHSpacing" min="30" max="200" value="100">
+                                <span class="slider-value" id="gridHSpacingValue">100</span>
+                            </div>
+
+                            <div class="slider-control">
+                                <span class="slider-label">V Spacing:</span>
+                                <input type="range" id="gridVSpacing" min="30" max="200" value="120">
+                                <span class="slider-value" id="gridVSpacingValue">120</span>
+                            </div>
+
+                            <button id="gridResetDefaultBtn" class="btn btn-sm btn-secondary"
+                                title="Reset to default even grid">
+                                🔄 Reset Default
+                            </button>
                         </div>
 
                         <!-- Card Place Actions -->
@@ -541,6 +567,71 @@
             <div class="modal-actions">
                 <button id="cancelWarningBtn" class="btn btn-secondary">Cancel</button>
                 <button id="confirmWarningBtn" class="btn btn-danger">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Help / Tutorial Modal -->
+    <div id="helpModal" class="help-modal hidden">
+        <div class="help-modal-overlay"></div>
+        <div class="help-modal-content">
+            <div class="help-modal-header">
+                <h2>📖 Tutorial Videos</h2>
+                <button id="closeHelpBtn" class="help-modal-close" title="Close">✕</button>
+            </div>
+            <div class="help-video-grid">
+                <!-- Video 1: Overview -->
+                <div class="help-video-card">
+                    <div class="help-video-title">1 — Overview &amp; Board Setting Phase</div>
+                    <div class="help-video-wrapper">
+                        <iframe id="helpVideo1" src="" frameborder="0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowfullscreen></iframe>
+                        <div class="help-video-placeholder">
+                            <span class="placeholder-icon">🎬</span>
+                            <span>Video coming soon</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Video 2: Setup Phase -->
+                <div class="help-video-card">
+                    <div class="help-video-title">2 — Setup Phase</div>
+                    <div class="help-video-wrapper">
+                        <iframe id="helpVideo2" src="" frameborder="0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowfullscreen></iframe>
+                        <div class="help-video-placeholder">
+                            <span class="placeholder-icon">🎬</span>
+                            <span>Video coming soon</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Video 3: Record Phase -->
+                <div class="help-video-card">
+                    <div class="help-video-title">3 — Record Phase</div>
+                    <div class="help-video-wrapper">
+                        <iframe id="helpVideo3" src="" frameborder="0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowfullscreen></iframe>
+                        <div class="help-video-placeholder">
+                            <span class="placeholder-icon">🎬</span>
+                            <span>Video coming soon</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Video 4: AI (Coming Soon) -->
+                <div class="help-video-card coming-soon">
+                    <div class="help-video-title">
+                        4 — AI
+                        <span class="coming-soon-badge">Coming Soon</span>
+                    </div>
+                    <div class="help-video-wrapper">
+                        <div class="help-video-placeholder ai-placeholder">
+                            <span class="placeholder-icon">🤖</span>
+                            <span>AI features coming soon</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
