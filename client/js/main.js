@@ -3435,6 +3435,21 @@ function handleAutoStepNo() {
     // Revert all cards to previous snapshot
     restoreFromSnapshot(pendingChangeSnapshot);
 
+    // Clear sticky flags that survive snapshot restoration
+    // These are set via UI checkboxes, not stored in snapshots,
+    // and can cause spurious TRANSFORM actions in subsequent steps
+    appState.tableCards.forEach(card => {
+        card.flipAction = false;
+        card.slamEffect = false;
+    });
+
+    // Re-apply "grouped" CSS class to restored grouped cards
+    appState.groupedCards.forEach(card => {
+        if (card.element) {
+            card.element.classList.add('grouped');
+        }
+    });
+
     setStatus('Changes reverted', 'info');
     hideAutoStepPopup();
 }
@@ -3645,6 +3660,41 @@ function toggleCtxSlamAll() {
     setTimeout(() => {
         hideCardContextMenu();
     }, 300);
+}
+
+// ============================================
+// Z-ORDER UTILITY
+// ============================================
+
+/**
+ * Ensure all card places have a valid zOrder for AE Z-positioning.
+ * RULE: Cards visually "in front" (lower on screen / higher row) get HIGHER zOrder.
+ * Higher zOrder → more negative Z in AE → closer to camera → in front.
+ *
+ * Priority:
+ * 1. If ANY place already has zOrder → skip (layout manages its own, e.g. Poker/Pusoy)
+ * 2. If place has row/col → calculate (row * maxCols) + col
+ * 3. Fallback → use array index
+ */
+function ensureZOrder(cardPlaces) {
+    if (!cardPlaces || cardPlaces.length === 0) return;
+
+    // Check if ANY place already has zOrder (layout self-manages)
+    var hasExistingZOrder = cardPlaces.some(function (p) { return p.zOrder !== undefined; });
+    if (hasExistingZOrder) return;
+
+    // Find max cols for row-based calculation
+    var maxCols = cardPlaces.reduce(function (max, p) {
+        return Math.max(max, (p.col || 0) + 1);
+    }, 1);
+
+    cardPlaces.forEach(function (place, index) {
+        if (place.row !== undefined && place.col !== undefined) {
+            place.zOrder = (place.row * maxCols) + place.col;
+        } else {
+            place.zOrder = index;
+        }
+    });
 }
 
 // ============================================
@@ -3962,6 +4012,9 @@ function loadGridLayout(cols, rows) {
         cardPlaces: places
     };
 
+    // Auto-assign zOrder based on row/col
+    ensureZOrder(places);
+
     gameContainer.classList.add('grid-mode');
     setStatus(`Loaded ${cols}x${rows} grid layout`);
 }
@@ -4003,6 +4056,8 @@ function snapCardPlacesToGrid(spacingX, spacingY) {
         place.col = col;
         place.row = row;
         place.rotation = 0;
+        // Recalculate zOrder based on new row/col
+        place.zOrder = (row * cols) + col;
     });
 
     renderCardPlaceMarkers();
@@ -4076,7 +4131,8 @@ function handleAddCardPlace() {
         id: `place-${newId}`,
         x: containerWidth / 2,
         y: containerHeight / 2,
-        label: String(newId + 1)
+        label: String(newId + 1),
+        zOrder: newId
     };
 
     appState.boardLayout.cardPlaces.push(newPlace);
@@ -4113,6 +4169,10 @@ function handleSavePreset() {
             id: p.id,
             x: Math.round(p.x),
             y: Math.round(p.y),
+            col: p.col,
+            row: p.row,
+            rotation: p.rotation || 0,
+            zOrder: p.zOrder,
             label: p.label
         }))
     };

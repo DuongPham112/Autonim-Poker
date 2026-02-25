@@ -976,12 +976,32 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending) {
             }
         }
 
+        // Build set of cards that have BOTH a DESELECT AND a TRANSFORM in this step
+        // For those cards, DESELECT hold should stop at transformStartTime to avoid keyframe collision
+        var selectAnimDuration = 5 * frameDuration; // Must match processSelectionAction duration
+        var cardsWithDeselectAndTransform = {};
+        for (var di = 0; di < selectActions.length; di++) {
+            if (selectActions[di].type === "DESELECT") {
+                for (var dti = 0; dti < transformActions.length; dti++) {
+                    if (transformActions[dti].targetId === selectActions[di].targetId) {
+                        cardsWithDeselectAndTransform[selectActions[di].targetId] = true;
+                        break;
+                    }
+                }
+            }
+        }
+
         // Process SELECT/DESELECT first
         for (var si = 0; si < selectActions.length; si++) {
             var selAction = selectActions[si];
             var selLayer = layerMap[selAction.targetId];
             if (selLayer) {
-                processSelectionAction(selLayer, selAction, currentTime, stepDuration, cardSelectionState, nextStepTime);
+                // If card has DESELECT + TRANSFORM, limit hold to transformStartTime
+                var selHoldUntil = nextStepTime;
+                if (selAction.type === "DESELECT" && cardsWithDeselectAndTransform[selAction.targetId]) {
+                    selHoldUntil = currentTime + selectAnimDuration;
+                }
+                processSelectionAction(selLayer, selAction, currentTime, stepDuration, cardSelectionState, selHoldUntil);
             }
         }
 
@@ -1069,6 +1089,8 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending) {
         }
 
         // Process non-swap TRANSFORM actions normally
+        // Reuse cardsWithDeselectAndTransform from above to offset start time
+
         for (var ti = 0; ti < transformActions.length; ti++) {
             if (processedIndices[ti]) continue; // Skip swap-processed actions
 
@@ -1080,17 +1102,24 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending) {
                 var targetZ = calculateTargetZ(action, baseZForMovingCards, moveCounter);
                 moveCounter++;
 
-                processTransformAction(layer, action, currentTime, stepDuration, targetZ, cardSelectionState, nextStepTime);
+                // If this card also had a DESELECT in this step, offset TRANSFORM start time
+                // so DESELECT animation completes first (prevents keyframe overwrite on Position)
+                var transformStartTime = currentTime;
+                if (cardsWithDeselectAndTransform[action.targetId]) {
+                    transformStartTime = currentTime + selectAnimDuration;
+                }
+
+                processTransformAction(layer, action, transformStartTime, stepDuration, targetZ, cardSelectionState, nextStepTime);
 
                 if (cardSelectionState[action.targetId]) {
                     cardSelectionState[action.targetId] = false;
                 }
 
                 if (action.flip === true) {
-                    processFlipEffect(layer, currentTime, stepDuration, action.flipToFaceUp, nextStepTime);
+                    processFlipEffect(layer, transformStartTime, stepDuration, action.flipToFaceUp, nextStepTime);
                 }
                 if (action.effect === "SLAM") {
-                    processSlamEffect(layer, currentTime, stepDuration, comp);
+                    processSlamEffect(layer, transformStartTime, stepDuration, comp);
                 }
             } catch (e) {
                 $.writeln("Error processing action for " + action.targetId + ": " + e.toString());
@@ -1666,52 +1695,98 @@ function createVisualMouseLayer(comp, swapTimeline, finalTime) {
 // EASING FUNCTIONS
 // ============================================
 
+/**
+ * Helper: Apply temporal ease to a keyframe, auto-detecting dimensions.
+ * Uses try/catch cascade: try 3D → 2D → 1D (bulletproof for all AE versions).
+ */
+function setEaseAtKey(property, keyIndex, easeIn, easeOut) {
+    // Try 3D first (Position in 3D comp)
+    try {
+        property.setTemporalEaseAtKey(keyIndex,
+            [easeIn, easeIn, easeIn],
+            [easeOut, easeOut, easeOut]);
+        return;
+    } catch (e3) { }
+
+    // Try 2D (Position in 2D comp, Scale, etc.)
+    try {
+        property.setTemporalEaseAtKey(keyIndex,
+            [easeIn, easeIn],
+            [easeOut, easeOut]);
+        return;
+    } catch (e2) { }
+
+    // Fallback 1D (Rotation, Opacity, etc.)
+    property.setTemporalEaseAtKey(keyIndex,
+        [easeIn],
+        [easeOut]);
+}
+
+/**
+ * Check if two keyframe values are identical (for hold-duplicate detection).
+ * Works for scalar, 2D, and 3D values.
+ */
+function areKeyValuesEqual(val1, val2) {
+    // Convert to string for bulletproof comparison across all value types
+    return val1.toString() === val2.toString();
+}
+
 function applyBezierEasing(property) {
     var numKeys = property.numKeys;
     if (numKeys < 2) return;
 
-    for (var k = 1; k <= numKeys; k++) {
+    // Phase 1: Detect hold-duplicate keyframes (consecutive keys with identical values)
+    // and set them to HOLD interpolation so they don't steal easing from motion curves.
+    for (var k = 1; k < numKeys; k++) {
         try {
-            // Skip Hold keyframes
-            if (property.keyOutInterpolationType(k) === KeyframeInterpolationType.HOLD) continue;
-
-            property.setInterpolationTypeAtKey(k, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
-
-            // Strong ease-in/ease-out for smooth motion
-            // speed=0 means velocity is zero at keyframe (smooth stop/start)
-            // influence=75 gives strong easing effect
-            var easeIn = new KeyframeEase(0, 75);
-            var easeOut = new KeyframeEase(0, 75);
-
-            var dims = (property.value instanceof Array) ? property.value.length : 1;
-
-            if (dims === 1) {
-                property.setTemporalEaseAtKey(k, [easeIn], [easeOut]);
-            } else if (dims === 2) {
-                property.setTemporalEaseAtKey(k, [easeIn, easeIn], [easeOut, easeOut]);
-            } else {
-                property.setTemporalEaseAtKey(k, [easeIn, easeIn, easeIn], [easeOut, easeOut, easeOut]);
+            if (areKeyValuesEqual(property.keyValue(k), property.keyValue(k + 1))) {
+                // Same value = hold/freeze segment. Set outgoing of k to HOLD
+                property.setInterpolationTypeAtKey(k,
+                    property.keyInInterpolationType(k),
+                    KeyframeInterpolationType.HOLD);
             }
         } catch (e) { }
+    }
+
+    // Phase 2: Apply strong Bezier easing to actual motion keyframes
+    for (var k = 1; k <= numKeys; k++) {
+        try {
+            // Skip keyframes with Hold out-interpolation (freeze segments)
+            if (property.keyOutInterpolationType(k) === KeyframeInterpolationType.HOLD) continue;
+
+            // Set interpolation type to Bezier
+            property.setInterpolationTypeAtKey(k,
+                KeyframeInterpolationType.BEZIER,
+                KeyframeInterpolationType.BEZIER);
+
+            // Strong ease-in/ease-out: speed=0 (zero velocity at keyframe), influence=80%
+            // This creates a smooth S-curve similar to Motion 4's default ease
+            var easeIn = new KeyframeEase(0, 80);
+            var easeOut = new KeyframeEase(0, 80);
+
+            setEaseAtKey(property, k, easeIn, easeOut);
+        } catch (e) {
+            $.writeln("Easing error at key " + k + ": " + e.toString());
+        }
     }
 }
 
 function applyBounceEasing(property, slamStartTime) {
-    // Similar to previous implementation...
-    // Only ease keys near slamStartTime
     var numKeys = property.numKeys;
     if (numKeys < 2) return;
 
     for (var k = 1; k <= numKeys; k++) {
         if (Math.abs(property.keyTime(k) - slamStartTime) < 0.2) {
             try {
-                property.setInterpolationTypeAtKey(k, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
-                var ease = new KeyframeEase(0, 75); // Strong ease
-                var dims = (property.value instanceof Array) ? property.value.length : 1;
+                property.setInterpolationTypeAtKey(k,
+                    KeyframeInterpolationType.BEZIER,
+                    KeyframeInterpolationType.BEZIER);
 
-                if (dims === 2) property.setTemporalEaseAtKey(k, [ease, ease], [ease, ease]);
-                else property.setTemporalEaseAtKey(k, [ease], [ease]);
-            } catch (e) { }
+                var ease = new KeyframeEase(0, 80);
+                setEaseAtKey(property, k, ease, ease);
+            } catch (e) {
+                $.writeln("Bounce easing error at key " + k + ": " + e.toString());
+            }
         }
     }
 }
