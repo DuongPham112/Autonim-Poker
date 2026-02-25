@@ -3067,11 +3067,47 @@ body.grouping-mode-active .zone-card:hover:not(.grouped) {
     background: #111;
 }
 
-.help-video-wrapper iframe {
+/* Clickable video cards */
+.help-video-card[data-url] {
+    cursor: pointer;
+}
+
+.help-video-card[data-url]:hover .play-btn {
+    transform: translate(-50%, -50%) scale(1.15);
+    background: rgba(255, 0, 0, 0.9);
+}
+
+/* Video thumbnail with play button overlay */
+.help-video-thumbnail {
     position: absolute;
     inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.help-video-thumbnail img {
     width: 100%;
     height: 100%;
+    object-fit: cover;
+}
+
+.play-btn {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 52px;
+    height: 52px;
+    background: rgba(255, 0, 0, 0.8);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    color: white;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
 }
 
 /* Placeholder shown when no video URL is set */
@@ -3096,10 +3132,6 @@ body.grouping-mode-active .zone-card:hover:not(.grouped) {
     background: linear-gradient(135deg, rgba(14, 99, 156, 0.1) 0%, rgba(78, 201, 176, 0.08) 100%);
 }
 
-/* Hide placeholder when iframe has src */
-.help-video-wrapper iframe[src]:not([src=""])~.help-video-placeholder {
-    display: none;
-}
 
 /* Responsive — single column on smaller panels */
 @media (max-width: 700px) {

@@ -562,6 +562,7 @@ function bindEvents() {
     if (btnHelp) btnHelp.addEventListener('click', showHelpModal);
     if (closeHelpBtn) closeHelpBtn.addEventListener('click', hideHelpModal);
     if (helpModalOverlay) helpModalOverlay.addEventListener('click', hideHelpModal);
+    initHelpVideoLinks();
 
     // Auto-Step Popup
     if (autoStepYes) autoStepYes.addEventListener('click', handleAutoStepYes);
@@ -3333,28 +3334,28 @@ function confirmWarning() {
 function showHelpModal() {
     if (!helpModal) return;
     helpModal.classList.remove('hidden');
-
-    // Restore iframe srcs that were saved to data-src when modal was closed
-    helpModal.querySelectorAll('iframe').forEach(iframe => {
-        const dataSrc = iframe.getAttribute('data-src');
-        const currentSrc = iframe.getAttribute('src');
-        if (dataSrc && (!currentSrc || currentSrc === '')) {
-            iframe.setAttribute('src', dataSrc);
-        }
-    });
 }
 
 function hideHelpModal() {
     if (!helpModal) return;
     helpModal.classList.add('hidden');
+}
 
-    // Stop YouTube playback by clearing iframe src temporarily
-    helpModal.querySelectorAll('iframe').forEach(iframe => {
-        const src = iframe.getAttribute('src');
-        if (src) {
-            iframe.setAttribute('data-src', src);
-            iframe.setAttribute('src', '');
-        }
+// Open video links in system default browser (CEP panels can't embed YouTube)
+function initHelpVideoLinks() {
+    if (!helpModal) return;
+    helpModal.querySelectorAll('.help-video-card[data-url]').forEach(card => {
+        card.addEventListener('click', function () {
+            const url = this.getAttribute('data-url');
+            if (url) {
+                try {
+                    var csInterface = new CSInterface();
+                    csInterface.openURLInDefaultBrowser(url);
+                } catch (e) {
+                    window.open(url, '_blank');
+                }
+            }
+        });
     });
 }
 
