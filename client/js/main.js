@@ -3333,6 +3333,15 @@ function confirmWarning() {
 function showHelpModal() {
     if (!helpModal) return;
     helpModal.classList.remove('hidden');
+
+    // Restore iframe srcs that were saved to data-src when modal was closed
+    helpModal.querySelectorAll('iframe').forEach(iframe => {
+        const dataSrc = iframe.getAttribute('data-src');
+        const currentSrc = iframe.getAttribute('src');
+        if (dataSrc && (!currentSrc || currentSrc === '')) {
+            iframe.setAttribute('src', dataSrc);
+        }
+    });
 }
 
 function hideHelpModal() {
