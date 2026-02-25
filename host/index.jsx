@@ -824,100 +824,88 @@ function applyZoneOffsetExpression(cardLayer, controlLayerName, zoneName) {
     }
 
     var expr = "";
-    // Expression that only adds offset to FIRST keyframe
-    // After first animation, uses original values
+    // Base expression: gets control layer reference
     var baseExpr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n';
 
-    if (zoneName === "top") {
+    // Threshold to distinguish SELECT (small ~37.5px Y offset) from TRANSFORM (large move)
+    // Any keyframe within this distance from initial position is considered "still in zone"
+    var THRESHOLD = 100;
+
+    // For top/bottom zones: offset is on Y axis
+    // For left/right zones: offset is on X axis
+    // Logic: apply offset to all keyframes that are "close" to the initial position,
+    // meaning the card is still in its zone (including SELECT lift).
+    // Only stop applying offset when the card moves far away (TRANSFORM to another zone).
+    if (zoneName === "top" || zoneName === "bottom") {
+        var sliderName = zoneName === "top" ? "Top Zone Y" : "Bottom Zone Y";
         expr = baseExpr +
-            'var offset = ctrl.effect("Top Zone Y")("Slider");\n' +
+            'var offset = ctrl.effect("' + sliderName + '")("Slider");\n' +
             'if (numKeys < 2) { [value[0], value[1] + offset, value[2]] }\n' +
             'else {\n' +
             '  var k1 = key(1);\n' +
-            '  var kLast = key(numKeys);\n' +
-            '  if (numKeys == 2 && k1.value[0] == kLast.value[0] && k1.value[1] == kLast.value[1]) {\n' +
+            '  var baseX = k1.value[0];\n' +
+            '  var baseY = k1.value[1];\n' +
+            '  var dx = Math.abs(value[0] - baseX);\n' +
+            '  var dy = Math.abs(value[1] - baseY);\n' +
+            '  var dist = Math.sqrt(dx*dx + dy*dy);\n' +
+            '  if (dist < ' + THRESHOLD + ') {\n' +
             '    [value[0], value[1] + offset, value[2]]\n' +
-            '  } else if (time <= k1.time) {\n' +
-            '    [k1.value[0], k1.value[1] + offset, k1.value[2]]\n' +
             '  } else {\n' +
-            '    var animStartIdx = 1;\n' +
-            '    for (var i = 2; i <= numKeys; i++) { if (key(i).value[0] != k1.value[0] || key(i).value[1] != k1.value[1]) { animStartIdx = i - 1; break; } }\n' +
-            '    var kAnim = key(animStartIdx);\n' +
-            '    var kNext = key(Math.min(animStartIdx + 1, numKeys));\n' +
-            '    if (time <= kAnim.time) { [value[0], value[1] + offset, value[2]] }\n' +
-            '    else if (time < kNext.time) {\n' +
-            '      var t = (time - kAnim.time) / (kNext.time - kAnim.time);\n' +
-            '      [linear(t, 0, 1, kAnim.value[0], kNext.value[0]), linear(t, 0, 1, kAnim.value[1] + offset, kNext.value[1]), linear(t, 0, 1, kAnim.value[2], kNext.value[2])]\n' +
-            '    } else { value }\n' +
+            '    var foundTransition = false;\n' +
+            '    for (var i = 2; i <= numKeys; i++) {\n' +
+            '      var kd = Math.sqrt(Math.pow(key(i).value[0]-baseX,2)+Math.pow(key(i).value[1]-baseY,2));\n' +
+            '      if (kd >= ' + THRESHOLD + ') {\n' +
+            '        var kPrev = key(i-1);\n' +
+            '        if (time < kPrev.time) {\n' +
+            '          [value[0], value[1] + offset, value[2]]\n' +
+            '        } else if (time < key(i).time) {\n' +
+            '          var t = (time - kPrev.time) / (key(i).time - kPrev.time);\n' +
+            '          var oBlend = linear(t, 1, 0);\n' +
+            '          [value[0], value[1] + offset * oBlend, value[2]]\n' +
+            '        } else {\n' +
+            '          value\n' +
+            '        }\n' +
+            '        foundTransition = true;\n' +
+            '        break;\n' +
+            '      }\n' +
+            '    }\n' +
+            '    if (!foundTransition) { [value[0], value[1] + offset, value[2]] }\n' +
             '  }\n' +
             '}';
-    } else if (zoneName === "bottom") {
+    } else if (zoneName === "left" || zoneName === "right") {
+        var sliderName = zoneName === "left" ? "Left Zone X" : "Right Zone X";
         expr = baseExpr +
-            'var offset = ctrl.effect("Bottom Zone Y")("Slider");\n' +
-            'if (numKeys < 2) { [value[0], value[1] + offset, value[2]] }\n' +
-            'else {\n' +
-            '  var k1 = key(1);\n' +
-            '  var kLast = key(numKeys);\n' +
-            '  if (numKeys == 2 && k1.value[0] == kLast.value[0] && k1.value[1] == kLast.value[1]) {\n' +
-            '    [value[0], value[1] + offset, value[2]]\n' +
-            '  } else if (time <= k1.time) {\n' +
-            '    [k1.value[0], k1.value[1] + offset, k1.value[2]]\n' +
-            '  } else {\n' +
-            '    var animStartIdx = 1;\n' +
-            '    for (var i = 2; i <= numKeys; i++) { if (key(i).value[0] != k1.value[0] || key(i).value[1] != k1.value[1]) { animStartIdx = i - 1; break; } }\n' +
-            '    var kAnim = key(animStartIdx);\n' +
-            '    var kNext = key(Math.min(animStartIdx + 1, numKeys));\n' +
-            '    if (time <= kAnim.time) { [value[0], value[1] + offset, value[2]] }\n' +
-            '    else if (time < kNext.time) {\n' +
-            '      var t = (time - kAnim.time) / (kNext.time - kAnim.time);\n' +
-            '      [linear(t, 0, 1, kAnim.value[0], kNext.value[0]), linear(t, 0, 1, kAnim.value[1] + offset, kNext.value[1]), linear(t, 0, 1, kAnim.value[2], kNext.value[2])]\n' +
-            '    } else { value }\n' +
-            '  }\n' +
-            '}';
-    } else if (zoneName === "left") {
-        expr = baseExpr +
-            'var offset = ctrl.effect("Left Zone X")("Slider");\n' +
+            'var offset = ctrl.effect("' + sliderName + '")("Slider");\n' +
             'if (numKeys < 2) { [value[0] + offset, value[1], value[2]] }\n' +
             'else {\n' +
             '  var k1 = key(1);\n' +
-            '  var kLast = key(numKeys);\n' +
-            '  if (numKeys == 2 && k1.value[0] == kLast.value[0] && k1.value[1] == kLast.value[1]) {\n' +
+            '  var baseX = k1.value[0];\n' +
+            '  var baseY = k1.value[1];\n' +
+            '  var dx = Math.abs(value[0] - baseX);\n' +
+            '  var dy = Math.abs(value[1] - baseY);\n' +
+            '  var dist = Math.sqrt(dx*dx + dy*dy);\n' +
+            '  if (dist < ' + THRESHOLD + ') {\n' +
             '    [value[0] + offset, value[1], value[2]]\n' +
-            '  } else if (time <= k1.time) {\n' +
-            '    [k1.value[0] + offset, k1.value[1], k1.value[2]]\n' +
             '  } else {\n' +
-            '    var animStartIdx = 1;\n' +
-            '    for (var i = 2; i <= numKeys; i++) { if (key(i).value[0] != k1.value[0] || key(i).value[1] != k1.value[1]) { animStartIdx = i - 1; break; } }\n' +
-            '    var kAnim = key(animStartIdx);\n' +
-            '    var kNext = key(Math.min(animStartIdx + 1, numKeys));\n' +
-            '    if (time <= kAnim.time) { [value[0] + offset, value[1], value[2]] }\n' +
-            '    else if (time < kNext.time) {\n' +
-            '      var t = (time - kAnim.time) / (kNext.time - kAnim.time);\n' +
-            '      [linear(t, 0, 1, kAnim.value[0] + offset, kNext.value[0]), linear(t, 0, 1, kAnim.value[1], kNext.value[1]), linear(t, 0, 1, kAnim.value[2], kNext.value[2])]\n' +
-            '    } else { value }\n' +
-            '  }\n' +
-            '}';
-    } else if (zoneName === "right") {
-        expr = baseExpr +
-            'var offset = ctrl.effect("Right Zone X")("Slider");\n' +
-            'if (numKeys < 2) { [value[0] + offset, value[1], value[2]] }\n' +
-            'else {\n' +
-            '  var k1 = key(1);\n' +
-            '  var kLast = key(numKeys);\n' +
-            '  if (numKeys == 2 && k1.value[0] == kLast.value[0] && k1.value[1] == kLast.value[1]) {\n' +
-            '    [value[0] + offset, value[1], value[2]]\n' +
-            '  } else if (time <= k1.time) {\n' +
-            '    [k1.value[0] + offset, k1.value[1], k1.value[2]]\n' +
-            '  } else {\n' +
-            '    var animStartIdx = 1;\n' +
-            '    for (var i = 2; i <= numKeys; i++) { if (key(i).value[0] != k1.value[0] || key(i).value[1] != k1.value[1]) { animStartIdx = i - 1; break; } }\n' +
-            '    var kAnim = key(animStartIdx);\n' +
-            '    var kNext = key(Math.min(animStartIdx + 1, numKeys));\n' +
-            '    if (time <= kAnim.time) { [value[0] + offset, value[1], value[2]] }\n' +
-            '    else if (time < kNext.time) {\n' +
-            '      var t = (time - kAnim.time) / (kNext.time - kAnim.time);\n' +
-            '      [linear(t, 0, 1, kAnim.value[0] + offset, kNext.value[0]), linear(t, 0, 1, kAnim.value[1], kNext.value[1]), linear(t, 0, 1, kAnim.value[2], kNext.value[2])]\n' +
-            '    } else { value }\n' +
+            '    var foundTransition = false;\n' +
+            '    for (var i = 2; i <= numKeys; i++) {\n' +
+            '      var kd = Math.sqrt(Math.pow(key(i).value[0]-baseX,2)+Math.pow(key(i).value[1]-baseY,2));\n' +
+            '      if (kd >= ' + THRESHOLD + ') {\n' +
+            '        var kPrev = key(i-1);\n' +
+            '        if (time < kPrev.time) {\n' +
+            '          [value[0] + offset, value[1], value[2]]\n' +
+            '        } else if (time < key(i).time) {\n' +
+            '          var t = (time - kPrev.time) / (key(i).time - kPrev.time);\n' +
+            '          var oBlend = linear(t, 1, 0);\n' +
+            '          [value[0] + offset * oBlend, value[1], value[2]]\n' +
+            '        } else {\n' +
+            '          value\n' +
+            '        }\n' +
+            '        foundTransition = true;\n' +
+            '        break;\n' +
+            '      }\n' +
+            '    }\n' +
+            '    if (!foundTransition) { [value[0] + offset, value[1], value[2]] }\n' +
             '  }\n' +
             '}';
     } else {
