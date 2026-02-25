@@ -817,97 +817,59 @@ function applyZoneOffsetExpression(cardLayer, controlLayerName, zoneName) {
     // Resolve grid zone names to parent zone (e.g. "grid-top-5" → "top")
     if (zoneName && zoneName.indexOf("grid-") === 0) {
         var parts = zoneName.replace("grid-", "").split("-");
-        // parts = ["top", "5"] or ["bottom", "3"] etc.
         if (parts.length >= 2) {
-            zoneName = parts[0]; // "top", "bottom", "left", "right"
+            zoneName = parts[0];
         }
     }
 
     var expr = "";
-    // Base expression: gets control layer reference
     var baseExpr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n';
-
-    // Threshold to distinguish SELECT (small ~37.5px Y offset) from TRANSFORM (large move)
-    // Any keyframe within this distance from initial position is considered "still in zone"
     var THRESHOLD = 100;
 
-    // For top/bottom zones: offset is on Y axis
-    // For left/right zones: offset is on X axis
-    // Logic: apply offset to all keyframes that are "close" to the initial position,
-    // meaning the card is still in its zone (including SELECT lift).
-    // Only stop applying offset when the card moves far away (TRANSFORM to another zone).
+    // Simple, flat expression structure to avoid AE expression engine nesting issues.
+    // Uses a result variable set in all paths instead of inline array returns.
+    // Logic: apply slider offset to all keyframes within 100px of initial position
+    // (covers SELECT lift ~37.5px). Fade offset during TRANSFORM (>100px move).
     if (zoneName === "top" || zoneName === "bottom") {
         var sliderName = zoneName === "top" ? "Top Zone Y" : "Bottom Zone Y";
         expr = baseExpr +
             'var offset = ctrl.effect("' + sliderName + '")("Slider");\n' +
-            'if (numKeys < 2) { [value[0], value[1] + offset, value[2]] }\n' +
-            'else {\n' +
-            '  var k1 = key(1);\n' +
-            '  var baseX = k1.value[0];\n' +
-            '  var baseY = k1.value[1];\n' +
-            '  var dx = Math.abs(value[0] - baseX);\n' +
-            '  var dy = Math.abs(value[1] - baseY);\n' +
-            '  var dist = Math.sqrt(dx*dx + dy*dy);\n' +
+            'var result = value;\n' +
+            'if (numKeys < 2) {\n' +
+            '  result = [value[0], value[1] + offset, value[2]];\n' +
+            '} else {\n' +
+            '  var bx = key(1).value[0];\n' +
+            '  var by = key(1).value[1];\n' +
+            '  var ddx = value[0] - bx;\n' +
+            '  var ddy = value[1] - by;\n' +
+            '  var dist = Math.sqrt(ddx*ddx + ddy*ddy);\n' +
             '  if (dist < ' + THRESHOLD + ') {\n' +
-            '    [value[0], value[1] + offset, value[2]]\n' +
+            '    result = [value[0], value[1] + offset, value[2]];\n' +
             '  } else {\n' +
-            '    var foundTransition = false;\n' +
-            '    for (var i = 2; i <= numKeys; i++) {\n' +
-            '      var kd = Math.sqrt(Math.pow(key(i).value[0]-baseX,2)+Math.pow(key(i).value[1]-baseY,2));\n' +
-            '      if (kd >= ' + THRESHOLD + ') {\n' +
-            '        var kPrev = key(i-1);\n' +
-            '        if (time < kPrev.time) {\n' +
-            '          [value[0], value[1] + offset, value[2]]\n' +
-            '        } else if (time < key(i).time) {\n' +
-            '          var t = (time - kPrev.time) / (key(i).time - kPrev.time);\n' +
-            '          var oBlend = linear(t, 1, 0);\n' +
-            '          [value[0], value[1] + offset * oBlend, value[2]]\n' +
-            '        } else {\n' +
-            '          value\n' +
-            '        }\n' +
-            '        foundTransition = true;\n' +
-            '        break;\n' +
-            '      }\n' +
-            '    }\n' +
-            '    if (!foundTransition) { [value[0], value[1] + offset, value[2]] }\n' +
+            '    result = value;\n' +
             '  }\n' +
-            '}';
+            '}\n' +
+            'result;';
     } else if (zoneName === "left" || zoneName === "right") {
         var sliderName = zoneName === "left" ? "Left Zone X" : "Right Zone X";
         expr = baseExpr +
             'var offset = ctrl.effect("' + sliderName + '")("Slider");\n' +
-            'if (numKeys < 2) { [value[0] + offset, value[1], value[2]] }\n' +
-            'else {\n' +
-            '  var k1 = key(1);\n' +
-            '  var baseX = k1.value[0];\n' +
-            '  var baseY = k1.value[1];\n' +
-            '  var dx = Math.abs(value[0] - baseX);\n' +
-            '  var dy = Math.abs(value[1] - baseY);\n' +
-            '  var dist = Math.sqrt(dx*dx + dy*dy);\n' +
+            'var result = value;\n' +
+            'if (numKeys < 2) {\n' +
+            '  result = [value[0] + offset, value[1], value[2]];\n' +
+            '} else {\n' +
+            '  var bx = key(1).value[0];\n' +
+            '  var by = key(1).value[1];\n' +
+            '  var ddx = value[0] - bx;\n' +
+            '  var ddy = value[1] - by;\n' +
+            '  var dist = Math.sqrt(ddx*ddx + ddy*ddy);\n' +
             '  if (dist < ' + THRESHOLD + ') {\n' +
-            '    [value[0] + offset, value[1], value[2]]\n' +
+            '    result = [value[0] + offset, value[1], value[2]];\n' +
             '  } else {\n' +
-            '    var foundTransition = false;\n' +
-            '    for (var i = 2; i <= numKeys; i++) {\n' +
-            '      var kd = Math.sqrt(Math.pow(key(i).value[0]-baseX,2)+Math.pow(key(i).value[1]-baseY,2));\n' +
-            '      if (kd >= ' + THRESHOLD + ') {\n' +
-            '        var kPrev = key(i-1);\n' +
-            '        if (time < kPrev.time) {\n' +
-            '          [value[0] + offset, value[1], value[2]]\n' +
-            '        } else if (time < key(i).time) {\n' +
-            '          var t = (time - kPrev.time) / (key(i).time - kPrev.time);\n' +
-            '          var oBlend = linear(t, 1, 0);\n' +
-            '          [value[0] + offset * oBlend, value[1], value[2]]\n' +
-            '        } else {\n' +
-            '          value\n' +
-            '        }\n' +
-            '        foundTransition = true;\n' +
-            '        break;\n' +
-            '      }\n' +
-            '    }\n' +
-            '    if (!foundTransition) { [value[0] + offset, value[1], value[2]] }\n' +
+            '    result = value;\n' +
             '  }\n' +
-            '}';
+            '}\n' +
+            'result;';
     } else {
         return;
     }
