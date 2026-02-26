@@ -164,7 +164,7 @@ function generateSequence(jsonString, assetsRootPath) {
 
         // Process scenario animation steps (offset by dealing time)
         var stepBlending = data.stepBlending || 0;  // Overlap % (0-50)
-        var animResult = processScenarioAnimation(comp, data.scenario, layerMap, stepBlending, dealingTimeOffset);
+        var animResult = processScenarioAnimation(comp, data.scenario, layerMap, stepBlending, dealingTimeOffset, data.initialState);
         if (!animResult.success) {
             app.endUndoGroup();
             return createErrorResponse(animResult.message);
@@ -589,8 +589,10 @@ function applyInitialTransform(layer, assetInfo, comp) {
     layer.property("Z Rotation").setValueAtTime(0, rotation);
 
     // Y Rotation for card face: Face-up = 0°, Face-down = 180°
+    // Use setValueAtTime to match Position/Z Rotation pattern
+    // This ensures dealing animation keyframes can properly override this value
     var yRotation = assetInfo.isFaceUp ? 0 : 180;
-    layer.property("Y Rotation").setValue(yRotation);
+    layer.property("Y Rotation").setValueAtTime(0, yRotation);
 
     // Scale (3D: X, Y, Z)
     var scale = assetInfo.scale !== undefined ? assetInfo.scale * 100 : 100;
@@ -1073,16 +1075,28 @@ function processDealingAnimation(comp, layerMap, initialState, dealingCard) {
     var dealX = dealingCard.x || 960;
     var dealY = dealingCard.y || 540;
 
-    // Collect cards and group by zone for round-robin dealing
-    var zoneGroups = {};  // zone -> [{id, info, zonePosition}]
+    // Collect cards and group by PLAYER ZONE for round-robin dealing
+    // For poker zones: "top", "bottom", "left", "right" → group as-is
+    // For grid zones: "grid-bottom-5" → group key = "bottom" (extract player row)
+    // This ensures dealing alternates between players, not sequential per row
+    var zoneGroups = {};  // playerKey -> [{id, info, zonePosition}]
     for (var cardId in initialState) {
         if (initialState.hasOwnProperty(cardId) && layerMap[cardId]) {
             var cardInfo = initialState[cardId];
             var zone = cardInfo.zone || "table";
-            if (!zoneGroups[zone]) {
-                zoneGroups[zone] = [];
+
+            // Extract player key from zone name
+            var playerKey = zone;
+            if (zone.indexOf("grid-") === 0) {
+                // "grid-bottom-5" → "bottom", "grid-top-8" → "top"
+                var parts = zone.replace("grid-", "").split("-");
+                playerKey = parts[0]; // "bottom", "top", etc.
             }
-            zoneGroups[zone].push({
+
+            if (!zoneGroups[playerKey]) {
+                zoneGroups[playerKey] = [];
+            }
+            zoneGroups[playerKey].push({
                 id: cardId,
                 info: cardInfo,
                 zonePosition: cardInfo.zonePosition || 0
@@ -1090,39 +1104,39 @@ function processDealingAnimation(comp, layerMap, initialState, dealingCard) {
         }
     }
 
-    // Sort each zone's cards by zonePosition (left to right within zone)
-    var zoneNames = [];
-    for (var zoneName in zoneGroups) {
-        if (zoneGroups.hasOwnProperty(zoneName)) {
-            zoneGroups[zoneName].sort(function (a, b) {
+    // Sort each player's cards by zonePosition (left to right)
+    var playerKeys = [];
+    for (var pk in zoneGroups) {
+        if (zoneGroups.hasOwnProperty(pk)) {
+            zoneGroups[pk].sort(function (a, b) {
                 return a.zonePosition - b.zonePosition;
             });
-            zoneNames.push(zoneName);
+            playerKeys.push(pk);
         }
     }
-    // Sort zone names for consistent dealing order
-    zoneNames.sort();
+    // Sort player keys for consistent dealing order
+    playerKeys.sort();
 
     // Build round-robin dealing order:
-    // Deal 1 card to each zone in turn, then repeat
-    // E.g.: zone-A[0], zone-B[0], zone-C[0], zone-A[1], zone-B[1], ...
+    // Deal 1 card to each player in turn, then repeat
+    // E.g.: bottom[0], top[0], bottom[1], top[1], ...
     var cardArray = [];
-    var maxCardsInZone = 0;
-    for (var zi = 0; zi < zoneNames.length; zi++) {
-        if (zoneGroups[zoneNames[zi]].length > maxCardsInZone) {
-            maxCardsInZone = zoneGroups[zoneNames[zi]].length;
+    var maxCardsPerPlayer = 0;
+    for (var zi = 0; zi < playerKeys.length; zi++) {
+        if (zoneGroups[playerKeys[zi]].length > maxCardsPerPlayer) {
+            maxCardsPerPlayer = zoneGroups[playerKeys[zi]].length;
         }
     }
-    for (var round = 0; round < maxCardsInZone; round++) {
-        for (var zj = 0; zj < zoneNames.length; zj++) {
-            var zoneCards = zoneGroups[zoneNames[zj]];
-            if (round < zoneCards.length) {
-                cardArray.push(zoneCards[round]);
+    for (var round = 0; round < maxCardsPerPlayer; round++) {
+        for (var zj = 0; zj < playerKeys.length; zj++) {
+            var playerCards = zoneGroups[playerKeys[zj]];
+            if (round < playerCards.length) {
+                cardArray.push(playerCards[round]);
             }
         }
     }
 
-    $.writeln("[DealingCard] Round-robin order: " + cardArray.length + " cards across " + zoneNames.length + " zones: " + zoneNames.join(", "));
+    $.writeln("[DealingCard] Round-robin order: " + cardArray.length + " cards across " + playerKeys.length + " players: " + playerKeys.join(", "));
 
     // Calculate dealEndTime first (needed for hold keyframes)
     var lastCardEnd = cardArray.length > 0 ?
@@ -1183,6 +1197,44 @@ function processDealingAnimation(comp, layerMap, initialState, dealingCard) {
         // Arrive at setup face state (flip if face-up, stay down if face-down)
         yRotProperty.setValueAtTime(endTime, targetYRot);
         yRotProperty.setValueAtTime(dealEndTime, targetYRot);  // hold
+
+        // --- PRE-COMP FRONT/BACK OPACITY ---
+        // For face-up cards: createCardPrecomp sets Front=100, Back=0 (static)
+        // But during dealing, card must show the BACK (face down)
+        // So we need to toggle pre-comp opacity: Back visible at start, Front visible at arrival
+        if (info.isFaceUp) {
+            var preComp = layer.source;
+            if (preComp && preComp instanceof CompItem) {
+                var frontLayer = preComp.layer("Front");
+                var backLayer = preComp.layer("Back");
+                if (frontLayer && backLayer) {
+                    var frontOp = frontLayer.property("Opacity");
+                    var backOp = backLayer.property("Opacity");
+                    // Calculate mid-flip time (where Y Rotation crosses 90°)
+                    var flipMidTime = endTime - (FLIP_DURATION_FRAMES * (1 / FRAME_RATE) * 0.5);
+                    if (flipMidTime < startTime) flipMidTime = startTime;
+
+                    // During dealing: show Back, hide Front
+                    frontOp.setValueAtTime(0, 0);
+                    backOp.setValueAtTime(0, 100);
+
+                    // At card's turn to fly (if staggered)
+                    if (startTime > 0) {
+                        frontOp.setValueAtTime(startTime, 0);
+                        backOp.setValueAtTime(startTime, 100);
+                    }
+
+                    // At arrival: swap to Front visible (face up)
+                    frontOp.setValueAtTime(flipMidTime, 0);
+                    frontOp.setValueAtTime(flipMidTime + 0.01, 100);
+                    backOp.setValueAtTime(flipMidTime, 100);
+                    backOp.setValueAtTime(flipMidTime + 0.01, 0);
+
+                    setHoldInterpolation(frontOp);
+                    setHoldInterpolation(backOp);
+                }
+            }
+        }
     }
 
     $.writeln("[DealingCard] Dealt " + cardArray.length + " cards, endTime: " + dealEndTime.toFixed(2) + "s");
@@ -1201,7 +1253,7 @@ function processDealingAnimation(comp, layerMap, initialState, dealingCard) {
  * @param timeOffset - Time offset for dealing animation (0 if no dealing)
  * @returns {object} Result with success, finalTime, and swapTimeline for visual mouse
  */
-function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOffset) {
+function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOffset, initialState) {
     var currentTime = timeOffset || 0;
     var moveCounter = 0;  // Tracks order of card movements for z-ordering
 
@@ -1221,6 +1273,34 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOf
     var moveDuration = MOVE_DURATION_FRAMES * frameDuration;
     var pauseFrames = 2; // Pause between initiator and displaced
     var pauseDuration = pauseFrames * frameDuration;
+    var shiftDurationFrames = 5; // Frames for zone shift animation
+    var shiftDuration = shiftDurationFrames * frameDuration;
+
+    // Build zone occupancy map from initialState for zone card shift
+    // Only track poker zones (top, bottom, left, right) — not community or grid
+    var zoneOccupancy = {}; // zone -> [{cardId, zonePosition}] sorted by position
+    if (initialState) {
+        for (var cid in initialState) {
+            if (initialState.hasOwnProperty(cid)) {
+                var cInfo = initialState[cid];
+                var cZone = cInfo.zone || '';
+                // Only track poker player zones
+                if (cZone === 'top' || cZone === 'bottom' || cZone === 'left' || cZone === 'right') {
+                    if (!zoneOccupancy[cZone]) zoneOccupancy[cZone] = [];
+                    zoneOccupancy[cZone].push({
+                        cardId: cid,
+                        zonePosition: cInfo.zonePosition || 0
+                    });
+                }
+            }
+        }
+        // Sort each zone by zonePosition
+        for (var zn in zoneOccupancy) {
+            if (zoneOccupancy.hasOwnProperty(zn)) {
+                zoneOccupancy[zn].sort(function (a, b) { return a.zonePosition - b.zonePosition; });
+            }
+        }
+    }
 
     for (var s = 0; s < scenario.length; s++) {
         var step = scenario[s];
@@ -1388,6 +1468,29 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOf
                 if (action.effect === "SLAM") {
                     processSlamEffect(layer, transformStartTime, stepDuration, comp);
                 }
+                // Zone card shift: if card left a poker zone, shift remaining cards
+                if (action.startZone && action.endZone && action.startZone !== action.endZone) {
+                    var depZone = action.startZone;
+                    if (depZone === 'top' || depZone === 'bottom' || depZone === 'left' || depZone === 'right') {
+                        var depPos = -1;
+                        // Find and remove the departed card from zoneOccupancy
+                        if (zoneOccupancy[depZone]) {
+                            for (var zi = 0; zi < zoneOccupancy[depZone].length; zi++) {
+                                if (zoneOccupancy[depZone][zi].cardId === action.targetId) {
+                                    depPos = zoneOccupancy[depZone][zi].zonePosition;
+                                    zoneOccupancy[depZone].splice(zi, 1);
+                                    break;
+                                }
+                            }
+                        }
+                        // Shift remaining cards with higher position
+                        if (depPos >= 0 && zoneOccupancy[depZone]) {
+                            var shiftStartTime = transformStartTime + moveDuration; // shift after card leaves
+                            shiftZoneCards(layerMap, zoneOccupancy[depZone], depZone, depPos, shiftStartTime, shiftDuration, nextStepTime);
+                        }
+                    }
+                }
+
             } catch (e) {
                 $.writeln("Error processing action for " + action.targetId + ": " + e.toString());
             }
@@ -1407,6 +1510,65 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOf
     }
 
     return { success: true, finalTime: currentTime, swapTimeline: swapTimeline };
+}
+
+/**
+ * Shift remaining zone cards to close gap after a card departs
+ * Only for poker zones: top/bottom shift horizontal, left/right shift vertical
+ * 
+ * @param {object} layerMap - Card layer map
+ * @param {Array} zoneCards - Remaining cards in zone [{cardId, zonePosition}]
+ * @param {string} zone - Zone name (top, bottom, left, right)
+ * @param {number} removedPosition - zonePosition of the departed card
+ * @param {number} shiftStart - Time to start shifting
+ * @param {number} shiftDuration - Duration of shift animation
+ * @param {number} holdUntil - Hold shifted position until this time
+ */
+function shiftZoneCards(layerMap, zoneCards, zone, removedPosition, shiftStart, shiftDuration, holdUntil) {
+    // Card spacing in AE coordinates (45px UI * 1.5 = 67.5px AE)
+    var SHIFT_AMOUNT = 67.5;
+
+    // Determine shift direction based on zone
+    // top/bottom: cards are laid out horizontally → shift left (negative X)
+    // left/right: cards are laid out vertically → shift up (negative Y)
+    var isVertical = (zone === 'left' || zone === 'right');
+
+    var shiftEnd = shiftStart + shiftDuration;
+    var shifted = 0;
+
+    for (var i = 0; i < zoneCards.length; i++) {
+        var card = zoneCards[i];
+        if (card.zonePosition <= removedPosition) continue; // Only shift cards after the gap
+
+        var layer = layerMap[card.cardId];
+        if (!layer) continue;
+
+        var posProperty = layer.property("Position");
+
+        // Get current position at shiftStart (after the departing card has left)
+        var currentPos = posProperty.valueAtTime(shiftStart, false);
+        var shiftX = isVertical ? 0 : -SHIFT_AMOUNT;
+        var shiftY = isVertical ? -SHIFT_AMOUNT : 0;
+
+        var newPos = [currentPos[0] + shiftX, currentPos[1] + shiftY, currentPos[2]];
+
+        // Hold at current position, then shift
+        posProperty.setValueAtTime(shiftStart, currentPos);
+        posProperty.setValueAtTime(shiftEnd, newPos);
+
+        // Hold shifted position until next step
+        if (holdUntil > shiftEnd + (1 / FRAME_RATE)) {
+            posProperty.setValueAtTime(holdUntil, newPos);
+        }
+
+        // Update zonePosition for future shifts
+        card.zonePosition--;
+        shifted++;
+    }
+
+    if (shifted > 0) {
+        $.writeln("[ZoneShift] Zone '" + zone + "': shifted " + shifted + " cards after position " + removedPosition);
+    }
 }
 
 /**
