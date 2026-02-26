@@ -89,7 +89,14 @@ const appState = {
     autoRecord: false,            // Auto-record after countdown
     autoRecordDelay: 3,           // Countdown seconds (1-10)
     countdownTimer: null,         // Interval timer ID
-    countdownValue: 0             // Current countdown value
+    countdownValue: 0,            // Current countdown value
+
+    // Dealing Card
+    dealingCard: {
+        enabled: false,
+        x: 640,                   // UI coordinate (center)
+        y: 360                    // UI coordinate (center)
+    }
 };
 
 // Scenario Data (for export)
@@ -160,6 +167,9 @@ let ctxFlipAllBtn, ctxSlamAllBtn, ctxGroupDivider;
 // Grouping Mode Elements
 let groupingSection, groupingModeToggle, autoRecordToggle, autoRecordDelay, autoRecordDelayValue;
 let countdownDisplay, countdownTimer, countdownBarFill, cancelCountdownBtn, groupCount;
+
+// Dealing Card Elements
+let dealingCardToggle;
 
 // Status
 let statusMessage;
@@ -461,6 +471,9 @@ function getDOMElements() {
     countdownBarFill = document.getElementById('countdownBarFill');
     cancelCountdownBtn = document.getElementById('cancelCountdownBtn');
     groupCount = document.getElementById('groupCount');
+
+    // Dealing Card
+    dealingCardToggle = document.getElementById('dealingCardToggle');
 }
 
 
@@ -589,6 +602,9 @@ function bindEvents() {
     // Zone drop targets
     setupZoneDropTargets();
 
+    // Card tray as drop target (for returning cards in Setup phase)
+    setupTrayDropTarget();
+
     // Click on table to deselect
     cardArea.addEventListener('click', (e) => {
         if (e.target === cardArea) {
@@ -635,6 +651,9 @@ function bindEvents() {
 
     // Card Sorting Grid Slider Controls
     setupCardSortingSliderControls();
+
+    // Dealing Card Controls
+    setupDealingCardControls();
 }
 
 
@@ -1190,9 +1209,13 @@ function getFilteredTrayCards() {
     return appState.trayCards.filter(card => {
         if (!card.inTray) return false;
 
-        // Search filter
-        if (searchTerm && !card.name.toLowerCase().includes(searchTerm)) {
-            return false;
+        // Search filter — supports comma-separated terms (e.g. "10,ace,king")
+        if (searchTerm) {
+            var searchTerms = searchTerm.split(',').map(function (t) { return t.trim(); }).filter(function (t) { return t.length > 0; });
+            var matchesAny = searchTerms.some(function (term) {
+                return card.name.toLowerCase().includes(term);
+            });
+            if (!matchesAny) return false;
         }
 
         // Suit filter
@@ -1703,7 +1726,7 @@ function createZoneCardElement(card, zoneElement) {
     // Click to flip/select
     cardEl.addEventListener('click', () => handleCardClick(card, cardEl));
 
-    // Make draggable for Record mode (move cards between zones)
+    // Make draggable for Record mode (move cards between zones) and Setup mode (return to tray)
     cardEl.draggable = true;
     cardEl.addEventListener('dragstart', (e) => {
         e.dataTransfer.setData('text/plain', card.id);
@@ -1711,11 +1734,21 @@ function createZoneCardElement(card, zoneElement) {
         cardEl.classList.add('dragging');
         // Highlight all zones as potential drop targets
         playerZones.forEach(zone => zone.classList.add('drag-target'));
+        document.querySelectorAll('.card-drop-zone').forEach(zone => zone.classList.add('drag-target'));
+        // Highlight card tray as return target in Setup phase
+        if (appState.phase === 'setup') {
+            const trayPanel = document.getElementById('cardTrayPanel');
+            if (trayPanel) trayPanel.classList.add('drag-target');
+        }
     });
     cardEl.addEventListener('dragend', () => {
         cardEl.classList.remove('dragging');
         // Remove highlight from all zones
         playerZones.forEach(zone => zone.classList.remove('drag-target', 'drag-over'));
+        document.querySelectorAll('.card-drop-zone').forEach(zone => zone.classList.remove('drag-target', 'drag-over'));
+        // Remove tray highlight
+        const trayPanel = document.getElementById('cardTrayPanel');
+        if (trayPanel) trayPanel.classList.remove('drag-target', 'drag-over');
     });
 
     zoneCardsContainer.appendChild(cardEl);
@@ -2011,6 +2044,84 @@ function handleResetTable() {
     updateUI();
 
     setStatus('All cards returned to tray');
+}
+
+/**
+ * Return a single card from the table back to the tray
+ * Only allowed in Setup phase to avoid breaking recording snapshots
+ */
+function returnCardToTray(card) {
+    if (!card) return;
+
+    // Remove card element from DOM
+    if (card.element) {
+        card.element.remove();
+    }
+
+    // Reset card state
+    card.inTray = true;
+    card.zone = null;
+    card.element = null;
+    card.isFaceUp = false;
+    card.zonePosition = 0;
+    card.rotation = 0;
+
+    // Remove from tableCards array
+    appState.tableCards = appState.tableCards.filter(c => c.id !== card.id);
+
+    // Deselect if this was the selected card
+    if (appState.selectedCard && appState.selectedCard.id === card.id) {
+        appState.selectedCard = null;
+        deselectCard();
+    }
+
+    // Re-render tray and update UI
+    renderCardTray();
+    updateUI();
+
+    if (appState.tableCards.length === 0) {
+        showInstructions();
+    }
+
+    setStatus(`Returned ${card.displayName || card.name} to tray`);
+}
+
+/**
+ * Setup card tray panel as a drop target for returning cards
+ * Only accepts drops during Setup phase
+ */
+function setupTrayDropTarget() {
+    const trayPanel = document.getElementById('cardTrayPanel');
+    if (!trayPanel) return;
+
+    trayPanel.addEventListener('dragover', (e) => {
+        // Only accept drops in Setup phase
+        if (appState.phase !== 'setup') return;
+
+        // Only accept cards that are on the table (not from tray itself)
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        trayPanel.classList.add('drag-over');
+    });
+
+    trayPanel.addEventListener('dragleave', () => {
+        trayPanel.classList.remove('drag-over');
+    });
+
+    trayPanel.addEventListener('drop', (e) => {
+        e.preventDefault();
+        trayPanel.classList.remove('drag-over');
+
+        // Only accept drops in Setup phase
+        if (appState.phase !== 'setup') return;
+
+        const cardId = e.dataTransfer.getData('text/plain');
+        const card = appState.tableCards.find(c => c.id === cardId);
+
+        if (card) {
+            returnCardToTray(card);
+        }
+    });
 }
 
 // ============================================
@@ -2372,7 +2483,7 @@ function saveInitialStateForExport() {
     const exportState = {};
 
     // Card scale for AE - 50% gives good visibility on 1080p
-    const aeCardScale = 0.5;
+    const aeCardScale = 0.625;
 
     // Get the initial snapshot (step 0) to check which cards existed at start
     const initialSnap = stepSnapshots[0] || {};
@@ -2410,6 +2521,19 @@ function saveInitialStateForExport() {
             zOrder: wasInInitialSnap ? (initialSnap[card.id].zOrder || 0) : 0,
             isFaceUp: wasInInitialSnap ? initialSnap[card.id].isFaceUp : false
         };
+
+        // For Pusoy layout: include per-card row/col and rowCount for AE expression sliders
+        if (appState.boardLayout.boardStyle === 'pusoy' && card.zone && card.zone.startsWith('grid-')) {
+            const placeId = card.zone.replace('grid-', '');
+            const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
+            if (place) {
+                const rowConfigs = [{ count: 3 }, { count: 5 }, { count: 5 }]; // Pusoy 3-5-5
+                const rowCount = rowConfigs[place.row] ? rowConfigs[place.row].count : 1;
+                exportState[card.id].row = place.row;
+                exportState[card.id].col = place.col;
+                exportState[card.id].rowCount = rowCount;
+            }
+        }
     });
 
     return exportState;
@@ -2467,6 +2591,29 @@ function handleExportToAE() {
         stepBlending: appState.stepBlending || 0,  // Overlap % between steps
         enableVisualMouse: true  // Create mouse cursor null for swap animations
     };
+
+    // Include dealing card config if enabled
+    if (appState.dealingCard.enabled) {
+        const aePos = uiToAEPosition(appState.dealingCard.x, appState.dealingCard.y);
+        exportData.dealingCard = {
+            enabled: true,
+            x: aePos.x,
+            y: aePos.y
+        };
+    }
+
+    // Include Pusoy config for AE expression sliders
+    if (appState.boardLayout.boardStyle === 'pusoy') {
+        const spacingSlider = document.getElementById('pusoySpacing');
+        const curvatureSlider = document.getElementById('pusoyCurvature');
+        const layerGapSlider = document.getElementById('pusoyLayerGap');
+        exportData.pusoyConfig = {
+            defaultSpacing: spacingSlider ? parseInt(spacingSlider.value) : 150,
+            defaultCurvature: curvatureSlider ? parseInt(curvatureSlider.value) : 50,
+            defaultLayerGap: layerGapSlider ? parseInt(layerGapSlider.value) : 30,
+            basePivotY: 645  // 430 UI * 1.5 AE scale
+        };
+    }
 
     setStatus('Sending to After Effects...', 'recording');
 
@@ -4115,6 +4262,101 @@ function setupCardSortingSliderControls() {
     if (hSlider) hSlider.addEventListener('input', updateGridFromSliders);
     if (vSlider) vSlider.addEventListener('input', updateGridFromSliders);
     if (resetBtn) resetBtn.addEventListener('click', handleGridResetDefault);
+}
+
+// ============================================
+// DEALING CARD CONTROLS
+// ============================================
+
+/**
+ * Setup dealing card toggle and draggable slot
+ * When enabled, a card-shaped marker appears on the table
+ * to indicate where cards will "deal from" in AE export
+ */
+function setupDealingCardControls() {
+    if (!dealingCardToggle) return;
+
+    dealingCardToggle.addEventListener('change', (e) => {
+        appState.dealingCard.enabled = e.target.checked;
+        if (e.target.checked) {
+            renderDealingSlot();
+            setStatus('Dealing Card enabled — drag the deck marker to position');
+        } else {
+            removeDealingSlot();
+            setStatus('Dealing Card disabled');
+        }
+    });
+}
+
+/**
+ * Render the dealing card slot marker on the game container
+ * This is a draggable deck-shaped element
+ */
+function renderDealingSlot() {
+    // Remove existing if any
+    removeDealingSlot();
+
+    const marker = document.createElement('div');
+    marker.id = 'dealingSlotMarker';
+    marker.className = 'dealing-card-slot';
+    marker.innerHTML = '🃏<span>DEAL</span>';
+    marker.title = 'Drag to reposition dealing slot';
+
+    // Position using UI coordinates → DOM pixel coordinates
+    const containerRect = gameContainer.getBoundingClientRect();
+    const scaleX = containerRect.width / UI_WIDTH;
+    const scaleY = containerRect.height / UI_HEIGHT;
+
+    marker.style.left = (appState.dealingCard.x * scaleX) + 'px';
+    marker.style.top = (appState.dealingCard.y * scaleY) + 'px';
+
+    // Make draggable
+    let isDragging = false;
+    let offsetX = 0, offsetY = 0;
+
+    marker.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        isDragging = true;
+        const rect = marker.getBoundingClientRect();
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
+        marker.classList.add('dragging');
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const containerRect = gameContainer.getBoundingClientRect();
+        const x = e.clientX - containerRect.left - offsetX;
+        const y = e.clientY - containerRect.top - offsetY;
+
+        marker.style.left = x + 'px';
+        marker.style.top = y + 'px';
+
+        // Update UI coordinates
+        const scaleX = containerRect.width / UI_WIDTH;
+        const scaleY = containerRect.height / UI_HEIGHT;
+        appState.dealingCard.x = Math.round(x / scaleX);
+        appState.dealingCard.y = Math.round(y / scaleY);
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isDragging) {
+            isDragging = false;
+            marker.classList.remove('dragging');
+            console.log('[DealingCard] Position:', appState.dealingCard.x, appState.dealingCard.y);
+        }
+    });
+
+    gameContainer.appendChild(marker);
+}
+
+/**
+ * Remove the dealing card slot marker from DOM
+ */
+function removeDealingSlot() {
+    const existing = document.getElementById('dealingSlotMarker');
+    if (existing) existing.remove();
 }
 
 /**

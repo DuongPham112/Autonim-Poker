@@ -153,9 +153,18 @@ function generateSequence(jsonString, assetsRootPath) {
 
         // Note: Using layer stack ordering (moveToBeginning) instead of 3D camera
 
-        // Process scenario animation steps
+        // Process dealing card animation if enabled
+        var dealingTimeOffset = 0;
+        if (data.dealingCard && data.dealingCard.enabled) {
+            var dealResult = processDealingAnimation(comp, layerMap, data.initialState, data.dealingCard);
+            if (dealResult.success) {
+                dealingTimeOffset = dealResult.endTime;
+            }
+        }
+
+        // Process scenario animation steps (offset by dealing time)
         var stepBlending = data.stepBlending || 0;  // Overlap % (0-50)
-        var animResult = processScenarioAnimation(comp, data.scenario, layerMap, stepBlending);
+        var animResult = processScenarioAnimation(comp, data.scenario, layerMap, stepBlending, dealingTimeOffset);
         if (!animResult.success) {
             app.endUndoGroup();
             return createErrorResponse(animResult.message);
@@ -167,7 +176,9 @@ function generateSequence(jsonString, assetsRootPath) {
         }
 
         // Create Control Layer with Expression Control sliders
-        var controlLayer = createControlLayer(comp);
+        var boardType = data.boardType || "poker";
+        var pusoyConfig = data.pusoyConfig || null;
+        var controlLayer = createControlLayer(comp, boardType, pusoyConfig);
         var controlLayerName = controlLayer.name;
 
         // Apply expressions and per-card controls to card layers
@@ -188,9 +199,15 @@ function generateSequence(jsonString, assetsRootPath) {
                 // Apply Selection Stroke expression (links pre-comp stroke to per-card slider)
                 applySelectionExpression(layer, controlLayerName, compName);
 
-                // Apply Zone Offset expression if card is in a zone
+                // Apply Zone Offset expression based on board type
                 if (cardInfo && cardInfo.zone) {
-                    applyZoneOffsetExpression(layer, controlLayerName, cardInfo.zone);
+                    if (boardType === "pusoy" && cardInfo.row !== undefined) {
+                        // Pusoy: use fan position expression with sliders
+                        applyPusoyPositionExpression(layer, controlLayerName, cardInfo, pusoyConfig);
+                    } else {
+                        // Poker/Grid: use zone offset expression
+                        applyZoneOffsetExpression(layer, controlLayerName, cardInfo.zone);
+                    }
                 }
             }
         }
@@ -582,9 +599,13 @@ function applyInitialTransform(layer, assetInfo, comp) {
 
 /**
  * Create Control Layer with Expression Control sliders
- * This allows user to adjust card size, spacing after export
+ * For Pusoy layout: creates Fan Spacing/Curvature/Gap sliders
+ * For Poker layout: creates Zone Y/X offset sliders
+ * @param {CompItem} comp - The composition
+ * @param {string} boardType - 'poker', 'pusoy', or 'grid'
+ * @param {object} pusoyConfig - Pusoy config with default values (optional)
  */
-function createControlLayer(comp) {
+function createControlLayer(comp, boardType, pusoyConfig) {
     // Create a null layer for controls
     var controlLayer = comp.layers.addNull();
     controlLayer.name = "🎛️ Controls";
@@ -593,30 +614,50 @@ function createControlLayer(comp) {
     controlLayer.outPoint = comp.duration;
 
     // Add Expression Control effects
-    // Card Scale (default 50%)
+    // Card Scale (default 62% — increased from 50% for better visibility)
     var cardScaleEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
     cardScaleEffect.name = "Card Scale";
-    cardScaleEffect.property("Slider").setValue(50);
+    cardScaleEffect.property("Slider").setValue(62);
 
-    // Top Zone Y Offset
-    var topYEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
-    topYEffect.name = "Top Zone Y";
-    topYEffect.property("Slider").setValue(0);
+    if (boardType === "pusoy" && pusoyConfig) {
+        // ========== PUSOY SLIDERS ==========
+        // Fan Spacing (default from config, range ~80-250 in UI coords)
+        var spacingEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+        spacingEffect.name = "Fan Spacing";
+        // Convert UI spacing to AE (multiply by 1.5 for 1280→1920)
+        spacingEffect.property("Slider").setValue(Math.round((pusoyConfig.defaultSpacing || 150) * 1.5));
 
-    // Bottom Zone Y Offset
-    var bottomYEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
-    bottomYEffect.name = "Bottom Zone Y";
-    bottomYEffect.property("Slider").setValue(0);
+        // Fan Curvature (degrees, default from config)
+        var curvatureEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+        curvatureEffect.name = "Fan Curvature";
+        curvatureEffect.property("Slider").setValue(pusoyConfig.defaultCurvature || 50);
 
-    // Left Zone X Offset
-    var leftXEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
-    leftXEffect.name = "Left Zone X";
-    leftXEffect.property("Slider").setValue(0);
+        // Fan Layer Gap (default from config, converted to AE coords)
+        var gapEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+        gapEffect.name = "Fan Layer Gap";
+        gapEffect.property("Slider").setValue(Math.round((pusoyConfig.defaultLayerGap || 30) * 1.5));
+    } else {
+        // ========== POKER SLIDERS ==========
+        // Top Zone Y Offset
+        var topYEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+        topYEffect.name = "Top Zone Y";
+        topYEffect.property("Slider").setValue(0);
 
-    // Right Zone X Offset
-    var rightXEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
-    rightXEffect.name = "Right Zone X";
-    rightXEffect.property("Slider").setValue(0);
+        // Bottom Zone Y Offset
+        var bottomYEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+        bottomYEffect.name = "Bottom Zone Y";
+        bottomYEffect.property("Slider").setValue(0);
+
+        // Left Zone X Offset
+        var leftXEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+        leftXEffect.name = "Left Zone X";
+        leftXEffect.property("Slider").setValue(0);
+
+        // Right Zone X Offset
+        var rightXEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+        rightXEffect.name = "Right Zone X";
+        rightXEffect.property("Slider").setValue(0);
+    }
 
     // Selection Stroke Size (global default, default 0 = off)
     var selectionEffect = controlLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
@@ -630,6 +671,139 @@ function createControlLayer(comp) {
 
     return controlLayer;
 }
+
+/**
+ * Apply Pusoy fan position expression to card layer
+ * Recalculates position from fan formula using Control sliders
+ * The expression computes offset between slider-derived position and baked position
+ * then adds that offset to keyframe values (preserving animation keyframes)
+ * 
+ * @param {Layer} cardLayer - The card layer
+ * @param {string} controlLayerName - Name of control layer  
+ * @param {object} cardInfo - Card info with row, col, rowCount
+ * @param {object} pusoyConfig - Pusoy config with basePivotY and defaults
+ */
+function applyPusoyPositionExpression(cardLayer, controlLayerName, cardInfo, pusoyConfig) {
+    var row = cardInfo.row !== undefined ? cardInfo.row : 0;
+    var col = cardInfo.col !== undefined ? cardInfo.col : 0;
+    var rowCount = cardInfo.rowCount || 1;
+    var basePivotY = (pusoyConfig && pusoyConfig.basePivotY) ? pusoyConfig.basePivotY : 645;
+    var defaultSpacing = (pusoyConfig && pusoyConfig.defaultSpacing) ? Math.round(pusoyConfig.defaultSpacing * 1.5) : 225;
+    var defaultCurvature = (pusoyConfig && pusoyConfig.defaultCurvature) ? pusoyConfig.defaultCurvature : 50;
+    var defaultGap = (pusoyConfig && pusoyConfig.defaultLayerGap) ? Math.round(pusoyConfig.defaultLayerGap * 1.5) : 45;
+
+    // Row-specific adjustments matching loadPusoyLayout math (scaled to AE 1920x1080)
+    var radiusOffset, curvatureOffset, pivotYMultiplier;
+    if (row === 0) {
+        radiusOffset = 45;     // +30 UI * 1.5
+        curvatureOffset = -20;
+        pivotYMultiplier = 0;
+    } else if (row === 1) {
+        radiusOffset = 0;
+        curvatureOffset = 0;
+        pivotYMultiplier = 1;
+    } else {
+        radiusOffset = -45;    // -30 UI * 1.5
+        curvatureOffset = 5;
+        pivotYMultiplier = 2;
+    }
+
+    var centerX = 960; // COMP_WIDTH / 2
+    var THRESHOLD = 100; // Distance threshold — same as poker zone offset
+
+    // ========== POSITION EXPRESSION ==========
+    // Calculate fan offset from sliders, but ONLY apply when card is near initial position.
+    // When card has been swapped (moved >100px from initial), don't apply offset.
+    var expr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n' +
+        'var spacing = ctrl.effect("Fan Spacing")("Slider");\n' +
+        'var curvature = ctrl.effect("Fan Curvature")("Slider");\n' +
+        'var gap = ctrl.effect("Fan Layer Gap")("Slider");\n' +
+        '\n' +
+        'var fanRadius = spacing + (' + radiusOffset + ');\n' +
+        'var angleSpread = curvature + (' + curvatureOffset + ');\n' +
+        'var pivotY = ' + basePivotY + ' + gap * ' + pivotYMultiplier + ';\n' +
+        'var spreadRad = angleSpread * Math.PI / 180;\n' +
+        'var startAngle = -spreadRad / 2;\n';
+
+    if (rowCount > 1) {
+        expr += 'var angleStep = spreadRad / ' + (rowCount - 1) + ';\n' +
+            'var angle = startAngle + ' + col + ' * angleStep;\n';
+    } else {
+        expr += 'var angle = 0;\n';
+    }
+
+    expr += 'var newX = ' + centerX + ' + fanRadius * Math.sin(angle);\n' +
+        'var newY = pivotY - fanRadius * Math.cos(angle);\n' +
+        '\n' +
+        'var defRadius = ' + defaultSpacing + ' + (' + radiusOffset + ');\n' +
+        'var defCurv = ' + defaultCurvature + ' + (' + curvatureOffset + ');\n' +
+        'var defPivotY = ' + basePivotY + ' + ' + defaultGap + ' * ' + pivotYMultiplier + ';\n' +
+        'var defSpreadRad = defCurv * Math.PI / 180;\n' +
+        'var defStartAngle = -defSpreadRad / 2;\n';
+
+    if (rowCount > 1) {
+        expr += 'var defAngleStep = defSpreadRad / ' + (rowCount - 1) + ';\n' +
+            'var defAngle = defStartAngle + ' + col + ' * defAngleStep;\n';
+    } else {
+        expr += 'var defAngle = 0;\n';
+    }
+
+    expr += 'var defX = ' + centerX + ' + defRadius * Math.sin(defAngle);\n' +
+        'var defY = defPivotY - defRadius * Math.cos(defAngle);\n' +
+        'var offsetX = newX - defX;\n' +
+        'var offsetY = newY - defY;\n' +
+        '\n' +
+        '// Only apply offset when card is near its initial position (not during swap)\n' +
+        'var result = value;\n' +
+        'if (numKeys < 2) {\n' +
+        '  result = [value[0] + offsetX, value[1] + offsetY, value[2]];\n' +
+        '} else {\n' +
+        '  var bx = key(1).value[0];\n' +
+        '  var by = key(1).value[1];\n' +
+        '  var ddx = value[0] - bx;\n' +
+        '  var ddy = value[1] - by;\n' +
+        '  var dist = Math.sqrt(ddx*ddx + ddy*ddy);\n' +
+        '  if (dist < ' + THRESHOLD + ') {\n' +
+        '    result = [value[0] + offsetX, value[1] + offsetY, value[2]];\n' +
+        '  }\n' +
+        '}\n' +
+        'result;';
+
+    cardLayer.property("Position").expression = expr;
+
+    // ========== Z ROTATION EXPRESSION ==========
+    // When fan curvature changes, card angle changes, so rotation must update too
+    var rotExpr = 'var ctrl = thisComp.layer("' + controlLayerName + '");\n' +
+        'var curvature = ctrl.effect("Fan Curvature")("Slider");\n' +
+        'var angleSpread = curvature + (' + curvatureOffset + ');\n' +
+        'var spreadRad = angleSpread * Math.PI / 180;\n' +
+        'var startAngle = -spreadRad / 2;\n';
+
+    if (rowCount > 1) {
+        rotExpr += 'var angleStep = spreadRad / ' + (rowCount - 1) + ';\n' +
+            'var angle = startAngle + ' + col + ' * angleStep;\n';
+    } else {
+        rotExpr += 'var angle = 0;\n';
+    }
+
+    rotExpr += 'var newRot = angle * 180 / Math.PI;\n' +
+        'var defCurv = ' + defaultCurvature + ' + (' + curvatureOffset + ');\n' +
+        'var defSpreadRad = defCurv * Math.PI / 180;\n' +
+        'var defStartAngle = -defSpreadRad / 2;\n';
+
+    if (rowCount > 1) {
+        rotExpr += 'var defAngleStep = defSpreadRad / ' + (rowCount - 1) + ';\n' +
+            'var defAngle = defStartAngle + ' + col + ' * defAngleStep;\n';
+    } else {
+        rotExpr += 'var defAngle = 0;\n';
+    }
+
+    rotExpr += 'var defRot = defAngle * 180 / Math.PI;\n' +
+        'value + (newRot - defRot);';
+
+    cardLayer.property("Z Rotation").expression = rotExpr;
+}
+
 
 /**
  * Create Zone Null layers as parents for cards
@@ -878,14 +1052,157 @@ function applyZoneOffsetExpression(cardLayer, controlLayerName, zoneName) {
 }
 
 /**
+ * Process dealing card animation — cards fly from dealing slot to setup positions
+ * Each card is staggered by a few frames for a natural dealing effect
+ * After all cards arrive, holds for 30 frames before recorded steps begin
+ * 
+ * @param {CompItem} comp - The composition
+ * @param {object} layerMap - Map of cardId to layer
+ * @param {object} initialState - Initial state with card positions
+ * @param {object} dealingCard - Dealing config with {x, y} in AE coords
+ * @returns {object} {success, endTime} - endTime is when recorded steps should start
+ */
+function processDealingAnimation(comp, layerMap, initialState, dealingCard) {
+    var frameDuration = 1 / FRAME_RATE;
+    var moveDuration = MOVE_DURATION_FRAMES * frameDuration; // ~10 frames per card
+    var staggerFrames = 3; // Frames between each card's deal start
+    var staggerDuration = staggerFrames * frameDuration;
+    var holdFrames = 30; // Hold after dealing before recorded steps
+    var holdDuration = holdFrames * frameDuration;
+
+    var dealX = dealingCard.x || 960;
+    var dealY = dealingCard.y || 540;
+
+    // Collect cards and group by zone for round-robin dealing
+    var zoneGroups = {};  // zone -> [{id, info, zonePosition}]
+    for (var cardId in initialState) {
+        if (initialState.hasOwnProperty(cardId) && layerMap[cardId]) {
+            var cardInfo = initialState[cardId];
+            var zone = cardInfo.zone || "table";
+            if (!zoneGroups[zone]) {
+                zoneGroups[zone] = [];
+            }
+            zoneGroups[zone].push({
+                id: cardId,
+                info: cardInfo,
+                zonePosition: cardInfo.zonePosition || 0
+            });
+        }
+    }
+
+    // Sort each zone's cards by zonePosition (left to right within zone)
+    var zoneNames = [];
+    for (var zoneName in zoneGroups) {
+        if (zoneGroups.hasOwnProperty(zoneName)) {
+            zoneGroups[zoneName].sort(function (a, b) {
+                return a.zonePosition - b.zonePosition;
+            });
+            zoneNames.push(zoneName);
+        }
+    }
+    // Sort zone names for consistent dealing order
+    zoneNames.sort();
+
+    // Build round-robin dealing order:
+    // Deal 1 card to each zone in turn, then repeat
+    // E.g.: zone-A[0], zone-B[0], zone-C[0], zone-A[1], zone-B[1], ...
+    var cardArray = [];
+    var maxCardsInZone = 0;
+    for (var zi = 0; zi < zoneNames.length; zi++) {
+        if (zoneGroups[zoneNames[zi]].length > maxCardsInZone) {
+            maxCardsInZone = zoneGroups[zoneNames[zi]].length;
+        }
+    }
+    for (var round = 0; round < maxCardsInZone; round++) {
+        for (var zj = 0; zj < zoneNames.length; zj++) {
+            var zoneCards = zoneGroups[zoneNames[zj]];
+            if (round < zoneCards.length) {
+                cardArray.push(zoneCards[round]);
+            }
+        }
+    }
+
+    $.writeln("[DealingCard] Round-robin order: " + cardArray.length + " cards across " + zoneNames.length + " zones: " + zoneNames.join(", "));
+
+    // Calculate dealEndTime first (needed for hold keyframes)
+    var lastCardEnd = cardArray.length > 0 ?
+        ((cardArray.length - 1) * staggerDuration + moveDuration) : 0;
+    var dealEndTime = lastCardEnd + holdDuration;
+
+    // Animate each card from dealing position to setup position
+    for (var i = 0; i < cardArray.length; i++) {
+        var card = cardArray[i];
+        var layer = layerMap[card.id];
+        var info = card.info;
+
+        // Target position (setup position from export data)
+        var targetX = info.x || 960;
+        var targetY = info.y || 540;
+        var targetRot = info.rotation || 0;
+
+        // Timing for this card
+        var startTime = i * staggerDuration;
+        var endTime = startTime + moveDuration;
+
+        // Get layer's Z position from initial transform
+        var zPos = 0;
+        try {
+            var currentPos = layer.property("Position").value;
+            zPos = currentPos[2] || 0;
+        } catch (e) {
+            zPos = 0;
+        }
+
+        // --- POSITION keyframes (dealing → setup) ---
+        var posProperty = layer.property("Position");
+        posProperty.setValueAtTime(0, [dealX, dealY, zPos]);
+        if (startTime > 0) {
+            posProperty.setValueAtTime(startTime, [dealX, dealY, zPos]);
+        }
+        posProperty.setValueAtTime(endTime, [targetX, targetY, zPos]);
+        posProperty.setValueAtTime(dealEndTime, [targetX, targetY, zPos]);
+
+        // --- Z ROTATION keyframes (0 → setup rotation) ---
+        var rotProperty = layer.property("Z Rotation");
+        rotProperty.setValueAtTime(0, 0);
+        if (startTime > 0) {
+            rotProperty.setValueAtTime(startTime, 0);
+        }
+        rotProperty.setValueAtTime(endTime, targetRot);
+        rotProperty.setValueAtTime(dealEndTime, targetRot);
+
+        // --- Y ROTATION (face state) ---
+        // Cards are ALWAYS face-down (180°) during dealing
+        // Only flip to setup face state when arriving at position
+        var yRotProperty = layer.property("Y Rotation");
+        var targetYRot = info.isFaceUp ? 0 : 180;
+        yRotProperty.setValueAtTime(0, 180);  // face down at start
+        if (startTime > 0) {
+            yRotProperty.setValueAtTime(startTime, 180);  // still face down waiting
+        }
+        // Arrive at setup face state (flip if face-up, stay down if face-down)
+        yRotProperty.setValueAtTime(endTime, targetYRot);
+        yRotProperty.setValueAtTime(dealEndTime, targetYRot);  // hold
+    }
+
+    $.writeln("[DealingCard] Dealt " + cardArray.length + " cards, endTime: " + dealEndTime.toFixed(2) + "s");
+
+    return {
+        success: true,
+        endTime: dealEndTime
+    };
+}
+
+/**
  * Process all scenario steps and apply animations
  * Detects swap pairs (Pusoy board) and animates them sequentially
  * Uses Z-position keyframes to control card stacking order over time
  * @param stepBlending - Overlap percentage (0-50) to reduce time between steps
+ * @param timeOffset - Time offset for dealing animation (0 if no dealing)
  * @returns {object} Result with success, finalTime, and swapTimeline for visual mouse
  */
-function processScenarioAnimation(comp, scenario, layerMap, stepBlending) {
-    var currentTime = 0;
+function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOffset) {
+    var currentTime = timeOffset || 0;
     var moveCounter = 0;  // Tracks order of card movements for z-ordering
 
     // Calculate base Z for moving cards - they should always be in front of initial cards
