@@ -2001,6 +2001,48 @@ body {
     display: flex;
 }
 
+/* Rotation handle on marker (bottom-left) */
+.card-place-marker .marker-rotate {
+    position: absolute;
+    bottom: -8px;
+    left: -8px;
+    width: 18px;
+    height: 18px;
+    background: var(--accent-orange);
+    border: 2px solid var(--bg-primary);
+    border-radius: 50%;
+    color: white;
+    font-size: 11px;
+    cursor: grab;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    user-select: none;
+    z-index: 10;
+}
+
+.card-place-marker:hover .marker-rotate,
+.card-place-marker.selected .marker-rotate {
+    display: flex;
+}
+
+.card-place-marker .marker-rotate:hover {
+    background: #e68a2e;
+    transform: scale(1.15);
+}
+
+.card-place-marker .marker-rotate:active,
+.card-place-marker.rotating .marker-rotate {
+    cursor: grabbing;
+    background: #d47a1e;
+}
+
+.card-place-marker.rotating {
+    opacity: 0.85;
+    transition: none;
+}
+
 /* Board Setting Mode Indicator */
 .game-container.board-setting-mode {
     outline: 2px dashed var(--accent-yellow);

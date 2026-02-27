@@ -4826,9 +4826,19 @@ function renderCardPlaceMarkers() {
         });
         marker.appendChild(deleteBtn);
 
+        // Rotation handle (bottom-left) — only for normal slots, not CZ
+        if (!place.isCommunityZone) {
+            const rotateHandle = document.createElement('div');
+            rotateHandle.className = 'marker-rotate';
+            rotateHandle.title = 'Drag to rotate';
+            rotateHandle.textContent = '↻';
+            rotateHandle.addEventListener('mousedown', (e) => startRotateMarker(e, place, marker));
+            marker.appendChild(rotateHandle);
+        }
+
         // Make draggable (pass event for group drag detection)
         marker.addEventListener('mousedown', (e) => {
-            if (e.target.classList.contains('marker-delete') || e.target.classList.contains('cz-mode-btn') || e.target.classList.contains('cz-resize-handle')) return;
+            if (e.target.classList.contains('marker-delete') || e.target.classList.contains('cz-mode-btn') || e.target.classList.contains('cz-resize-handle') || e.target.classList.contains('marker-rotate')) return;
             startDragMarker(e, place, marker);
         });
 
@@ -5357,6 +5367,64 @@ function startDragMarker(e, place, marker) {
         } else {
             debugLog(`[DragMarker] Place ${place.id} → UI(${Math.round(place.x)}, ${Math.round(place.y)})`);
         }
+        updateCardPlacesList();
+    }
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+}
+
+/**
+ * Start rotating a card place marker by dragging the rotation handle
+ * Calculates angle from mouse position relative to marker center
+ * Shift = snap to 15° increments
+ */
+function startRotateMarker(e, place, marker) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    marker.classList.add('rotating');
+
+    // Get marker center in viewport coordinates
+    const markerRect = marker.getBoundingClientRect();
+    const centerX = markerRect.left + markerRect.width / 2;
+    const centerY = markerRect.top + markerRect.height / 2;
+
+    // Calculate initial angle offset so rotation starts from current angle
+    const startMouseAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180 / Math.PI;
+    const startRotation = place.rotation || 0;
+
+    // Save undo snapshot
+    const undoSnapshot = appState.boardLayout.cardPlaces.map(p => ({ id: p.id, x: p.x, y: p.y, rotation: p.rotation || 0 }));
+    let hasRotated = false;
+
+    function onMouseMove(moveE) {
+        hasRotated = true;
+        const mouseAngle = Math.atan2(moveE.clientY - centerY, moveE.clientX - centerX) * 180 / Math.PI;
+        let newRotation = startRotation + (mouseAngle - startMouseAngle);
+
+        // Normalize to -180..180
+        while (newRotation > 180) newRotation -= 360;
+        while (newRotation < -180) newRotation += 360;
+
+        // Shift = snap to 15° increments
+        if (moveE.shiftKey) {
+            newRotation = Math.round(newRotation / 15) * 15;
+        }
+
+        place.rotation = Math.round(newRotation);
+        marker.style.transform = `rotate(${place.rotation}deg)`;
+    }
+
+    function onMouseUp() {
+        marker.classList.remove('rotating');
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        if (hasRotated) {
+            appState.markerUndoStack.push(undoSnapshot);
+            if (appState.markerUndoStack.length > 50) appState.markerUndoStack.shift();
+        }
+        debugLog(`[RotateMarker] Place ${place.id} → ${place.rotation}°`);
         updateCardPlacesList();
     }
 
