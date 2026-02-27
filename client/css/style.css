@@ -2373,6 +2373,11 @@ body.phase-board-setting .step-info-section {
     display: none;
 }
 
+/* Hide Dealing Card toggle outside Board mode — only editable there */
+body:not(.phase-board-setting) .setting-row:has(#dealingCardToggle) {
+    display: none;
+}
+
 /* Hide AE Settings footer, timeline, and step info in Setup Phase */
 body.phase-setup .director-footer {
     display: none;
