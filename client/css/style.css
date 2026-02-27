@@ -2373,6 +2373,19 @@ body.phase-board-setting .step-info-section {
     display: none;
 }
 
+/* Hide AE Settings footer, timeline, and step info in Setup Phase */
+body.phase-setup .director-footer {
+    display: none;
+}
+
+body.phase-setup #timelineBar {
+    display: none;
+}
+
+body.phase-setup .step-info-section {
+    display: none;
+}
+
 /* Multi-selected markers (Shift+Click) */
 .card-place-marker.multi-selected {
     border-color: #ffd700 !important;

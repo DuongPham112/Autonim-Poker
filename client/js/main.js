@@ -694,6 +694,7 @@ function setPhase(phase) {
     if (stepControlsSection) stepControlsSection.classList.add('hidden');
     gameContainer.classList.remove('board-setting-mode');
     document.body.classList.remove('phase-board-setting');
+    document.body.classList.remove('phase-setup');
     clearCardDropZones(); // Clear drop zones when switching phases
 
     // Toggle card tray disabled state
@@ -734,6 +735,7 @@ function setPhase(phase) {
     } else if (phase === 'setup') {
         setupPhaseBtn.classList.add('active');
         modeBadge.textContent = 'SETUP';
+        document.body.classList.add('phase-setup');
 
         // Show board layout info (remove record-mode to show Edit button)
         if (boardLayoutInfo) {
