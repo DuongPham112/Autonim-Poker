@@ -214,10 +214,18 @@ function generateSequence(jsonString, assetsRootPath) {
 
         // Cleanup: Set work area to actual duration
         var actualDuration = animResult.finalTime + 0.3; // Small buffer at end
-        comp.workAreaStart = 0;
-        comp.workAreaDuration = actualDuration;
+        try {
+            // Extend comp duration if needed (workAreaDuration cannot exceed comp.duration)
+            if (actualDuration > comp.duration) {
+                comp.duration = actualDuration + 0.5;
+            }
+            comp.workAreaStart = 0;
+            comp.workAreaDuration = actualDuration;
+        } catch (e) {
+            $.writeln("[Warning] Could not set workAreaDuration: " + e.toString());
+        }
 
-        // Open composition for user
+        // Open MAIN composition for user (not card pre-comp)
         comp.openInViewer();
 
         // End undo group
@@ -1312,12 +1320,15 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOf
         // Note: nextStepTime is recalculated below for swap pairs which may need longer duration
         var nextStepTime = currentTime + (stepDuration * (1 - blendFactor));
 
-        // Separate SELECT/DESELECT from TRANSFORM actions
+        // Separate SELECT/DESELECT, FLIP, and TRANSFORM actions
         var selectActions = [];
         var transformActions = [];
+        var flipActions = [];
         for (var a = 0; a < actions.length; a++) {
             if (actions[a].type === "SELECT" || actions[a].type === "DESELECT") {
                 selectActions.push(actions[a]);
+            } else if (actions[a].type === "FLIP") {
+                flipActions.push(actions[a]);
             } else if (actions[a].type === "TRANSFORM" || actions[a].type === "PLACE") {
                 transformActions.push(actions[a]);
             }
@@ -1349,6 +1360,22 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOf
                     selHoldUntil = currentTime + selectAnimDuration;
                 }
                 processSelectionAction(selLayer, selAction, currentTime, stepDuration, cardSelectionState, selHoldUntil);
+            }
+        }
+
+        // Process standalone FLIP actions (Flip.Ani — flip at current position, no movement)
+        for (var fi = 0; fi < flipActions.length; fi++) {
+            var flipAction = flipActions[fi];
+            var flipLayer = layerMap[flipAction.targetId];
+            if (flipLayer) {
+                // For standalone flip: use currentTime directly, flip starts immediately
+                // processFlipEffect uses moveDuration internally to offset flip timing,
+                // so we pass startTime adjusted to make flip start at currentTime
+                var frameDur = 1 / FRAME_RATE;
+                var moveFrames = MOVE_DURATION_FRAMES * frameDur;
+                var adjustedStart = currentTime - moveFrames + frameDur; // So flip starts at currentTime
+                processFlipEffect(flipLayer, adjustedStart, stepDuration, flipAction.flipToFaceUp, nextStepTime);
+                $.writeln("[FlipAni] " + flipAction.targetId + " flipped to " + (flipAction.flipToFaceUp ? "face-up" : "face-down") + " at t=" + currentTime.toFixed(2));
             }
         }
 

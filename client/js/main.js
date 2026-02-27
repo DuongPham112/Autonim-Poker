@@ -163,7 +163,7 @@ let warningModal, warningMessage, confirmWarningBtn, cancelWarningBtn;
 let autoStepPopup, autoStepYes, autoStepNo;
 
 // Context Menu Elements
-let cardContextMenu, ctxFlipBtn, ctxSlamBtn;
+let cardContextMenu, ctxFlipBtn, ctxFlipAniBtn, ctxSlamBtn;
 let ctxFlipAllBtn, ctxSlamAllBtn, ctxGroupDivider;
 
 // Grouping Mode Elements
@@ -446,6 +446,7 @@ function getDOMElements() {
     // Context Menu Elements
     cardContextMenu = document.getElementById('cardContextMenu');
     ctxFlipBtn = document.getElementById('ctxFlipBtn');
+    ctxFlipAniBtn = document.getElementById('ctxFlipAniBtn');
     ctxSlamBtn = document.getElementById('ctxSlamBtn');
     ctxFlipAllBtn = document.getElementById('ctxFlipAllBtn');
     ctxSlamAllBtn = document.getElementById('ctxSlamAllBtn');
@@ -599,6 +600,7 @@ function bindEvents() {
 
     // Context Menu
     if (ctxFlipBtn) ctxFlipBtn.addEventListener('click', toggleCtxFlip);
+    if (ctxFlipAniBtn) ctxFlipAniBtn.addEventListener('click', handleFlipAni);
     if (ctxSlamBtn) ctxSlamBtn.addEventListener('click', toggleCtxSlam);
     if (ctxFlipAllBtn) ctxFlipAllBtn.addEventListener('click', toggleCtxFlipAll);
     if (ctxSlamAllBtn) ctxSlamAllBtn.addEventListener('click', toggleCtxSlamAll);
@@ -2405,6 +2407,21 @@ function computeActions(startSnap, endSnap) {
         const rotChanged = Math.abs((end.rotation || 0) - (start.rotation || 0)) > 0.5;
         const flipChanged = end.isFaceUp !== start.isFaceUp;
 
+        // Standalone flip (face changed but no zone change) → FLIP action
+        if (flipChanged && !zoneChanged) {
+            const pos = getAEPosition(end);
+            actions.push({
+                targetId: card.id,
+                type: 'FLIP',
+                position: pos,
+                zone: end.zone,
+                zonePosition: end.zonePosition || 0,
+                flipToFaceUp: end.isFaceUp
+            });
+            // Don't fall through to TRANSFORM — this is a standalone flip
+            return;
+        }
+
         // IMPORTANT: Only apply flipAction/slamEffect if card actually moves (zone changed)
         // These flags are "sticky" on card objects, so we must NOT use them for stationary cards
         const hasFlipAction = zoneChanged && card.flipAction;
@@ -3627,6 +3644,11 @@ function showAutoStepPopup(card, previousSnapshot) {
     pendingChangeCard = card;
 
     autoStepPopup.classList.remove('hidden');
+
+    // If auto-record is enabled, start countdown to auto-accept
+    if (appState.autoRecord) {
+        startAutoRecordCountdown();
+    }
 }
 
 /**
@@ -3833,6 +3855,30 @@ function toggleCtxFlip() {
     }, 300);
 }
 
+/**
+ * Handle Flip.Ani — flip card and trigger step recording
+ * Records the flip as a standalone FLIP action (no movement needed)
+ */
+function handleFlipAni() {
+    if (!appState.selectedCard) return;
+    if (appState.phase !== 'record') {
+        setStatus('Flip.Ani only works in Record mode');
+        return;
+    }
+
+    // Take snapshot BEFORE the flip
+    const beforeSnapshot = takeSnapshot();
+
+    // Flip the card visually
+    flipCard(appState.selectedCard);
+
+    debugLog(`[FlipAni] Card ${appState.selectedCard.id} flipped to ${appState.selectedCard.isFaceUp ? 'face-up' : 'face-down'}`);
+
+    // Trigger step recording popup (same flow as card movement)
+    showAutoStepPopup(appState.selectedCard, beforeSnapshot);
+
+    hideCardContextMenu();
+}
 
 /**
  * Toggle slam effect on selected card
@@ -5845,10 +5891,10 @@ function startAutoRecordCountdown() {
             countdownBarFill.style.width = `${progress}%`;
         }
 
-        // Countdown finished
+        // Countdown finished — auto-accept step
         if (appState.countdownValue <= 0) {
             cancelAutoRecordCountdown();
-            autoSaveGroupedStep();
+            handleAutoStepYes();
         }
     }, 1000);
 }
