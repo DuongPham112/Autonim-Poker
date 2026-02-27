@@ -30,6 +30,9 @@ desktop.ini
 dist/
 build/
 
+# Release builds (deployed to user machines)
+release/
+
 # Environment files
 .env
 .env.local

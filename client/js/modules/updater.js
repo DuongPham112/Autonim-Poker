@@ -7,7 +7,7 @@
  */
 
 // Current client version (matches versions.json on server)
-const CLIENT_VERSION = '2.0.3.2';
+const CLIENT_VERSION = '2.0.4.0';
 const UPDATE_CHECK_INTERVAL = 3600000; // 1 hour
 
 /**
@@ -39,6 +39,7 @@ async function checkForUpdates() {
         };
     } catch (error) {
         console.warn('[Updater] Update check failed:', error.message);
+        updateStatusUI('error', 'Check failed: ' + error.message);
         return {
             updateAvailable: false,
             serverVersion: CLIENT_VERSION,
@@ -165,7 +166,7 @@ function updateStatusUI(state, message) {
  * Initialize the update button and version display
  */
 function initUpdaterUI() {
-    const versionEl = document.getElementById('plugin-version');
+    const versionEl = document.getElementById('pluginVersion');
     const btnEl = document.getElementById('btn-check-update');
 
     if (versionEl) {
