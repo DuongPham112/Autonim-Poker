@@ -51,6 +51,45 @@ function initTimelineModules(scenarioData, stepSnapshots, restoreFromSnapshot) {
         snapshotManager.loadFromArray(stepSnapshots);
     }
 
+    // Wire cross-module events: keep snapshots and properties in sync with steps
+    timelineManager.on('stepDeleted', ({ step, index }) => {
+        // Snapshot index is step index + 1 (index 0 = initial state)
+        if (index + 1 < snapshotManager.getSnapshotCount()) {
+            snapshotManager.deleteSnapshot(index + 1);
+        }
+        if (step.stepId !== undefined) {
+            stepPropertyManager.clearStepProperties(step.stepId);
+        }
+    });
+
+    timelineManager.on('stepInserted', ({ step, index }) => {
+        // Insert a placeholder snapshot after the new step's position
+        // Copy the previous snapshot as a starting point
+        const prevSnapshot = snapshotManager.getSnapshot(index) || {};
+        const cloned = JSON.parse(JSON.stringify(prevSnapshot));
+        snapshotManager.insertSnapshot(index + 1, cloned);
+    });
+
+    timelineManager.on('stepMoved', ({ fromIndex, toIndex }) => {
+        // Reorder snapshots to match (snapshot indices are step+1)
+        const fromSnapIdx = fromIndex + 1;
+        const toSnapIdx = toIndex + 1;
+        if (fromSnapIdx < snapshotManager.getSnapshotCount()) {
+            const snapshot = snapshotManager.getSnapshot(fromSnapIdx);
+            const cloned = JSON.parse(JSON.stringify(snapshot));
+            snapshotManager.deleteSnapshot(fromSnapIdx);
+            snapshotManager.insertSnapshot(toSnapIdx, cloned);
+        }
+    });
+
+    timelineManager.on('stepsCleared', () => {
+        // Keep only the initial snapshot (index 0)
+        while (snapshotManager.getSnapshotCount() > 1) {
+            snapshotManager.deleteSnapshot(snapshotManager.getSnapshotCount() - 1);
+        }
+        stepPropertyManager.clearAll();
+    });
+
     // Create playback controller
     const playbackController = new PlaybackController({
         timelineManager: timelineManager,

@@ -28,10 +28,17 @@ if (typeof JSON.parse !== 'function') {
 }
 
 if (typeof JSON.stringify !== 'function') {
+    var _jsonEscapeString = function (s) {
+        return s.replace(/\\/g, '\\\\')
+                .replace(/"/g, '\\"')
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\r')
+                .replace(/\t/g, '\\t');
+    };
     JSON.stringify = function (obj) {
         var t = typeof obj;
         if (t !== "object" || obj === null) {
-            if (t === "string") return '"' + obj.replace(/"/g, '\\"') + '"';
+            if (t === "string") return '"' + _jsonEscapeString(obj) + '"';
             return String(obj);
         } else {
             var n, v, json = [], arr = (obj && obj.constructor === Array);
@@ -39,9 +46,9 @@ if (typeof JSON.stringify !== 'function') {
                 if (obj.hasOwnProperty(n)) {
                     v = obj[n];
                     t = typeof v;
-                    if (t === "string") v = '"' + v.replace(/"/g, '\\"') + '"';
+                    if (t === "string") v = '"' + _jsonEscapeString(v) + '"';
                     else if (t === "object" && v !== null) v = JSON.stringify(v);
-                    json.push((arr ? "" : '"' + n + '":') + String(v));
+                    json.push((arr ? "" : '"' + _jsonEscapeString(String(n)) + '":') + String(v));
                 }
             }
             return (arr ? "[" : "{") + String(json) + (arr ? "]" : "}");
@@ -246,11 +253,17 @@ function generateSequence(jsonString, assetsRootPath) {
         // End undo group
         app.endUndoGroup();
 
+        // Count layers using for-in (Object.keys may not exist in older ExtendScript)
+        var layerCount = 0;
+        for (var lk in layerMap) {
+            if (layerMap.hasOwnProperty(lk)) layerCount++;
+        }
+
         // Return success
         return createSuccessResponse(
             "Created composition '" + compName + "' with " +
             data.scenario.length + " steps and " +
-            Object.keys(layerMap).length + " layers",
+            layerCount + " layers",
             compName
         );
 
@@ -450,6 +463,7 @@ function createCardPrecomp(mainComp, cardId, cardInfo, assetsPath, folderInfo) {
 
         // Convert AI → AE Shape Layer via "Create Shapes from Vector Layer"
         // This gives us native control over Stroke Width, Color, etc.
+        var strokeLayerRemoved = false;
         try {
             // Select only the AI layer
             for (var si = 1; si <= preComp.numLayers; si++) {
@@ -473,6 +487,7 @@ function createCardPrecomp(mainComp, cardId, cardInfo, assetsPath, folderInfo) {
             if (shapesLayer) {
                 // Remove original AI footage layer
                 strokeLayer.remove();
+                strokeLayerRemoved = true;
 
                 // Rename for expression compatibility
                 shapesLayer.name = "Selection Stroke";
@@ -509,16 +524,19 @@ function createCardPrecomp(mainComp, cardId, cardInfo, assetsPath, folderInfo) {
         } catch (convertErr) {
             $.writeln("AI→Shape conversion warning: " + convertErr.toString());
             // Fallback: keep the AI layer as-is with opacity toggle
-            var strokeSizeCtrl = strokeLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
-            strokeSizeCtrl.name = "Stroke Size";
-            strokeSizeCtrl.property("Slider").setValue(0);
+            // Only apply fallback if strokeLayer was not already removed
+            if (!strokeLayerRemoved) {
+                var strokeSizeCtrl = strokeLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+                strokeSizeCtrl.name = "Stroke Size";
+                strokeSizeCtrl.property("Slider").setValue(0);
 
-            var flipCtrl = strokeLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
-            flipCtrl.name = "Flip Control";
-            flipCtrl.property("Slider").setValue(0);
+                var flipCtrl = strokeLayer.property("ADBE Effect Parade").addProperty("ADBE Slider Control");
+                flipCtrl.name = "Flip Control";
+                flipCtrl.property("Slider").setValue(0);
 
-            strokeLayer.property("Opacity").expression =
-                'thisLayer.effect("Stroke Size")("Slider") > 0 ? 100 : 0';
+                strokeLayer.property("Opacity").expression =
+                    'thisLayer.effect("Stroke Size")("Slider") > 0 ? 100 : 0';
+            }
         }
     }
 
@@ -1784,8 +1802,16 @@ function processSelectionAction(layer, action, startTime, stepDuration, selectio
     var positionProp = layer.property("Position");
 
     // Use position from action data (correct position for the zone)
-    var baseX = action.position.x;
-    var baseY = action.position.y;
+    // Fall back to layer's current position if action.position is missing
+    var baseX, baseY;
+    if (action.position && action.position.x !== undefined) {
+        baseX = action.position.x;
+        baseY = action.position.y;
+    } else {
+        var fallbackPos = positionProp.valueAtTime(startTime, false);
+        baseX = fallbackPos[0];
+        baseY = fallbackPos[1];
+    }
 
     // Get current Z from layer (Z is managed separately for stacking)
     var currentPos = positionProp.valueAtTime(startTime, false);

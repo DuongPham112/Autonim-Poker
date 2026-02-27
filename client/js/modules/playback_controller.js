@@ -306,8 +306,8 @@ class PlaybackController extends EventEmitter {
      * @returns {boolean}
      */
     isAtEnd() {
-        const stepCount = this.timelineManager.getStepCount();
-        return this._currentStepIndex >= stepCount - 1;
+        const totalDuration = this.timelineManager.getTotalDuration();
+        return this._currentTime >= totalDuration && totalDuration > 0;
     }
 
     /**
@@ -346,18 +346,15 @@ class PlaybackController extends EventEmitter {
 
         // Clamp and check bounds
         const totalDuration = this.timelineManager.getTotalDuration();
+        let reachedEnd = false;
 
         if (this._playDirection === 1 && this._currentTime >= totalDuration) {
-            // Reached end - stop
             this._currentTime = totalDuration;
-            this.pause();
-            this.emit('playbackComplete');
+            reachedEnd = true;
         } else if (this._playDirection === -1 && this._currentTime <= 0) {
-            // Reached beginning - stop
             this._currentTime = 0;
             this._currentStepIndex = -1;
-            this.pause();
-            this.emit('playbackComplete');
+            reachedEnd = true;
         }
 
         // Update step index
@@ -383,6 +380,13 @@ class PlaybackController extends EventEmitter {
 
         // Emit time update
         this.emit('timeUpdate', { time: this._currentTime });
+
+        // If we reached the end, do final render/emit first, THEN pause and signal complete
+        if (reachedEnd) {
+            this.pause();
+            this.emit('playbackComplete');
+            return;
+        }
 
         // Continue loop if still playing
         if (this._isPlaying) {

@@ -3222,7 +3222,8 @@ function animateCardsSequentially(movingCards, targetSnapshot, onComplete) {
         if (card) {
             // Create element if it doesn't exist
             if (!card.element) {
-                const element = createCardOnTable(card, move.targetState.isFaceUp);
+                card.isFaceUp = move.targetState.isFaceUp;
+                const element = createTableCardElement(card);
                 card.element = element;
             }
 
@@ -3396,9 +3397,10 @@ function handleDeleteStep(stepIndex) {
         showWarningModal(
             `Deleting step ${stepIndex + 1} will also delete all ${scenarioData.scenario.length - stepIndex - 1} subsequent steps. Continue?`,
             () => {
-                // Delete this step and all after it
+                // Delete this step and all after it, keep steps 0..stepIndex-1
                 scenarioData.scenario = scenarioData.scenario.slice(0, stepIndex);
-                stepSnapshots = stepSnapshots.slice(0, stepIndex);
+                // Keep snapshots 0..stepIndex (need stepIndex+1 snapshots for stepIndex steps)
+                stepSnapshots = stepSnapshots.slice(0, stepIndex + 1);
                 renumberSteps();
                 renderTimeline();
                 updateUI();
@@ -3425,16 +3427,17 @@ function handleEditStep(stepIndex) {
         showWarningModal(
             `Editing step ${stepIndex + 1} will delete all ${scenarioData.scenario.length - stepIndex - 1} subsequent steps. Continue?`,
             () => {
-                // Delete steps after this one
+                // Delete steps from stepIndex onward, keep steps 0..stepIndex-1
                 scenarioData.scenario = scenarioData.scenario.slice(0, stepIndex);
-                stepSnapshots = stepSnapshots.slice(0, stepIndex);
+                // Keep snapshots 0..stepIndex (snap[stepIndex] = state BEFORE step at stepIndex)
+                stepSnapshots = stepSnapshots.slice(0, stepIndex + 1);
                 renumberSteps();
 
                 // Restore to state before this step
                 if (stepIndex === 0) {
                     restoreToInitialState();
-                } else if (stepSnapshots[stepIndex - 1]) {
-                    restoreFromSnapshot(stepSnapshots[stepIndex - 1]);
+                } else if (stepSnapshots[stepIndex]) {
+                    restoreFromSnapshot(stepSnapshots[stepIndex]);
                 }
 
                 renderTimeline();
@@ -3443,16 +3446,18 @@ function handleEditStep(stepIndex) {
             }
         );
     } else {
-        // Editing last step - just remove it and restore
+        // Editing last step - just remove it and restore to the state BEFORE this step
         scenarioData.scenario.pop();
 
-        if (stepSnapshots.length > 0) {
-            const prevSnapshot = stepSnapshots[stepSnapshots.length - 1];
+        if (stepSnapshots.length > 1) {
+            // Pop the end-state snapshot of the removed step
             stepSnapshots.pop();
+            // Now the last snapshot is the START state of the removed step
+            const prevSnapshot = stepSnapshots[stepSnapshots.length - 1];
 
             if (prevSnapshot) {
                 restoreFromSnapshot(prevSnapshot);
-            } else if (scenarioData.initialState) {
+            } else {
                 restoreToInitialState();
             }
         } else {
@@ -3721,13 +3726,19 @@ function handleAutoStepNo() {
     // Revert all cards to previous snapshot
     restoreFromSnapshot(pendingChangeSnapshot);
 
-    // Clear sticky flags that survive snapshot restoration
-    // These are set via UI checkboxes, not stored in snapshots,
-    // and can cause spurious TRANSFORM actions in subsequent steps
-    appState.tableCards.forEach(card => {
-        card.flipAction = false;
-        card.slamEffect = false;
-    });
+    // Clear sticky flags only on the card(s) involved in the reverted move.
+    // These flags are set via UI checkboxes, not stored in snapshots,
+    // and can cause spurious TRANSFORM actions in subsequent steps.
+    if (pendingChangeCard) {
+        pendingChangeCard.flipAction = false;
+        pendingChangeCard.slamEffect = false;
+    } else if (appState.groupedCards.length > 0) {
+        // Grouped move — clear only the grouped cards
+        appState.groupedCards.forEach(card => {
+            card.flipAction = false;
+            card.slamEffect = false;
+        });
+    }
 
     // Re-apply "grouped" CSS class to restored grouped cards
     appState.groupedCards.forEach(card => {
@@ -5744,18 +5755,9 @@ function handleTimelineStepMove(step) {
     renderTimeline();
 }
 
-/**
- * Show warning modal
- */
-function showWarningModal(message, onConfirm) {
-    if (warningModal && warningMessage) {
-        warningMessage.textContent = message;
-        warningModal.classList.remove('hidden');
-
-        // Store callback
-        warningModal._onConfirm = onConfirm;
-    }
-}
+// showWarningModal is defined earlier (line ~3575) using pendingWarningCallback.
+// A duplicate was here that stored callback on warningModal._onConfirm instead,
+// which broke confirmWarning(). Removed to fix all warning confirmation actions.
 
 /**
  * Refresh timeline UI

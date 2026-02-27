@@ -222,8 +222,16 @@ class SnapshotManager extends EventEmitter {
             const step = steps[i];
 
             if (time >= step.startTime && time <= step.endTime) {
-                // We're in this step - interpolate
-                const progress = (time - step.startTime) / step.duration;
+                // Guard: need snapshot at i+1 to interpolate
+                if (i + 1 >= this._snapshots.length) {
+                    // Not enough snapshots — return the last available
+                    return this.getSnapshot(this._snapshots.length - 1) || {};
+                }
+                // Guard: avoid division by zero for zero-duration steps
+                const duration = step.duration || step.endTime - step.startTime;
+                const progress = duration > 0
+                    ? Math.min((time - step.startTime) / duration, 1)
+                    : 1;
                 return this.interpolate(i, i + 1, progress);
             }
         }
