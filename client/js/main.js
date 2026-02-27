@@ -81,7 +81,9 @@ const appState = {
         gridRows: 3,
         cardPlaces: []            // For grid mode: [{id, x, y, label}, ...]
     },
-    selectedCardPlace: null,      // Currently selected card place marker
+    selectedCardPlace: null,      // Currently selected card place marker (for CZ panel)
+    selectedCardPlaces: [],       // Multi-selected card place markers
+    markerUndoStack: [],          // Undo stack for marker positions (Ctrl+Z)
 
     // Grouping Mode
     groupingMode: false,          // Whether grouping mode is enabled
@@ -499,6 +501,15 @@ function bindEvents() {
     if (addCardPlaceBtn) addCardPlaceBtn.addEventListener('click', handleAddCardPlace);
     var addCommunityZoneBtn = document.getElementById('addCommunityZoneBtn');
     if (addCommunityZoneBtn) addCommunityZoneBtn.addEventListener('click', handleAddCommunityZone);
+    var addDealingSlotBtn = document.getElementById('addDealingSlotBtn');
+    if (addDealingSlotBtn) addDealingSlotBtn.addEventListener('click', () => {
+        if (appState.dealingCard.enabled) return; // Max 1
+        appState.dealingCard.enabled = true;
+        if (dealingCardToggle) dealingCardToggle.checked = true; // Sync AE toggle
+        renderDealingSlot();
+        updateDealingSlotButton();
+        setStatus('Dealing Card added — drag to reposition');
+    });
     if (clearBoardBtn) clearBoardBtn.addEventListener('click', handleClearBoard);
     if (savePresetBtn) savePresetBtn.addEventListener('click', handleSavePreset);
 
@@ -680,6 +691,7 @@ function setPhase(phase) {
     if (boardLayoutInfo) boardLayoutInfo.classList.remove('visible');
     if (stepControlsSection) stepControlsSection.classList.add('hidden');
     gameContainer.classList.remove('board-setting-mode');
+    document.body.classList.remove('phase-board-setting');
     clearCardDropZones(); // Clear drop zones when switching phases
 
     // Toggle card tray disabled state
@@ -704,6 +716,7 @@ function setPhase(phase) {
         modeBadge.classList.add('board-setting');
         if (boardSettingSection) boardSettingSection.classList.add('visible');
         gameContainer.classList.add('board-setting-mode');
+        document.body.classList.add('phase-board-setting');
 
         // Add grid-mode if layout type is grid
         if (appState.boardLayout.type === 'grid') {
@@ -714,6 +727,7 @@ function setPhase(phase) {
 
         // Render card place markers
         renderCardPlaceMarkers();
+        updateDealingSlotButton();
         setStatus('Board Setting - Customize card positions');
     } else if (phase === 'setup') {
         setupPhaseBtn.classList.add('active');
@@ -4404,6 +4418,20 @@ function renderDealingSlot() {
     marker.innerHTML = '🃏<span>DEAL</span>';
     marker.title = 'Drag to reposition dealing slot';
 
+    // Delete button
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'marker-delete';
+    deleteBtn.textContent = '✕';
+    deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        appState.dealingCard.enabled = false;
+        if (dealingCardToggle) dealingCardToggle.checked = false;
+        removeDealingSlot();
+        updateDealingSlotButton();
+        setStatus('Dealing Card removed');
+    });
+    marker.appendChild(deleteBtn);
+
     // Position using UI coordinates → DOM pixel coordinates
     const containerRect = gameContainer.getBoundingClientRect();
     const scaleX = containerRect.width / UI_WIDTH;
@@ -4479,6 +4507,17 @@ function renderDealingSlot() {
 function removeDealingSlot() {
     const existing = document.getElementById('dealingSlotMarker');
     if (existing) existing.remove();
+}
+
+/**
+ * Update the Add Deal button state (disabled when dealing card exists)
+ */
+function updateDealingSlotButton() {
+    const btn = document.getElementById('addDealingSlotBtn');
+    if (btn) {
+        btn.disabled = appState.dealingCard.enabled;
+        btn.title = appState.dealingCard.enabled ? 'Dealing card already added (max 1)' : 'Add dealing card origin (max 1)';
+    }
 }
 
 /**
@@ -4741,11 +4780,47 @@ function renderCardPlaceMarkers() {
         });
         marker.appendChild(deleteBtn);
 
-        // Make draggable
-        marker.addEventListener('mousedown', (e) => startDragMarker(e, place, marker));
+        // Make draggable (pass event for group drag detection)
+        marker.addEventListener('mousedown', (e) => {
+            if (e.target.classList.contains('marker-delete') || e.target.classList.contains('cz-mode-btn') || e.target.classList.contains('cz-resize-handle')) return;
+            startDragMarker(e, place, marker);
+        });
 
-        // Click to select
-        marker.addEventListener('click', () => selectCardPlace(place, marker));
+        // Click to select (Shift+Click for multi-select)
+        marker.addEventListener('click', (e) => {
+            if (e.target.classList.contains('marker-delete') || e.target.classList.contains('cz-mode-btn')) return;
+
+            if (e.shiftKey) {
+                // Shift+Click: toggle this marker in multi-select
+                // If multi-select is empty but there's a single selected marker, add it first
+                if (appState.selectedCardPlaces.length === 0 && appState.selectedCardPlace) {
+                    appState.selectedCardPlaces.push(appState.selectedCardPlace);
+                    const prevMarker = document.querySelector(`.card-place-marker[data-place-id="${appState.selectedCardPlace.id}"]`);
+                    if (prevMarker) prevMarker.classList.add('multi-selected');
+                }
+                const idx = appState.selectedCardPlaces.indexOf(place);
+                if (idx >= 0) {
+                    appState.selectedCardPlaces.splice(idx, 1);
+                    marker.classList.remove('multi-selected');
+                } else {
+                    appState.selectedCardPlaces.push(place);
+                    marker.classList.add('multi-selected');
+                }
+                // Also select for CZ panel
+                selectCardPlace(place, marker);
+                debugLog(`[MultiSelect] ${appState.selectedCardPlaces.length} slots selected`);
+            } else {
+                // Normal click: single select, clear multi-select
+                appState.selectedCardPlaces = [];
+                document.querySelectorAll('.card-place-marker.multi-selected').forEach(m => m.classList.remove('multi-selected'));
+                selectCardPlace(place, marker);
+            }
+        });
+
+        // Apply multi-selected class if in selection
+        if (appState.selectedCardPlaces.includes(place)) {
+            marker.classList.add('multi-selected');
+        }
 
         gameContainer.appendChild(marker);
     });
@@ -4949,7 +5024,9 @@ function selectCardPlace(place, markerElement) {
  */
 function deselectCardPlace() {
     document.querySelectorAll('.card-place-marker.selected').forEach(m => m.classList.remove('selected'));
+    document.querySelectorAll('.card-place-marker.multi-selected').forEach(m => m.classList.remove('multi-selected'));
     appState.selectedCardPlace = null;
+    appState.selectedCardPlaces = [];
     const czPanel = document.getElementById('czSettingsPanel');
     if (czPanel) czPanel.classList.add('hidden');
 }
@@ -5024,10 +5101,115 @@ function initCZSettingsPanel() {
             }
         });
     }
+
+    // Lasso selection: mousedown on gameContainer (board-setting phase)
+    if (gameContainer) {
+        let lassoRect = null;
+        let lassoStartX = 0, lassoStartY = 0;
+        let isLassoing = false;
+
+        gameContainer.addEventListener('mousedown', (e) => {
+            if (appState.phase !== 'board-setting') return;
+            if (e.button !== 0) return;
+            // Only start lasso if clicking on table/felt (not on markers, buttons, etc.)
+            const target = e.target;
+            if (target.closest('.card-place-marker') || target.closest('.dealing-card-slot') || target.closest('button')) return;
+
+            const containerRect = gameContainer.getBoundingClientRect();
+            lassoStartX = e.clientX - containerRect.left;
+            lassoStartY = e.clientY - containerRect.top;
+            isLassoing = true;
+
+            // Create lasso rect element
+            lassoRect = document.createElement('div');
+            lassoRect.className = 'selection-rect';
+            lassoRect.style.left = `${lassoStartX}px`;
+            lassoRect.style.top = `${lassoStartY}px`;
+            lassoRect.style.width = '0px';
+            lassoRect.style.height = '0px';
+            gameContainer.appendChild(lassoRect);
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isLassoing || !lassoRect) return;
+            const containerRect = gameContainer.getBoundingClientRect();
+            const currentX = e.clientX - containerRect.left;
+            const currentY = e.clientY - containerRect.top;
+
+            const left = Math.min(lassoStartX, currentX);
+            const top = Math.min(lassoStartY, currentY);
+            const width = Math.abs(currentX - lassoStartX);
+            const height = Math.abs(currentY - lassoStartY);
+
+            lassoRect.style.left = `${left}px`;
+            lassoRect.style.top = `${top}px`;
+            lassoRect.style.width = `${width}px`;
+            lassoRect.style.height = `${height}px`;
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (!isLassoing || !lassoRect) return;
+            isLassoing = false;
+
+            const rectBounds = lassoRect.getBoundingClientRect();
+            lassoRect.remove();
+            lassoRect = null;
+
+            // Minimum size threshold to avoid accidental clicks
+            if (rectBounds.width < 5 && rectBounds.height < 5) return;
+
+            // Find all markers that intersect the lasso rectangle
+            const markers = document.querySelectorAll('.card-place-marker');
+            appState.selectedCardPlaces = [];
+            markers.forEach(marker => {
+                const markerBounds = marker.getBoundingClientRect();
+                // Check intersection
+                if (markerBounds.left < rectBounds.right &&
+                    markerBounds.right > rectBounds.left &&
+                    markerBounds.top < rectBounds.bottom &&
+                    markerBounds.bottom > rectBounds.top) {
+                    const placeId = marker.dataset.placeId;
+                    const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
+                    if (place) {
+                        appState.selectedCardPlaces.push(place);
+                        marker.classList.add('multi-selected');
+                    }
+                } else {
+                    marker.classList.remove('multi-selected');
+                }
+            });
+
+            if (appState.selectedCardPlaces.length > 0) {
+                debugLog(`[LassoSelect] Selected ${appState.selectedCardPlaces.length} markers`);
+            }
+        });
+    }
+
+    // Ctrl+Z: Undo marker position changes (board-setting phase)
+    document.addEventListener('keydown', (e) => {
+        if (appState.phase !== 'board-setting') return;
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+            e.preventDefault();
+            if (appState.markerUndoStack.length === 0) return;
+
+            const snapshot = appState.markerUndoStack.pop();
+            snapshot.forEach(saved => {
+                const place = appState.boardLayout.cardPlaces.find(p => p.id === saved.id);
+                if (place) {
+                    place.x = saved.x;
+                    place.y = saved.y;
+                }
+            });
+
+            renderCardPlaceMarkers();
+            updateCardPlacesList();
+            debugLog(`[Undo] Restored marker positions (${appState.markerUndoStack.length} left)`);
+        }
+    });
 }
 
 /**
- * Start dragging a marker
+ * Start dragging a marker (supports group drag for multi-selected markers)
  */
 function startDragMarker(e, place, marker) {
     if (e.button !== 0) return; // Left click only
@@ -5049,42 +5231,86 @@ function startDragMarker(e, place, marker) {
     const scaleX = tableWidth / UI_WIDTH;
     const scaleY = tableHeight / UI_HEIGHT;
 
-    // Marker width/height depends on type
-    const markerW = place.isCommunityZone ? (place.czWidth || 300) * scaleX : CARD_WIDTH;
-    const markerH = place.isCommunityZone ? (place.czHeight || 120) * scaleY : CARD_HEIGHT;
-
     const startX = e.clientX;
     const startY = e.clientY;
-    // Store start position in container coordinates — apply scale to UI coords
-    const startMarkerLeft = offsetX + place.x * scaleX - markerW / 2;
-    const startMarkerTop = offsetY + place.y * scaleY - markerH / 2;
+
+    // Save position snapshot for undo (before any movement)
+    const undoSnapshot = appState.boardLayout.cardPlaces.map(p => ({ id: p.id, x: p.x, y: p.y }));
+    let hasMoved = false;
+
+    // Check if this is a group drag (marker is in multi-select)
+    const isGroupDrag = appState.selectedCardPlaces.includes(place) && appState.selectedCardPlaces.length > 1;
+
+    // For group drag: store initial positions for all selected markers
+    let groupData = [];
+    if (isGroupDrag) {
+        groupData = appState.selectedCardPlaces.map(p => {
+            const markerW = p.isCommunityZone ? (p.czWidth || 300) * scaleX : CARD_WIDTH;
+            const markerH = p.isCommunityZone ? (p.czHeight || 120) * scaleY : CARD_HEIGHT;
+            const markerEl = document.querySelector(`.card-place-marker[data-place-id="${p.id}"]`);
+            return {
+                place: p,
+                marker: markerEl,
+                startLeft: offsetX + p.x * scaleX - markerW / 2,
+                startTop: offsetY + p.y * scaleY - markerH / 2,
+                markerW,
+                markerH
+            };
+        });
+    } else {
+        // Single drag
+        const markerW = place.isCommunityZone ? (place.czWidth || 300) * scaleX : CARD_WIDTH;
+        const markerH = place.isCommunityZone ? (place.czHeight || 120) * scaleY : CARD_HEIGHT;
+        groupData = [{
+            place,
+            marker,
+            startLeft: offsetX + place.x * scaleX - markerW / 2,
+            startTop: offsetY + place.y * scaleY - markerH / 2,
+            markerW,
+            markerH
+        }];
+    }
 
     function onMouseMove(moveE) {
+        hasMoved = true;
         const dx = moveE.clientX - startX;
         const dy = moveE.clientY - startY;
 
-        // New position in container coordinates
-        let newLeft = startMarkerLeft + dx;
-        let newTop = startMarkerTop + dy;
+        groupData.forEach(item => {
+            // New position in container coordinates
+            let newLeft = item.startLeft + dx;
+            let newTop = item.startTop + dy;
 
-        // Constrain to game container bounds
-        newLeft = Math.max(0, Math.min(containerRect.width - markerW, newLeft));
-        newTop = Math.max(0, Math.min(containerRect.height - markerH, newTop));
+            // Constrain to game container bounds
+            newLeft = Math.max(0, Math.min(containerRect.width - item.markerW, newLeft));
+            newTop = Math.max(0, Math.min(containerRect.height - item.markerH, newTop));
 
-        // Update marker position
-        marker.style.left = `${newLeft}px`;
-        marker.style.top = `${newTop}px`;
+            // Update marker position
+            if (item.marker) {
+                item.marker.style.left = `${newLeft}px`;
+                item.marker.style.top = `${newTop}px`;
+            }
 
-        // Convert DOM pixels back to UI coordinates for storage (center point)
-        place.x = (newLeft - offsetX + markerW / 2) / scaleX;
-        place.y = (newTop - offsetY + markerH / 2) / scaleY;
+            // Convert DOM pixels back to UI coordinates for storage (center point)
+            item.place.x = (newLeft - offsetX + item.markerW / 2) / scaleX;
+            item.place.y = (newTop - offsetY + item.markerH / 2) / scaleY;
+        });
     }
 
     function onMouseUp() {
         marker.classList.remove('dragging');
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
-        debugLog(`[DragMarker] Place ${place.id} → UI(${Math.round(place.x)}, ${Math.round(place.y)})`);
+        // Push undo snapshot only if marker actually moved
+        if (hasMoved) {
+            appState.markerUndoStack.push(undoSnapshot);
+            if (appState.markerUndoStack.length > 50) appState.markerUndoStack.shift();
+        }
+        if (isGroupDrag) {
+            debugLog(`[GroupDrag] Moved ${groupData.length} markers`);
+        } else {
+            debugLog(`[DragMarker] Place ${place.id} → UI(${Math.round(place.x)}, ${Math.round(place.y)})`);
+        }
         updateCardPlacesList();
     }
 

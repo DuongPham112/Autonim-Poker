@@ -1976,7 +1976,8 @@ body {
 }
 
 /* Delete button on marker */
-.card-place-marker .marker-delete {
+.card-place-marker .marker-delete,
+.dealing-card-slot .marker-delete {
     position: absolute;
     top: -8px;
     right: -8px;
@@ -1995,7 +1996,8 @@ body {
 }
 
 .card-place-marker:hover .marker-delete,
-.card-place-marker.selected .marker-delete {
+.card-place-marker.selected .marker-delete,
+.dealing-card-slot:hover .marker-delete {
     display: flex;
 }
 
@@ -2314,6 +2316,39 @@ body {
 /* Hide Card Properties in Board Phase */
 .board-setting-controls.visible~.card-properties-section {
     display: none;
+}
+
+/* Hide AE Settings footer, timeline, and step info in Board Phase */
+body.phase-board-setting .director-footer {
+    display: none;
+}
+
+body.phase-board-setting #timelineBar {
+    display: none;
+}
+
+body.phase-board-setting .step-info-section {
+    display: none;
+}
+
+/* Multi-selected markers (Shift+Click) */
+.card-place-marker.multi-selected {
+    border-color: #ffd700 !important;
+    box-shadow: 0 0 8px rgba(255, 215, 0, 0.6), inset 0 0 4px rgba(255, 215, 0, 0.2) !important;
+    background: rgba(255, 215, 0, 0.15) !important;
+}
+
+.card-place-marker.multi-selected .place-number {
+    color: #ffd700;
+}
+
+/* Lasso selection rectangle */
+.selection-rect {
+    position: absolute;
+    border: 2px dashed rgba(255, 215, 0, 0.8);
+    background: rgba(255, 215, 0, 0.08);
+    pointer-events: none;
+    z-index: 9999;
 }
 
 /* ============================================
