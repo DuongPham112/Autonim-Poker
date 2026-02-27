@@ -497,8 +497,13 @@ function bindEvents() {
     if (loadPresetBtn) loadPresetBtn.addEventListener('click', handleLoadPreset);
     if (applyGridBtn) applyGridBtn.addEventListener('click', handleApplyGrid);
     if (addCardPlaceBtn) addCardPlaceBtn.addEventListener('click', handleAddCardPlace);
+    var addCommunityZoneBtn = document.getElementById('addCommunityZoneBtn');
+    if (addCommunityZoneBtn) addCommunityZoneBtn.addEventListener('click', handleAddCommunityZone);
     if (clearBoardBtn) clearBoardBtn.addEventListener('click', handleClearBoard);
     if (savePresetBtn) savePresetBtn.addEventListener('click', handleSavePreset);
+
+    // Initialize CZ settings panel
+    initCZSettingsPanel();
 
     // Edit Layout button (in setup/record mode)
     if (editLayoutBtn) editLayoutBtn.addEventListener('click', () => setPhase('board-setting'));
@@ -1315,13 +1320,19 @@ function handleZoneDrop(e, zone) {
     const rotation = parseInt(zone.dataset.rotation) || 0;
 
     // Check if this is a grid zone with existing cards (for swap/stack logic)
+    // Community zones always accept multi-card, skip swap/stack popup
     if (zoneName.startsWith('grid-') && appState.phase === 'record') {
-        const existingCards = appState.tableCards.filter(c => c.zone === zoneName && c.id !== cardId);
+        const placeId = zoneName.replace('grid-', '');
+        const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
+        const isCZ = place && place.isCommunityZone;
 
-        if (existingCards.length > 0 && !fromTray) {
-            // Show swap/stack popup for grid zones with existing cards
-            showSwapStackPopup(card, existingCards[0], zoneName, rotation, zone);
-            return;
+        if (!isCZ) {
+            const existingCards = appState.tableCards.filter(c => c.zone === zoneName && c.id !== cardId);
+            if (existingCards.length > 0 && !fromTray) {
+                // Show swap/stack popup for grid zones with existing cards
+                showSwapStackPopup(card, existingCards[0], zoneName, rotation, zone);
+                return;
+            }
         }
     }
 
@@ -1470,8 +1481,9 @@ function moveCardToZone(card, newZoneName, newRotation, newZoneElement) {
     const newZoneCards = appState.tableCards.filter(c => c.zone === newZoneName && c.id !== card.id);
     card.zonePosition = newZoneCards.length;
 
-    // For poker community zone: apply optional random rotation
-    if (appState.boardLayout.boardStyle === 'poker' && newZoneName === 'community') {
+    // Community zone rotation is handled by createZoneCardElement for CZ slots
+    // Legacy poker community zone (HTML-based) random rotation:
+    if (appState.boardLayout.boardStyle === 'poker' && newZoneName === 'community' && !newZoneName.startsWith('grid-')) {
         const randomCheckbox = document.getElementById('communityRandomRotation');
         if (randomCheckbox && randomCheckbox.checked) {
             card.rotation = Math.round((Math.random() - 0.5) * 30); // ±15°
@@ -1562,8 +1574,9 @@ function placeCardInZone(card, zoneName, rotation, zoneElement) {
     // Calculate overlap position
     card.zonePosition = position;
 
-    // For poker community zone: apply optional random rotation
-    if (appState.boardLayout.boardStyle === 'poker' && zoneName === 'community') {
+    // Community zone rotation is handled by createZoneCardElement for CZ slots
+    // Legacy poker community zone (HTML-based) random rotation:
+    if (appState.boardLayout.boardStyle === 'poker' && zoneName === 'community' && !zoneName.startsWith('grid-')) {
         const randomCheckbox = document.getElementById('communityRandomRotation');
         if (randomCheckbox && randomCheckbox.checked) {
             card.rotation = Math.round((Math.random() - 0.5) * 30); // ±15°
@@ -1669,7 +1682,55 @@ function createZoneCardElement(card, zoneElement) {
     cardEl.dataset.cardId = card.id;
 
     // Different overlap direction based on zone
-    if (appState.boardLayout.boardStyle === 'poker' && zoneName === 'community') {
+    // Check if this is a community zone grid-slot
+    let isCZSlot = false;
+    if (zoneName && zoneName.startsWith('grid-')) {
+        const placeId = zoneName.replace('grid-', '');
+        const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
+        if (place && place.isCommunityZone) {
+            isCZSlot = true;
+            const czMode = place.czMode || 'row';
+            cardEl.style.position = 'absolute';
+            cardEl.style.zIndex = 400 + (card.zonePosition || 0);
+
+            // Use actual DOM container dimensions for centering
+            // The zoneElement is already scaled to DOM pixels
+            const containerW = zoneElement.offsetWidth;
+            const containerH = zoneElement.offsetHeight;
+            // Get actual card size from CSS (zone-card uses var(--card-width) / var(--card-height))
+            const cardW = 70; // CSS --card-width default
+            const cardH = 100; // CSS --card-height default
+
+            // Center card within zone-cards container
+            cardEl.style.left = `${(containerW - cardW) / 2}px`;
+            cardEl.style.top = `${(containerH - cardH) / 2}px`;
+
+            if (czMode === 'pile') {
+                // Random offset + random rotation within zone bounds
+                const maxOffsetX = Math.max(0, (containerW - cardW) / 2 - 5);
+                const maxOffsetY = Math.max(0, (containerH - cardH) / 2 - 5);
+                const randX = (Math.random() - 0.5) * 2 * maxOffsetX;
+                const randY = (Math.random() - 0.5) * 2 * maxOffsetY;
+                const randRot = Math.round((Math.random() - 0.5) * 30); // ±15°
+                cardEl.style.transform = `translate(${randX}px, ${randY}px) rotate(${randRot}deg)`;
+                card.rotation = randRot; // Store for AE export
+            } else if (czMode === 'stack') {
+                // Perfect stack - all cards centered, no offset
+                cardEl.style.transform = 'none';
+                card.rotation = 0;
+            } else {
+                // 'row' mode - horizontal offset per card, centered
+                const totalCards = appState.tableCards.filter(c => c.zone === zoneName).length;
+                const spacing = Math.min(cardW * 0.7, (containerW - cardW) / Math.max(1, totalCards - 1));
+                const totalWidth = (totalCards - 1) * spacing;
+                const startOffset = -totalWidth / 2;
+                const offsetX = startOffset + (card.zonePosition || 0) * spacing;
+                cardEl.style.transform = `translateX(${offsetX}px) rotate(${card.rotation || 0}deg)`;
+            }
+        }
+    }
+
+    if (!isCZSlot && appState.boardLayout.boardStyle === 'poker' && zoneName === 'community') {
         // Poker community: pile stacking — cards on top of each other
         cardEl.style.position = 'absolute';
         cardEl.style.zIndex = 400 + (card.zonePosition || 0);
@@ -2238,6 +2299,10 @@ function takeSnapshot() {
             const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
             if (place && place.zOrder !== undefined) {
                 zOrder = place.zOrder;
+                // CZ cards: add zonePosition so later cards stack on top
+                if (place.isCommunityZone) {
+                    zOrder += (card.zonePosition || 0);
+                }
             }
         }
         snapshot[card.id] = {
@@ -2339,6 +2404,10 @@ function computeActions(startSnap, endSnap) {
                 const endPlace = appState.boardLayout.cardPlaces.find(p => p.id === endPlaceId);
                 if (endPlace && endPlace.zOrder !== undefined) {
                     endZOrder = endPlace.zOrder;
+                    // CZ cards: add zonePosition so later cards stack on top
+                    if (endPlace.isCommunityZone) {
+                        endZOrder += (end.zonePosition || 0);
+                    }
                 }
             }
             actions.push({
@@ -2418,6 +2487,30 @@ function getUIZonePosition(zoneName, zonePosition = 0) {
         // Try to get position from boardLayout.cardPlaces
         const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
         if (place) {
+            // Community zone: calculate per-card offset based on czMode
+            if (place.isCommunityZone) {
+                const czMode = place.czMode || 'row';
+                if (czMode === 'row') {
+                    // Horizontal row offset from center
+                    const spacing = Math.min(CARD_SPACING_UI, (place.czWidth || 300) / Math.max(1, zonePosition + 1));
+                    return {
+                        x: Math.round(place.x + (zonePosition * spacing) - (zonePosition * spacing / 2)),
+                        y: Math.round(place.y)
+                    };
+                } else if (czMode === 'pile') {
+                    // Slight deterministic offset per card
+                    const seed = zonePosition * 7919; // Simple pseudo-random from position
+                    const offsetX = ((seed % 20) - 10);
+                    const offsetY = (((seed * 3) % 14) - 7);
+                    return {
+                        x: Math.round(place.x + offsetX),
+                        y: Math.round(place.y + offsetY)
+                    };
+                } else {
+                    // 'stack' - all at center
+                    return { x: place.x, y: place.y };
+                }
+            }
             return { x: place.x, y: place.y };
         }
 
@@ -3952,9 +4045,18 @@ function loadPokerLayout() {
         });
     }
 
-    // Community zone is NOT grid-based — it's a pile zone where
-    // unlimited cards can stack with chronological z-order.
-    // The HTML .community-zone element is shown via CSS poker-grid-mode.
+    // --- Community zone: CZ slot at center ---
+    places.push({
+        id: 'community',
+        x: UI_WIDTH / 2,
+        y: UI_HEIGHT / 2,
+        label: 'Community',
+        zOrder: 400,
+        isCommunityZone: true,
+        czMode: 'pile',
+        czWidth: 350,
+        czHeight: 200
+    });
 
     appState.boardLayout = {
         type: 'grid',
@@ -3966,8 +4068,8 @@ function loadPokerLayout() {
     };
 
     gameContainer.classList.add('grid-mode');
-    gameContainer.classList.add('poker-grid-mode');
-    setStatus('Loaded Poker layout (4 zones × 13 slots + community pile)');
+    // Note: poker-grid-mode removed — community zone now uses CZ slot system
+    setStatus('Loaded Poker layout (4 zones × 13 slots + community zone)');
 }
 
 /**
@@ -4318,10 +4420,23 @@ function renderDealingSlot() {
         e.preventDefault();
         e.stopPropagation();
         isDragging = true;
-        const rect = marker.getBoundingClientRect();
-        offsetX = e.clientX - rect.left;
-        offsetY = e.clientY - rect.top;
+        // When .dragging is added, transform: translate(-50%, -50%) is removed
+        // Compensate by adjusting left/top so the marker doesn't jump
+        const markerW = marker.offsetWidth;
+        const markerH = marker.offsetHeight;
+        const containerRect = gameContainer.getBoundingClientRect();
+        const currentLeft = parseFloat(marker.style.left) || 0;
+        const currentTop = parseFloat(marker.style.top) || 0;
+        // Before dragging: CSS position is center, transform shifts -50%,-50%
+        // After dragging: no transform, so position should be at top-left corner
+        const adjustedLeft = currentLeft - markerW / 2;
+        const adjustedTop = currentTop - markerH / 2;
+        marker.style.left = adjustedLeft + 'px';
+        marker.style.top = adjustedTop + 'px';
         marker.classList.add('dragging');
+        // Offset from mouse to marker top-left corner
+        offsetX = e.clientX - containerRect.left - adjustedLeft;
+        offsetY = e.clientY - containerRect.top - adjustedTop;
     });
 
     document.addEventListener('mousemove', (e) => {
@@ -4343,6 +4458,13 @@ function renderDealingSlot() {
     document.addEventListener('mouseup', () => {
         if (isDragging) {
             isDragging = false;
+            // Convert back to center-based positioning (CSS transform: translate(-50%, -50%))
+            const currentLeft = parseFloat(marker.style.left) || 0;
+            const currentTop = parseFloat(marker.style.top) || 0;
+            const markerW = marker.offsetWidth;
+            const markerH = marker.offsetHeight;
+            marker.style.left = (currentLeft + markerW / 2) + 'px';
+            marker.style.top = (currentTop + markerH / 2) + 'px';
             marker.classList.remove('dragging');
             console.log('[DealingCard] Position:', appState.dealingCard.x, appState.dealingCard.y);
         }
@@ -4396,6 +4518,35 @@ function handleAddCardPlace() {
 }
 
 /**
+ * Add a community zone slot (multi-card zone) at center
+ */
+function handleAddCommunityZone() {
+    // Count existing community zones for labeling
+    const czCount = appState.boardLayout.cardPlaces.filter(p => p.isCommunityZone).length;
+    const newId = appState.boardLayout.cardPlaces.length;
+
+    const newPlace = {
+        id: `cz-${czCount}`,
+        x: UI_WIDTH / 2,
+        y: UI_HEIGHT / 2,
+        label: `CZ ${czCount + 1}`,
+        zOrder: 500 + czCount,
+        isCommunityZone: true,
+        czMode: 'row',        // 'row' | 'pile' | 'stack'
+        czWidth: 300,          // Width in UI pixels
+        czHeight: 120          // Height in UI pixels
+    };
+
+    appState.boardLayout.cardPlaces.push(newPlace);
+    appState.boardLayout.type = 'grid';
+
+    updateCardPlacesList();
+    renderCardPlaceMarkers();
+    setStatus(`Added community zone #${czCount + 1}`);
+    debugLog(`[CommunityZone] Created ${newPlace.id} at UI(${newPlace.x}, ${newPlace.y}) mode=${newPlace.czMode}`);
+}
+
+/**
  * Clear all card places
  */
 function handleClearBoard() {
@@ -4417,16 +4568,26 @@ function handleSavePreset() {
         description: `Saved preset: ${name}`,
         gridCols: appState.boardLayout.gridCols,
         gridRows: appState.boardLayout.gridRows,
-        cardPlaces: appState.boardLayout.cardPlaces.map(p => ({
-            id: p.id,
-            x: Math.round(p.x),
-            y: Math.round(p.y),
-            col: p.col,
-            row: p.row,
-            rotation: p.rotation || 0,
-            zOrder: p.zOrder,
-            label: p.label
-        }))
+        cardPlaces: appState.boardLayout.cardPlaces.map(p => {
+            const placeData = {
+                id: p.id,
+                x: Math.round(p.x),
+                y: Math.round(p.y),
+                col: p.col,
+                row: p.row,
+                rotation: p.rotation || 0,
+                zOrder: p.zOrder,
+                label: p.label
+            };
+            // Serialize community zone fields
+            if (p.isCommunityZone) {
+                placeData.isCommunityZone = true;
+                placeData.czMode = p.czMode || 'row';
+                placeData.czWidth = p.czWidth || 300;
+                placeData.czHeight = p.czHeight || 120;
+            }
+            return placeData;
+        })
     };
 
     // Try to save to file system (CEP mode)
@@ -4511,8 +4672,21 @@ function renderCardPlaceMarkers() {
         // Scale UI coordinates to DOM pixels, then position relative to gameContainer
         const scaledX = place.x * scaleX;
         const scaledY = place.y * scaleY;
-        marker.style.left = `${offsetX + scaledX - CARD_WIDTH / 2}px`;
-        marker.style.top = `${offsetY + scaledY - CARD_HEIGHT / 2}px`;
+
+        if (place.isCommunityZone) {
+            // Community zone: use czWidth/czHeight scaled
+            marker.classList.add('community-zone-marker');
+            const markerW = (place.czWidth || 300) * scaleX;
+            const markerH = (place.czHeight || 120) * scaleY;
+            marker.style.width = `${markerW}px`;
+            marker.style.height = `${markerH}px`;
+            marker.style.left = `${offsetX + scaledX - markerW / 2}px`;
+            marker.style.top = `${offsetY + scaledY - markerH / 2}px`;
+        } else {
+            // Normal slot: card-sized
+            marker.style.left = `${offsetX + scaledX - CARD_WIDTH / 2}px`;
+            marker.style.top = `${offsetY + scaledY - CARD_HEIGHT / 2}px`;
+        }
 
         // Apply rotation and z-order for Pusoy layout
         if (place.rotation) {
@@ -4522,11 +4696,40 @@ function renderCardPlaceMarkers() {
             marker.style.zIndex = String(place.zOrder + 10);
         }
 
-        // Place number
+        // Place number / label
         const number = document.createElement('span');
         number.className = 'place-number';
         number.textContent = place.label || String(index + 1);
         marker.appendChild(number);
+
+        // Community zone: add mode badge + cycle button
+        if (place.isCommunityZone) {
+            const modeBadge = document.createElement('span');
+            modeBadge.className = 'cz-mode-badge';
+            modeBadge.textContent = (place.czMode || 'row').toUpperCase();
+            marker.appendChild(modeBadge);
+
+            // Mode cycle button
+            const modeBtn = document.createElement('button');
+            modeBtn.className = 'cz-mode-btn';
+            modeBtn.textContent = '🔄';
+            modeBtn.title = 'Cycle mode: Row → Pile → Stack';
+            modeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const modes = ['row', 'pile', 'stack'];
+                const currentIdx = modes.indexOf(place.czMode || 'row');
+                place.czMode = modes[(currentIdx + 1) % modes.length];
+                modeBadge.textContent = place.czMode.toUpperCase();
+                debugLog(`[CommunityZone] ${place.id} mode → ${place.czMode}`);
+            });
+            marker.appendChild(modeBtn);
+
+            // Resize handle (bottom-right)
+            const resizeHandle = document.createElement('div');
+            resizeHandle.className = 'cz-resize-handle';
+            resizeHandle.addEventListener('mousedown', (e) => startResizeCommunityZone(e, place, marker, scaleX, scaleY));
+            marker.appendChild(resizeHandle);
+        }
 
         // Delete button
         const deleteBtn = document.createElement('button');
@@ -4595,8 +4798,22 @@ function renderCardDropZones() {
         // Scale UI coordinates to DOM pixels, then position relative to gameContainer
         const scaledX = place.x * scaleX;
         const scaledY = place.y * scaleY;
-        zone.style.left = `${offsetX + scaledX - CARD_WIDTH / 2}px`;
-        zone.style.top = `${offsetY + scaledY - CARD_HEIGHT / 2}px`;
+
+        if (place.isCommunityZone) {
+            // Community zone: use czWidth/czHeight
+            zone.classList.add('community-zone-drop');
+            zone.dataset.czMode = place.czMode || 'row';
+            const zoneW = (place.czWidth || 300) * scaleX;
+            const zoneH = (place.czHeight || 120) * scaleY;
+            zone.style.width = `${zoneW}px`;
+            zone.style.height = `${zoneH}px`;
+            zone.style.left = `${offsetX + scaledX - zoneW / 2}px`;
+            zone.style.top = `${offsetY + scaledY - zoneH / 2}px`;
+        } else {
+            // Normal slot: card-sized
+            zone.style.left = `${offsetX + scaledX - CARD_WIDTH / 2}px`;
+            zone.style.top = `${offsetY + scaledY - CARD_HEIGHT / 2}px`;
+        }
 
         // Apply rotation and z-order for Pusoy layout
         if (place.rotation) {
@@ -4611,6 +4828,14 @@ function renderCardDropZones() {
         label.className = 'zone-number';
         label.textContent = place.label || String(index + 1);
         zone.appendChild(label);
+
+        // Community zone: show mode indicator
+        if (place.isCommunityZone) {
+            const modeLabel = document.createElement('span');
+            modeLabel.className = 'cz-drop-mode';
+            modeLabel.textContent = (place.czMode || 'row').toUpperCase();
+            zone.appendChild(modeLabel);
+        }
 
         // Cards container
         const cardsContainer = document.createElement('div');
@@ -4665,9 +4890,13 @@ function clearCardDropZones() {
 function deleteCardPlace(placeId) {
     appState.boardLayout.cardPlaces = appState.boardLayout.cardPlaces.filter(p => p.id !== placeId);
 
-    // Re-label remaining places
-    appState.boardLayout.cardPlaces.forEach((p, idx) => {
-        p.label = String(idx + 1);
+    // Re-label remaining places (preserve community zone labels)
+    let normalIdx = 0;
+    appState.boardLayout.cardPlaces.forEach((p) => {
+        if (!p.isCommunityZone) {
+            normalIdx++;
+            p.label = String(normalIdx);
+        }
     });
 
     updateCardPlacesList();
@@ -4685,6 +4914,115 @@ function selectCardPlace(place, markerElement) {
     appState.selectedCardPlace = place;
     if (markerElement) {
         markerElement.classList.add('selected');
+    }
+
+    // Show CZ settings panel if community zone
+    const czPanel = document.getElementById('czSettingsPanel');
+    if (czPanel && place.isCommunityZone) {
+        czPanel.classList.remove('hidden');
+
+        // Populate settings
+        const nameEl = document.getElementById('czSettingName');
+        if (nameEl) nameEl.textContent = place.label || place.id;
+
+        // Mode buttons
+        czPanel.querySelectorAll('.cz-mode-option').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.mode === (place.czMode || 'row'));
+        });
+
+        // Width/Height sliders
+        const wSlider = document.getElementById('czWidthSlider');
+        const hSlider = document.getElementById('czHeightSlider');
+        const wValue = document.getElementById('czWidthValue');
+        const hValue = document.getElementById('czHeightValue');
+        if (wSlider) { wSlider.value = place.czWidth || 300; }
+        if (hSlider) { hSlider.value = place.czHeight || 120; }
+        if (wValue) { wValue.textContent = place.czWidth || 300; }
+        if (hValue) { hValue.textContent = place.czHeight || 120; }
+    } else if (czPanel) {
+        czPanel.classList.add('hidden');
+    }
+}
+
+/**
+ * Deselect any selected card place marker and hide CZ settings
+ */
+function deselectCardPlace() {
+    document.querySelectorAll('.card-place-marker.selected').forEach(m => m.classList.remove('selected'));
+    appState.selectedCardPlace = null;
+    const czPanel = document.getElementById('czSettingsPanel');
+    if (czPanel) czPanel.classList.add('hidden');
+}
+
+/**
+ * Initialize CZ settings panel event listeners
+ */
+function initCZSettingsPanel() {
+    const czPanel = document.getElementById('czSettingsPanel');
+    if (!czPanel) return;
+
+    // Mode buttons
+    czPanel.querySelectorAll('.cz-mode-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const place = appState.selectedCardPlace;
+            if (!place || !place.isCommunityZone) return;
+
+            place.czMode = btn.dataset.mode;
+            czPanel.querySelectorAll('.cz-mode-option').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            renderCardPlaceMarkers();
+            // Re-select to keep panel open
+            const marker = document.querySelector(`.card-place-marker[data-place-id="${place.id}"]`);
+            if (marker) selectCardPlace(place, marker);
+            debugLog(`[CommunityZone] ${place.id} mode → ${place.czMode}`);
+        });
+    });
+
+    // Width slider
+    const wSlider = document.getElementById('czWidthSlider');
+    const wValue = document.getElementById('czWidthValue');
+    if (wSlider) {
+        wSlider.addEventListener('input', () => {
+            const place = appState.selectedCardPlace;
+            if (!place || !place.isCommunityZone) return;
+            place.czWidth = parseInt(wSlider.value);
+            if (wValue) wValue.textContent = wSlider.value;
+            renderCardPlaceMarkers();
+            const marker = document.querySelector(`.card-place-marker[data-place-id="${place.id}"]`);
+            if (marker) {
+                marker.classList.add('selected');
+            }
+        });
+    }
+
+    // Height slider
+    const hSlider = document.getElementById('czHeightSlider');
+    const hValue = document.getElementById('czHeightValue');
+    if (hSlider) {
+        hSlider.addEventListener('input', () => {
+            const place = appState.selectedCardPlace;
+            if (!place || !place.isCommunityZone) return;
+            place.czHeight = parseInt(hSlider.value);
+            if (hValue) hValue.textContent = hSlider.value;
+            renderCardPlaceMarkers();
+            const marker = document.querySelector(`.card-place-marker[data-place-id="${place.id}"]`);
+            if (marker) {
+                marker.classList.add('selected');
+            }
+        });
+    }
+
+    // Click on table/container to deselect
+    const pokerTable = document.getElementById('pokerTable');
+    if (pokerTable) {
+        pokerTable.addEventListener('click', (e) => {
+            // Only deselect if clicking directly on the table (not on a marker)
+            if (e.target === pokerTable || e.target.classList.contains('table-felt') || e.target.classList.contains('table-border-ring')) {
+                if (appState.phase === 'board-setting') {
+                    deselectCardPlace();
+                }
+            }
+        });
     }
 }
 
@@ -4711,11 +5049,15 @@ function startDragMarker(e, place, marker) {
     const scaleX = tableWidth / UI_WIDTH;
     const scaleY = tableHeight / UI_HEIGHT;
 
+    // Marker width/height depends on type
+    const markerW = place.isCommunityZone ? (place.czWidth || 300) * scaleX : CARD_WIDTH;
+    const markerH = place.isCommunityZone ? (place.czHeight || 120) * scaleY : CARD_HEIGHT;
+
     const startX = e.clientX;
     const startY = e.clientY;
     // Store start position in container coordinates — apply scale to UI coords
-    const startMarkerLeft = offsetX + place.x * scaleX - CARD_WIDTH / 2;
-    const startMarkerTop = offsetY + place.y * scaleY - CARD_HEIGHT / 2;
+    const startMarkerLeft = offsetX + place.x * scaleX - markerW / 2;
+    const startMarkerTop = offsetY + place.y * scaleY - markerH / 2;
 
     function onMouseMove(moveE) {
         const dx = moveE.clientX - startX;
@@ -4725,17 +5067,17 @@ function startDragMarker(e, place, marker) {
         let newLeft = startMarkerLeft + dx;
         let newTop = startMarkerTop + dy;
 
-        // Constrain to game container bounds (not poker table)
-        newLeft = Math.max(0, Math.min(containerRect.width - CARD_WIDTH, newLeft));
-        newTop = Math.max(0, Math.min(containerRect.height - CARD_HEIGHT, newTop));
+        // Constrain to game container bounds
+        newLeft = Math.max(0, Math.min(containerRect.width - markerW, newLeft));
+        newTop = Math.max(0, Math.min(containerRect.height - markerH, newTop));
 
         // Update marker position
         marker.style.left = `${newLeft}px`;
         marker.style.top = `${newTop}px`;
 
-        // Convert DOM pixels back to UI coordinates for storage
-        place.x = (newLeft - offsetX + CARD_WIDTH / 2) / scaleX;
-        place.y = (newTop - offsetY + CARD_HEIGHT / 2) / scaleY;
+        // Convert DOM pixels back to UI coordinates for storage (center point)
+        place.x = (newLeft - offsetX + markerW / 2) / scaleX;
+        place.y = (newTop - offsetY + markerH / 2) / scaleY;
     }
 
     function onMouseUp() {
@@ -4744,6 +5086,48 @@ function startDragMarker(e, place, marker) {
         document.removeEventListener('mouseup', onMouseUp);
         debugLog(`[DragMarker] Place ${place.id} → UI(${Math.round(place.x)}, ${Math.round(place.y)})`);
         updateCardPlacesList();
+    }
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+}
+
+/**
+ * Start resizing a community zone marker
+ */
+function startResizeCommunityZone(e, place, marker, scaleX, scaleY) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = (place.czWidth || 300) * scaleX;
+    const startH = (place.czHeight || 120) * scaleY;
+
+    marker.classList.add('resizing');
+
+    function onMouseMove(moveE) {
+        const dx = moveE.clientX - startX;
+        const dy = moveE.clientY - startY;
+
+        const newW = Math.max(CARD_WIDTH * 2, startW + dx);
+        const newH = Math.max(CARD_HEIGHT, startH + dy);
+
+        marker.style.width = `${newW}px`;
+        marker.style.height = `${newH}px`;
+
+        // Store back in UI coordinates
+        place.czWidth = Math.round(newW / scaleX);
+        place.czHeight = Math.round(newH / scaleY);
+    }
+
+    function onMouseUp() {
+        marker.classList.remove('resizing');
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        debugLog(`[CommunityZone] ${place.id} resized → ${place.czWidth}×${place.czHeight} UI px`);
+        // Re-render to re-center based on new size
+        renderCardPlaceMarkers();
     }
 
     document.addEventListener('mousemove', onMouseMove);
@@ -4762,9 +5146,13 @@ function updateCardPlacesList() {
     appState.boardLayout.cardPlaces.forEach((place, index) => {
         const item = document.createElement('div');
         item.className = 'card-place-item';
+        const isCZ = place.isCommunityZone;
+        const labelText = isCZ
+            ? `📦 ${place.label || 'CZ'} (${(place.czMode || 'row').toUpperCase()})`
+            : (place.label || index + 1);
         item.innerHTML = `
-            <span class="place-label">${place.label || index + 1}</span>
-            <span class="place-coords">(${Math.round(place.x)}, ${Math.round(place.y)})</span>
+            <span class="place-label">${labelText}</span>
+            <span class="place-coords">(${Math.round(place.x)}, ${Math.round(place.y)})${isCZ ? ` ${place.czWidth}×${place.czHeight}` : ''}</span>
             <button class="delete-place-btn" data-place-id="${place.id}">✕</button>
         `;
 

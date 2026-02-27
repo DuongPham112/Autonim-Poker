@@ -394,6 +394,10 @@
                             <button id="addCardPlaceBtn" class="btn btn-sm btn-success">
                                 ➕ Add Place
                             </button>
+                            <button id="addCommunityZoneBtn" class="btn btn-sm btn-info"
+                                title="Add a multi-card community zone">
+                                📦 Add Zone
+                            </button>
                             <button id="clearBoardBtn" class="btn btn-sm btn-danger">
                                 🗑️ Clear
                             </button>
@@ -412,6 +416,31 @@
                         <div class="card-places-list" id="cardPlacesList">
                             <div class="list-header">Card Places (0)</div>
                             <!-- Card places will be rendered here -->
+                        </div>
+
+                        <!-- Community Zone Settings (shown when CZ marker selected) -->
+                        <div class="cz-settings-panel hidden" id="czSettingsPanel">
+                            <h4>📦 Zone Settings</h4>
+                            <div class="cz-setting-name" id="czSettingName">CZ 1</div>
+
+                            <div class="cz-setting-group">
+                                <label>Mode:</label>
+                                <div class="cz-mode-selector">
+                                    <button class="cz-mode-option active" data-mode="row">📏 Row</button>
+                                    <button class="cz-mode-option" data-mode="pile">🎲 Pile</button>
+                                    <button class="cz-mode-option" data-mode="stack">📚 Stack</button>
+                                </div>
+                            </div>
+
+                            <div class="cz-setting-group">
+                                <label>Width: <span id="czWidthValue">300</span></label>
+                                <input type="range" id="czWidthSlider" min="100" max="800" value="300">
+                            </div>
+
+                            <div class="cz-setting-group">
+                                <label>Height: <span id="czHeightValue">120</span></label>
+                                <input type="range" id="czHeightSlider" min="60" max="500" value="120">
+                            </div>
                         </div>
                     </div>
 
@@ -458,8 +487,8 @@
                         </div>
                     </div>
 
-                    <!-- Selected Card Properties -->
-                    <div class="director-section">
+                    <!-- Selected Card Properties (hidden in Board Phase) -->
+                    <div class="director-section card-properties-section" id="cardPropertiesSection">
                         <div class="section-header-row">
                             <h3>Card Properties</h3>
                             <label class="mini-toggle" title="Show Flip/Slam popup on card">

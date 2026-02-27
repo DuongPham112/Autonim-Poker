@@ -830,6 +830,7 @@ body {
     cursor: grabbing;
     opacity: 0.8;
     animation: none;
+    transform: none;
     box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5);
 }
 
@@ -1609,7 +1610,7 @@ body {
    ============================================ */
 .card-context-menu {
     position: absolute;
-    z-index: 300;
+    z-index: 600;
     display: flex;
     gap: 4px;
     background: var(--bg-secondary);
@@ -2068,6 +2069,251 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+}
+
+/* ============================================
+   COMMUNITY ZONE MARKERS (Board Phase)
+   ============================================ */
+.card-place-marker.community-zone-marker {
+    border: 2px dashed rgba(78, 154, 255, 0.6);
+    background: rgba(78, 154, 255, 0.1);
+    border-radius: 8px;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.card-place-marker.community-zone-marker .place-number {
+    color: rgba(78, 154, 255, 0.8);
+    font-size: 13px;
+}
+
+.game-container.board-setting-mode .card-place-marker.community-zone-marker:hover {
+    border-color: rgba(78, 154, 255, 0.9);
+    background: rgba(78, 154, 255, 0.15);
+}
+
+.card-place-marker.community-zone-marker.selected {
+    border-color: var(--accent-blue);
+    border-style: solid;
+    box-shadow: 0 0 12px rgba(78, 154, 255, 0.5);
+}
+
+/* Mode Badge */
+.cz-mode-badge {
+    font-size: 9px;
+    font-weight: 700;
+    color: rgba(78, 154, 255, 0.9);
+    background: rgba(78, 154, 255, 0.15);
+    padding: 1px 6px;
+    border-radius: 3px;
+    letter-spacing: 0.5px;
+    user-select: none;
+}
+
+/* Mode Cycle Button */
+.cz-mode-btn {
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 22px;
+    height: 22px;
+    background: var(--accent-blue);
+    border: 2px solid var(--bg-primary);
+    border-radius: 50%;
+    color: white;
+    font-size: 10px;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    z-index: 10;
+}
+
+.game-container.board-setting-mode .card-place-marker.community-zone-marker:hover .cz-mode-btn,
+.card-place-marker.community-zone-marker.selected .cz-mode-btn {
+    display: flex;
+}
+
+.cz-mode-btn:hover {
+    background: #5a9eff;
+    transform: translateX(-50%) scale(1.1);
+}
+
+/* Resize Handle */
+.cz-resize-handle {
+    position: absolute;
+    bottom: -4px;
+    right: -4px;
+    width: 12px;
+    height: 12px;
+    background: var(--accent-blue);
+    border: 2px solid var(--bg-primary);
+    border-radius: 2px;
+    cursor: nwse-resize;
+    display: none;
+    z-index: 10;
+}
+
+.game-container.board-setting-mode .card-place-marker.community-zone-marker:hover .cz-resize-handle,
+.card-place-marker.community-zone-marker.selected .cz-resize-handle {
+    display: block;
+}
+
+.card-place-marker.community-zone-marker.resizing {
+    opacity: 0.8;
+    transition: none;
+}
+
+/* ============================================
+   COMMUNITY ZONE DROP ZONES (Setup/Record)
+   ============================================ */
+.card-drop-zone.community-zone-drop {
+    border: 2px dashed rgba(78, 154, 255, 0.5);
+    background: rgba(78, 154, 255, 0.06);
+    border-radius: 8px;
+}
+
+.card-drop-zone.community-zone-drop:hover {
+    border-color: rgba(78, 154, 255, 0.8);
+    background: rgba(78, 154, 255, 0.12);
+}
+
+.card-drop-zone.community-zone-drop.drag-over {
+    border-color: var(--accent-blue);
+    border-style: solid;
+    background: rgba(78, 154, 255, 0.2);
+    box-shadow: 0 0 15px rgba(78, 154, 255, 0.4);
+}
+
+.card-drop-zone.community-zone-drop .zone-number {
+    color: rgba(78, 154, 255, 0.7);
+    font-size: 13px;
+}
+
+.cz-drop-mode {
+    font-size: 9px;
+    font-weight: 700;
+    color: rgba(78, 154, 255, 0.6);
+    letter-spacing: 0.5px;
+    user-select: none;
+    margin-top: 2px;
+}
+
+/* CZ drop zone: cards container needs relative positioning for abs children */
+.card-drop-zone.community-zone-drop .zone-cards {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+}
+
+/* Hide label/mode text when zone has cards */
+.card-drop-zone.community-zone-drop .zone-number,
+.card-drop-zone.community-zone-drop .cz-drop-mode {
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Button Info variant */
+.btn-info {
+    background: var(--accent-blue);
+    color: white;
+}
+
+.btn-info:hover {
+    background: #5a9eff;
+}
+
+/* ============================================
+   CZ SETTINGS PANEL (Right Panel)
+   ============================================ */
+.cz-settings-panel {
+    margin-top: 10px;
+    padding: 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid rgba(78, 154, 255, 0.3);
+    border-radius: 6px;
+}
+
+.cz-settings-panel.hidden {
+    display: none;
+}
+
+.cz-settings-panel h4 {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    color: rgba(78, 154, 255, 0.9);
+}
+
+.cz-setting-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+    padding: 4px 8px;
+    background: var(--bg-primary);
+    border-radius: 4px;
+}
+
+.cz-setting-group {
+    margin-bottom: 8px;
+}
+
+.cz-setting-group label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    display: block;
+    margin-bottom: 4px;
+}
+
+.cz-mode-selector {
+    display: flex;
+    gap: 4px;
+}
+
+.cz-mode-option {
+    flex: 1;
+    padding: 5px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+}
+
+.cz-mode-option:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-blue);
+    color: var(--text-primary);
+}
+
+.cz-mode-option.active {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: white;
+}
+
+.cz-setting-group input[type="range"] {
+    width: 100%;
+    height: 4px;
+}
+
+.cz-setting-group label span {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Hide Card Properties in Board Phase */
+.board-setting-controls.visible~.card-properties-section {
+    display: none;
 }
 
 /* ============================================
