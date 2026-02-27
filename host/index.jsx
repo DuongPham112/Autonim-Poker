@@ -123,7 +123,22 @@ function generateSequence(jsonString, assetsRootPath) {
 
         // Calculate total duration from scenario
         var totalDuration = calculateTotalDuration(data.scenario);
-        totalDuration = Math.max(totalDuration + 0.5, 2.0); // Add buffer, minimum 2 seconds
+
+        // Pre-calculate dealing animation duration so comp is long enough for ALL keyframes
+        // Without this, setValueAtTime() silently drops keyframes beyond comp.duration
+        var dealingDuration = 0;
+        if (data.dealingCard && data.dealingCard.enabled) {
+            var numCards = 0;
+            for (var cid in data.initialState) {
+                if (data.initialState.hasOwnProperty(cid)) numCards++;
+            }
+            // Match timing constants from processDealingAnimation
+            var staggerFrames = 3;
+            var holdFrames = 30;
+            dealingDuration = ((Math.max(numCards - 1, 0) * staggerFrames) + MOVE_DURATION_FRAMES + holdFrames) / FRAME_RATE;
+        }
+
+        totalDuration = Math.max(totalDuration + dealingDuration + 0.5, 2.0); // Add dealing + buffer
 
         // Create new composition with organized naming
         // Name format: PokerBoard_01, GridBoard_01, etc.
