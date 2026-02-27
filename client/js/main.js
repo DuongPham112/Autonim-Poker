@@ -4700,16 +4700,22 @@ function startDragMarker(e, place, marker) {
     const pokerTable = document.getElementById('pokerTable');
     const tableRect = pokerTable.getBoundingClientRect();
     const containerRect = gameContainer.getBoundingClientRect();
+    const tableWidth = pokerTable.offsetWidth;
+    const tableHeight = pokerTable.offsetHeight;
 
     // Calculate offset from gameContainer to pokerTable
     const offsetX = tableRect.left - containerRect.left;
     const offsetY = tableRect.top - containerRect.top;
 
+    // Scale factors: UI coordinates (1280x720) → DOM pixels
+    const scaleX = tableWidth / UI_WIDTH;
+    const scaleY = tableHeight / UI_HEIGHT;
+
     const startX = e.clientX;
     const startY = e.clientY;
-    // Store start position in container coordinates (place.x/y are relative to poker table)
-    const startMarkerLeft = offsetX + place.x - CARD_WIDTH / 2;
-    const startMarkerTop = offsetY + place.y - CARD_HEIGHT / 2;
+    // Store start position in container coordinates — apply scale to UI coords
+    const startMarkerLeft = offsetX + place.x * scaleX - CARD_WIDTH / 2;
+    const startMarkerTop = offsetY + place.y * scaleY - CARD_HEIGHT / 2;
 
     function onMouseMove(moveE) {
         const dx = moveE.clientX - startX;
@@ -4727,15 +4733,16 @@ function startDragMarker(e, place, marker) {
         marker.style.left = `${newLeft}px`;
         marker.style.top = `${newTop}px`;
 
-        // Convert back to poker table relative coordinates for storage
-        place.x = newLeft - offsetX + CARD_WIDTH / 2;
-        place.y = newTop - offsetY + CARD_HEIGHT / 2;
+        // Convert DOM pixels back to UI coordinates for storage
+        place.x = (newLeft - offsetX + CARD_WIDTH / 2) / scaleX;
+        place.y = (newTop - offsetY + CARD_HEIGHT / 2) / scaleY;
     }
 
     function onMouseUp() {
         marker.classList.remove('dragging');
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
+        debugLog(`[DragMarker] Place ${place.id} → UI(${Math.round(place.x)}, ${Math.round(place.y)})`);
         updateCardPlacesList();
     }
 
