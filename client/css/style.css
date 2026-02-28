@@ -2374,7 +2374,7 @@ body.phase-board-setting .step-info-section {
 }
 
 /* Hide Dealing Card toggle outside Board mode — only editable there */
-body:not(.phase-board-setting) .setting-row:has(#dealingCardToggle) {
+body:not(.phase-board-setting) #dealingCardRow {
     display: none;
 }
 
