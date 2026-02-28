@@ -30,10 +30,10 @@ if (typeof JSON.parse !== 'function') {
 if (typeof JSON.stringify !== 'function') {
     var _jsonEscapeString = function (s) {
         return s.replace(/\\/g, '\\\\')
-                .replace(/"/g, '\\"')
-                .replace(/\n/g, '\\n')
-                .replace(/\r/g, '\\r')
-                .replace(/\t/g, '\\t');
+            .replace(/"/g, '\\"')
+            .replace(/\n/g, '\\n')
+            .replace(/\r/g, '\\r')
+            .replace(/\t/g, '\\t');
     };
     JSON.stringify = function (obj) {
         var t = typeof obj;
@@ -186,7 +186,7 @@ function generateSequence(jsonString, assetsRootPath) {
 
         // Process scenario animation steps (offset by dealing time)
         var stepBlending = data.stepBlending || 0;  // Overlap % (0-50)
-        var animResult = processScenarioAnimation(comp, data.scenario, layerMap, stepBlending, dealingTimeOffset, data.initialState);
+        var animResult = processScenarioAnimation(comp, data.scenario, layerMap, stepBlending, dealingTimeOffset, data.initialState, data.slotGroups);
         if (!animResult.success) {
             app.endUndoGroup();
             return createErrorResponse(animResult.message);
@@ -1292,9 +1292,17 @@ function processDealingAnimation(comp, layerMap, initialState, dealingCard) {
  * Uses Z-position keyframes to control card stacking order over time
  * @param stepBlending - Overlap percentage (0-50) to reduce time between steps
  * @param timeOffset - Time offset for dealing animation (0 if no dealing)
+ * @param slotGroups - Optional array of slot groups for group-aware z-order
  * @returns {object} Result with success, finalTime, and swapTimeline for visual mouse
  */
-function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOffset, initialState) {
+function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOffset, initialState, slotGroups) {
+    // Build working copy of group orders for tracking changes across steps
+    var workingGroupOrders = {};
+    if (slotGroups) {
+        for (var gi = 0; gi < slotGroups.length; gi++) {
+            workingGroupOrders[slotGroups[gi].id] = slotGroups[gi].groupOrder;
+        }
+    }
     var currentTime = timeOffset || 0;
     var moveCounter = 0;  // Tracks order of card movements for z-ordering
 
@@ -1556,6 +1564,42 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOf
             }
         }
 
+        // Process groupOrderOverrides: animate Z for all cards in affected groups
+        if (step.groupOrderOverrides && slotGroups) {
+            var GROUP_Z_BAND = 1000;
+            for (var gIdx = 0; gIdx < slotGroups.length; gIdx++) {
+                var grp = slotGroups[gIdx];
+                var newOrder = step.groupOrderOverrides[grp.id];
+                if (newOrder === undefined) continue;
+                var oldOrder = workingGroupOrders[grp.id];
+                if (oldOrder === newOrder) continue;
+
+                // Find all cards belonging to this group and animate their Z
+                for (var si2 = 0; si2 < grp.slotIds.length; si2++) {
+                    var slotId = grp.slotIds[si2];
+                    // Find card(s) on this slot from initialState
+                    for (var cid2 in initialState) {
+                        if (!initialState.hasOwnProperty(cid2)) continue;
+                        var cInfo2 = initialState[cid2];
+                        var cardSlotId = (cInfo2.zone || '').replace('grid-', '');
+                        if (cardSlotId !== slotId) continue;
+                        var cardLayer2 = layerMap[cid2];
+                        if (!cardLayer2) continue;
+
+                        // Get current position and compute new Z
+                        var posProp = cardLayer2.property('Position');
+                        var curPos = posProp.valueAtTime(currentTime, false);
+                        var baseZ = (cInfo2.zOrder || 0) % GROUP_Z_BAND;
+                        var newZ = INITIAL_Z_OFFSET - ((newOrder * GROUP_Z_BAND + baseZ) * Z_SPACING);
+                        // Set hold keyframe at current time, then animate to new Z
+                        posProp.setValueAtTime(currentTime, curPos);
+                        posProp.setValueAtTime(currentTime + moveDuration, [curPos[0], curPos[1], newZ]);
+                    }
+                }
+                // Update working order
+                workingGroupOrders[grp.id] = newOrder;
+            }
+        }
         // Advance current time
         // For swap pairs, account for the sequential animation duration
         if (swapPairs.length > 0) {

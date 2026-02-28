@@ -2742,6 +2742,11 @@ function handleExportToAE() {
         };
     }
 
+    // Include slotGroups for group-aware z-order in AE
+    if (appState.boardLayout.slotGroups && appState.boardLayout.slotGroups.length > 0) {
+        exportData.slotGroups = JSON.parse(JSON.stringify(appState.boardLayout.slotGroups));
+    }
+
     setStatus('Sending to After Effects...', 'recording');
 
     const jsonString = JSON.stringify(exportData);
