@@ -79,11 +79,14 @@ const appState = {
         name: 'Poker (4 Players)',
         gridCols: 4,
         gridRows: 3,
-        cardPlaces: []            // For grid mode: [{id, x, y, label}, ...]
+        cardPlaces: [],           // For grid mode: [{id, x, y, label}, ...]
+        slotGroups: []            // Layer groups for z-order management
     },
     selectedCardPlace: null,      // Currently selected card place marker (for CZ panel)
     selectedCardPlaces: [],       // Multi-selected card place markers
     markerUndoStack: [],          // Undo stack for marker positions (Ctrl+Z)
+    groupUndoStack: [],           // Undo stack for group operations
+    pendingGroupOrderOverrides: null, // Pending group reorder for next step commit
 
     // Grouping Mode
     groupingMode: false,          // Whether grouping mode is enabled
@@ -2274,15 +2277,6 @@ function saveInitialState() {
     scenarioData.initialState = {};
 
     appState.tableCards.forEach(card => {
-        // Get zOrder from boardLayout.cardPlaces if card is in a grid zone
-        let zOrder = 0;
-        if (card.zone && card.zone.startsWith('grid-') && appState.boardLayout.cardPlaces) {
-            const placeId = card.zone.replace('grid-', '');
-            const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
-            if (place && place.zOrder !== undefined) {
-                zOrder = place.zOrder;
-            }
-        }
         scenarioData.initialState[card.id] = {
             x: card.x || 0,
             y: card.y || 0,
@@ -2290,7 +2284,7 @@ function saveInitialState() {
             isFaceUp: card.isFaceUp,
             zone: card.zone,
             zonePosition: card.zonePosition || 0,
-            zOrder: zOrder,
+            zOrder: computeZOrderForCard(card),
             flipAction: card.flipAction || false,
             slamEffect: card.slamEffect || false,
             isSelected: appState.groupedCards.some(c => c.id === card.id)
@@ -2310,19 +2304,6 @@ function saveInitialState() {
 function takeSnapshot() {
     const snapshot = {};
     appState.tableCards.forEach(card => {
-        // Get zOrder from boardLayout.cardPlaces if card is in a grid zone
-        let zOrder = 0;
-        if (card.zone && card.zone.startsWith('grid-') && appState.boardLayout.cardPlaces) {
-            const placeId = card.zone.replace('grid-', '');
-            const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
-            if (place && place.zOrder !== undefined) {
-                zOrder = place.zOrder;
-                // CZ cards: add zonePosition so later cards stack on top
-                if (place.isCommunityZone) {
-                    zOrder += (card.zonePosition || 0);
-                }
-            }
-        }
         snapshot[card.id] = {
             x: card.x || 0,
             y: card.y || 0,
@@ -2330,7 +2311,7 @@ function takeSnapshot() {
             isFaceUp: card.isFaceUp,
             zone: card.zone,
             zonePosition: card.zonePosition || 0,
-            zOrder: zOrder,
+            zOrder: computeZOrderForCard(card),
             flipAction: card.flipAction || false,
             slamEffect: card.slamEffect || false,
             isSelected: appState.groupedCards.some(c => c.id === card.id)
@@ -2430,19 +2411,8 @@ function computeActions(startSnap, endSnap) {
         const hasSlam = zoneChanged && card.slamEffect;
 
         if (posChanged || rotChanged || flipChanged || zoneChanged || hasFlipAction || hasSlam) {
-            // Get endZOrder from boardLayout.cardPlaces for the destination zone
-            let endZOrder = 0;
-            if (end.zone && end.zone.startsWith('grid-') && appState.boardLayout.cardPlaces) {
-                const endPlaceId = end.zone.replace('grid-', '');
-                const endPlace = appState.boardLayout.cardPlaces.find(p => p.id === endPlaceId);
-                if (endPlace && endPlace.zOrder !== undefined) {
-                    endZOrder = endPlace.zOrder;
-                    // CZ cards: add zonePosition so later cards stack on top
-                    if (endPlace.isCommunityZone) {
-                        endZOrder += (end.zonePosition || 0);
-                    }
-                }
-            }
+            // Get endZOrder using group-aware computation
+            var endZOrder = computeZOrderForCard(end);
             actions.push({
                 targetId: card.id,
                 type: 'TRANSFORM',
@@ -2908,6 +2878,10 @@ function handleLoadProject(e) {
             appState.assetsRootPath = projectData.assetsRootPath || null;
             appState.stepBlending = projectData.stepBlending || 0;
             appState.boardLayout = projectData.boardLayout || appState.boardLayout;
+            // Fallback for old projects without slotGroups
+            if (!appState.boardLayout.slotGroups) {
+                appState.boardLayout.slotGroups = [];
+            }
 
             // Restore cards
             appState.tableCards = projectData.tableCards || [];
@@ -4791,7 +4765,7 @@ function renderCardPlaceMarkers() {
             marker.style.transform = `rotate(${place.rotation}deg)`;
         }
         if (place.zOrder !== undefined) {
-            marker.style.zIndex = String(place.zOrder + 10);
+            marker.style.zIndex = String(computeFinalZOrder(place) + 10);
         }
 
         // Place number / label
@@ -4964,7 +4938,7 @@ function renderCardDropZones() {
             zone.style.transform = `rotate(${place.rotation}deg)`;
         }
         if (place.zOrder !== undefined) {
-            zone.style.zIndex = String(place.zOrder + 10); // +10 to ensure above table
+            zone.style.zIndex = String(computeFinalZOrder(place) + 10); // +10 to ensure above table
         }
 
         // Zone label
