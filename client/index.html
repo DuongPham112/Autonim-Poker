@@ -425,6 +425,16 @@
                             <!-- Card places will be rendered here -->
                         </div>
 
+                        <!-- Slot Group Panel (replaces card places list when groups exist) -->
+                        <div class="slot-group-panel hidden" id="slotGroupPanel">
+                            <div class="group-panel-header">
+                                <span>🗂️ Layer Groups</span>
+                                <button id="createGroupBtn" class="btn btn-sm btn-accent" disabled
+                                    title="Select 2+ slots to create group">+ Group</button>
+                            </div>
+                            <div class="group-list" id="groupList"></div>
+                        </div>
+
                         <!-- Community Zone Settings (shown when CZ marker selected) -->
                         <div class="cz-settings-panel hidden" id="czSettingsPanel">
                             <h4>📦 Zone Settings</h4>

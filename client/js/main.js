@@ -583,6 +583,21 @@ function bindEvents() {
     if (loadProjectBtn) loadProjectBtn.addEventListener('click', () => loadProjectInput.click());
     if (loadProjectInput) loadProjectInput.addEventListener('change', handleLoadProject);
 
+    // Create Group Button
+    var createGroupBtn = document.getElementById('createGroupBtn');
+    if (createGroupBtn) {
+        createGroupBtn.addEventListener('click', function () {
+            if (appState.selectedCardPlaces && appState.selectedCardPlaces.length >= 2) {
+                var slotIds = appState.selectedCardPlaces.map(function (p) { return p.id; });
+                var groupNum = (appState.boardLayout.slotGroups || []).length + 1;
+                createSlotGroup('Group ' + groupNum, slotIds);
+                appState.selectedCardPlaces = [];
+                renderCardPlaceMarkers();
+                updateGroupPanelVisibility();
+            }
+        });
+    }
+
     // Modal
     if (confirmWarningBtn) confirmWarningBtn.addEventListener('click', confirmWarning);
     if (cancelWarningBtn) cancelWarningBtn.addEventListener('click', hideWarningModal);
@@ -734,6 +749,7 @@ function setPhase(phase) {
         // Render card place markers
         renderCardPlaceMarkers();
         updateDealingSlotButton();
+        updateGroupPanelVisibility();
         setStatus('Board Setting - Customize card positions');
     } else if (phase === 'setup') {
         setupPhaseBtn.classList.add('active');
@@ -4105,13 +4121,27 @@ function loadPokerLayout() {
         czHeight: 200
     });
 
+    // Auto-create slot groups by zone
+    var topSlots = places.filter(function (p) { return p.zone === 'top'; }).map(function (p) { return p.id; });
+    var bottomSlots = places.filter(function (p) { return p.zone === 'bottom'; }).map(function (p) { return p.id; });
+    var leftSlots = places.filter(function (p) { return p.zone === 'left'; }).map(function (p) { return p.id; });
+    var rightSlots = places.filter(function (p) { return p.zone === 'right'; }).map(function (p) { return p.id; });
+    var communitySlots = places.filter(function (p) { return p.isCommunityZone; }).map(function (p) { return p.id; });
+
     appState.boardLayout = {
         type: 'grid',
         name: 'Poker (4 Players)',
         boardStyle: 'poker',
         gridCols: 13,
         gridRows: 4,
-        cardPlaces: places
+        cardPlaces: places,
+        slotGroups: [
+            { id: 'poker-top', name: 'Top Player', slotIds: topSlots, groupOrder: 0, color: getGroupColor(0) },
+            { id: 'poker-bottom', name: 'Bottom Player', slotIds: bottomSlots, groupOrder: 1, color: getGroupColor(1) },
+            { id: 'poker-left', name: 'Left Player', slotIds: leftSlots, groupOrder: 2, color: getGroupColor(2) },
+            { id: 'poker-right', name: 'Right Player', slotIds: rightSlots, groupOrder: 3, color: getGroupColor(3) },
+            { id: 'poker-community', name: 'Community', slotIds: communitySlots, groupOrder: 4, color: getGroupColor(4) }
+        ]
     };
 
     gameContainer.classList.add('grid-mode');
@@ -4199,13 +4229,23 @@ function loadPusoyLayout() {
         }
     });
 
+    // Auto-create slot groups by row
+    var topRowSlots = places.filter(function (p) { return p.row === 0; }).map(function (p) { return p.id; });
+    var midRowSlots = places.filter(function (p) { return p.row === 1; }).map(function (p) { return p.id; });
+    var bottomRowSlots = places.filter(function (p) { return p.row === 2; }).map(function (p) { return p.id; });
+
     appState.boardLayout = {
         type: 'grid',
         name: 'Pusoy (3-5-5)',
         boardStyle: 'pusoy',
         gridCols: 5,
         gridRows: 3,
-        cardPlaces: places
+        cardPlaces: places,
+        slotGroups: [
+            { id: 'pusoy-top', name: 'Top Row', slotIds: topRowSlots, groupOrder: 0, color: getGroupColor(0) },
+            { id: 'pusoy-mid', name: 'Middle Row', slotIds: midRowSlots, groupOrder: 1, color: getGroupColor(1) },
+            { id: 'pusoy-bottom', name: 'Bottom Row', slotIds: bottomRowSlots, groupOrder: 2, color: getGroupColor(2) }
+        ]
     };
 
     gameContainer.classList.add('grid-mode');
@@ -4766,6 +4806,13 @@ function renderCardPlaceMarkers() {
         }
         if (place.zOrder !== undefined) {
             marker.style.zIndex = String(computeFinalZOrder(place) + 10);
+        }
+
+        // Group color coding
+        var placeGroup = getGroupForPlace(place.id);
+        if (placeGroup) {
+            marker.style.borderColor = placeGroup.color;
+            marker.title = placeGroup.name + ' (z:' + computeFinalZOrder(place) + ')';
         }
 
         // Place number / label
@@ -5491,6 +5538,198 @@ function updateCardPlacesList() {
         cardPlacesList.appendChild(item);
     });
 }
+
+/**
+ * Toggle visibility between cardPlacesList and slotGroupPanel
+ * Show group panel when groups exist, card list otherwise
+ */
+function updateGroupPanelVisibility() {
+    var groupPanel = document.getElementById('slotGroupPanel');
+    var placesList = document.getElementById('cardPlacesList');
+    if (!groupPanel || !placesList) return;
+
+    var hasGroups = appState.boardLayout.slotGroups && appState.boardLayout.slotGroups.length > 0;
+    if (hasGroups) {
+        placesList.classList.add('hidden');
+        groupPanel.classList.remove('hidden');
+        renderGroupPanel();
+    } else {
+        placesList.classList.remove('hidden');
+        groupPanel.classList.add('hidden');
+    }
+}
+
+/**
+ * Render the group panel with drag-to-reorder support
+ * Groups displayed in reverse order: top item = highest groupOrder = front/closest to camera
+ */
+function renderGroupPanel() {
+    var groupList = document.getElementById('groupList');
+    if (!groupList) return;
+    groupList.innerHTML = '';
+
+    var groups = appState.boardLayout.slotGroups || [];
+    if (groups.length === 0) return;
+
+    // Display in reverse: highest groupOrder at top (= "front" like Photoshop)
+    var sorted = groups.slice().sort(function (a, b) { return b.groupOrder - a.groupOrder; });
+
+    sorted.forEach(function (group, displayIdx) {
+        var item = document.createElement('div');
+        item.className = 'group-item';
+        item.dataset.groupId = group.id;
+        item.dataset.groupIndex = String(groups.indexOf(group));
+        item.draggable = true;
+        item.style.borderLeftColor = group.color;
+
+        // Color dot
+        var dot = document.createElement('span');
+        dot.className = 'group-color-dot';
+        dot.style.backgroundColor = group.color;
+        item.appendChild(dot);
+
+        // Editable name
+        var name = document.createElement('span');
+        name.className = 'group-name';
+        name.textContent = group.name;
+        name.addEventListener('dblclick', function () {
+            name.contentEditable = 'true';
+            name.focus();
+            // Select all text
+            var range = document.createRange();
+            range.selectNodeContents(name);
+            var sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+        });
+        name.addEventListener('blur', function () {
+            name.contentEditable = 'false';
+            var newName = name.textContent.trim();
+            if (newName && newName !== group.name) {
+                renameSlotGroup(group.id, newName);
+            } else {
+                name.textContent = group.name;
+            }
+        });
+        name.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                name.blur();
+            }
+        });
+        item.appendChild(name);
+
+        // Slot count
+        var count = document.createElement('span');
+        count.className = 'group-slot-count';
+        count.textContent = '(' + group.slotIds.length + ')';
+        item.appendChild(count);
+
+        // Actions
+        var actions = document.createElement('div');
+        actions.className = 'group-actions';
+
+        var deleteBtn = document.createElement('button');
+        deleteBtn.className = 'delete-group';
+        deleteBtn.textContent = '✕';
+        deleteBtn.title = 'Delete group';
+        deleteBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            deleteSlotGroup(group.id);
+            renderGroupPanel();
+            renderCardPlaceMarkers();
+        });
+        actions.appendChild(deleteBtn);
+        item.appendChild(actions);
+
+        // Hover: highlight markers on board
+        item.addEventListener('mouseenter', function () {
+            highlightGroupMarkers(group.id, true);
+        });
+        item.addEventListener('mouseleave', function () {
+            highlightGroupMarkers(group.id, false);
+        });
+
+        // HTML5 Drag-to-reorder
+        item.addEventListener('dragstart', function (e) {
+            e.dataTransfer.setData('text/plain', String(groups.indexOf(group)));
+            e.dataTransfer.effectAllowed = 'move';
+            item.classList.add('dragging');
+        });
+        item.addEventListener('dragend', function () {
+            item.classList.remove('dragging');
+            // Remove all drag-over states
+            groupList.querySelectorAll('.drag-over').forEach(function (el) {
+                el.classList.remove('drag-over');
+            });
+        });
+        item.addEventListener('dragover', function (e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            item.classList.add('drag-over');
+        });
+        item.addEventListener('dragleave', function () {
+            item.classList.remove('drag-over');
+        });
+        item.addEventListener('drop', function (e) {
+            e.preventDefault();
+            item.classList.remove('drag-over');
+            var fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
+            var toIndex = groups.indexOf(group);
+            if (fromIndex !== toIndex && !isNaN(fromIndex)) {
+                reorderSlotGroups(fromIndex, toIndex);
+                renderGroupPanel();
+                renderCardPlaceMarkers();
+            }
+        });
+
+        groupList.appendChild(item);
+    });
+
+    // Show ungrouped count
+    var allSlotIds = [];
+    groups.forEach(function (g) {
+        allSlotIds = allSlotIds.concat(g.slotIds);
+    });
+    var ungroupedCount = (appState.boardLayout.cardPlaces || []).filter(function (p) {
+        return allSlotIds.indexOf(p.id) < 0;
+    }).length;
+    if (ungroupedCount > 0) {
+        var ungroupedDiv = document.createElement('div');
+        ungroupedDiv.className = 'group-ungrouped';
+        ungroupedDiv.textContent = ungroupedCount + ' ungrouped slot' + (ungroupedCount > 1 ? 's' : '');
+        groupList.appendChild(ungroupedDiv);
+    }
+
+    // Update create group button state
+    var createBtn = document.getElementById('createGroupBtn');
+    if (createBtn) {
+        createBtn.disabled = !appState.selectedCardPlaces || appState.selectedCardPlaces.length < 2;
+    }
+}
+
+/**
+ * Highlight or unhighlight markers belonging to a group on the board
+ * @param {string} groupId
+ * @param {boolean} highlight
+ */
+function highlightGroupMarkers(groupId, highlight) {
+    var groups = appState.boardLayout.slotGroups || [];
+    var group = groups.find(function (g) { return g.id === groupId; });
+    if (!group) return;
+
+    group.slotIds.forEach(function (slotId) {
+        var marker = document.querySelector('.card-place-marker[data-place-id="' + slotId + '"]');
+        if (marker) {
+            if (highlight) {
+                marker.classList.add('group-highlight');
+            } else {
+                marker.classList.remove('group-highlight');
+            }
+        }
+    });
+}
+
 
 // ============================================
 // TIMELINE MODULES INTEGRATION

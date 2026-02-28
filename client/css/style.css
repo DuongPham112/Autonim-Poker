@@ -1927,6 +1927,145 @@ body {
 }
 
 /* ============================================
+   SLOT GROUP PANEL
+   ============================================ */
+.slot-group-panel {
+    margin-top: 6px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+    overflow: hidden;
+}
+
+.slot-group-panel.hidden {
+    display: none;
+}
+
+.group-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 8px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.group-panel-header .btn {
+    font-size: 10px;
+    padding: 2px 6px;
+}
+
+.group-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.group-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-left: 3px solid transparent;
+    border-bottom: 1px solid var(--border-color);
+    cursor: grab;
+    font-size: 11px;
+    color: var(--text-primary);
+    transition: background 0.15s;
+    user-select: none;
+}
+
+.group-item:last-child {
+    border-bottom: none;
+}
+
+.group-item:hover {
+    background: var(--bg-hover);
+}
+
+.group-item.dragging {
+    opacity: 0.4;
+}
+
+.group-item.drag-over {
+    border-top: 2px solid var(--accent-blue);
+}
+
+.group-color-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.group-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.group-name[contenteditable="true"] {
+    outline: none;
+    background: var(--bg-primary);
+    border-radius: 2px;
+    padding: 0 2px;
+}
+
+.group-slot-count {
+    font-size: 10px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.group-actions {
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.group-item:hover .group-actions {
+    opacity: 1;
+}
+
+.group-actions button {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 1px 3px;
+    border-radius: 2px;
+}
+
+.group-actions button:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.group-actions button.delete-group:hover {
+    color: var(--accent-red);
+}
+
+/* Marker highlight when hovering a group in panel */
+.card-place-marker.group-highlight {
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.6), inset 0 0 6px rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Ungrouped section */
+.group-ungrouped {
+    padding: 4px 8px;
+    font-size: 10px;
+    color: var(--text-muted);
+    border-top: 1px dashed var(--border-color);
+    font-style: italic;
+}
+
+/* ============================================
    CARD PLACE MARKERS (on table)
    ============================================ */
 .card-place-marker {
