@@ -4041,6 +4041,7 @@ function handleLoadPreset() {
 
     updateCardPlacesList();
     renderCardPlaceMarkers();
+    updateGroupPanelVisibility();
 }
 
 /**
