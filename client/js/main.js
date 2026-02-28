@@ -3707,6 +3707,18 @@ function handleAutoStepYes() {
             actions: actions
         };
 
+        // BUG #4 fix: attach pending group order overrides
+        if (appState.pendingGroupOrderOverrides) {
+            newStep.groupOrderOverrides = JSON.parse(JSON.stringify(appState.pendingGroupOrderOverrides));
+            var groups = appState.boardLayout.slotGroups || [];
+            groups.forEach(function (g) {
+                if (appState.pendingGroupOrderOverrides[g.id] !== undefined) {
+                    g.groupOrder = appState.pendingGroupOrderOverrides[g.id];
+                }
+            });
+            appState.pendingGroupOrderOverrides = null;
+        }
+
         scenarioData.scenario.push(newStep);
 
         // Save snapshot for replay and edit restore
@@ -4386,7 +4398,8 @@ function loadGridLayout(cols, rows) {
         boardStyle: 'card-sorting',
         gridCols: cols,
         gridRows: rows,
-        cardPlaces: places
+        cardPlaces: places,
+        slotGroups: []
     };
 
     // Auto-assign zOrder based on row/col
@@ -4439,6 +4452,7 @@ function snapCardPlacesToGrid(spacingX, spacingY) {
 
     renderCardPlaceMarkers();
     updateCardPlacesList();
+    updateGroupPanelVisibility();
     setStatus(`Snapped ${places.length} cards to ${cols}×${rows} grid`);
 }
 
@@ -4634,6 +4648,7 @@ function handleApplyGrid() {
     loadGridLayout(cols, rows);
     updateCardPlacesList();
     renderCardPlaceMarkers();
+    updateGroupPanelVisibility();
 }
 
 /**
@@ -4657,6 +4672,7 @@ function handleAddCardPlace() {
 
     updateCardPlacesList();
     renderCardPlaceMarkers();
+    updateGroupPanelVisibility();
     setStatus(`Added card place #${newId + 1}`);
 }
 
@@ -4685,6 +4701,7 @@ function handleAddCommunityZone() {
 
     updateCardPlacesList();
     renderCardPlaceMarkers();
+    updateGroupPanelVisibility();
     setStatus(`Added community zone #${czCount + 1}`);
     debugLog(`[CommunityZone] Created ${newPlace.id} at UI(${newPlace.x}, ${newPlace.y}) mode=${newPlace.czMode}`);
 }
@@ -4694,8 +4711,10 @@ function handleAddCommunityZone() {
  */
 function handleClearBoard() {
     appState.boardLayout.cardPlaces = [];
+    appState.boardLayout.slotGroups = [];
     updateCardPlacesList();
     renderCardPlaceMarkers();
+    updateGroupPanelVisibility();
     setStatus('Cleared all card places');
 }
 
@@ -4929,12 +4948,14 @@ function renderCardPlaceMarkers() {
                 }
                 // Also select for CZ panel
                 selectCardPlace(place, marker);
+                updateCreateGroupBtnState();
                 debugLog(`[MultiSelect] ${appState.selectedCardPlaces.length} slots selected`);
             } else {
                 // Normal click: single select, clear multi-select
                 appState.selectedCardPlaces = [];
                 document.querySelectorAll('.card-place-marker.multi-selected').forEach(m => m.classList.remove('multi-selected'));
                 selectCardPlace(place, marker);
+                updateCreateGroupBtnState();
             }
         });
 
@@ -5577,22 +5598,30 @@ function updateCardPlacesList() {
 
 /**
  * Toggle visibility between cardPlacesList and slotGroupPanel
- * Show group panel when groups exist, card list otherwise
+ * Panel is ALWAYS visible (for createGroupBtn access) — BUG #1 fix
+ * Card places list hidden when groups exist, shown otherwise
  */
 function updateGroupPanelVisibility() {
     var groupPanel = document.getElementById('slotGroupPanel');
     var placesList = document.getElementById('cardPlacesList');
     if (!groupPanel || !placesList) return;
 
+    // Panel always visible in board-setting mode
+    groupPanel.classList.remove('hidden');
+
     var hasGroups = appState.boardLayout.slotGroups && appState.boardLayout.slotGroups.length > 0;
     if (hasGroups) {
         placesList.classList.add('hidden');
-        groupPanel.classList.remove('hidden');
         renderGroupPanel();
     } else {
         placesList.classList.remove('hidden');
-        groupPanel.classList.add('hidden');
+        // Show empty hint in group list
+        var groupList = document.getElementById('groupList');
+        if (groupList) {
+            groupList.innerHTML = '<div class="group-ungrouped">No groups yet — select 2+ markers then click + Group</div>';
+        }
     }
+    updateCreateGroupBtnState();
 }
 
 /**
@@ -5737,7 +5766,14 @@ function renderGroupPanel() {
         groupList.appendChild(ungroupedDiv);
     }
 
-    // Update create group button state
+    updateCreateGroupBtnState();
+}
+
+/**
+ * Update the create group button enabled/disabled state
+ * Called from shift-click handler, renderGroupPanel, and updateGroupPanelVisibility
+ */
+function updateCreateGroupBtnState() {
     var createBtn = document.getElementById('createGroupBtn');
     if (createBtn) {
         createBtn.disabled = !appState.selectedCardPlaces || appState.selectedCardPlaces.length < 2;
@@ -6353,6 +6389,18 @@ function autoSaveGroupedStep() {
         duration: stepDuration ? parseFloat(stepDuration.value) : 1.0,
         actions: actions
     };
+
+    // BUG #4 fix: attach pending group order overrides
+    if (appState.pendingGroupOrderOverrides) {
+        newStep.groupOrderOverrides = JSON.parse(JSON.stringify(appState.pendingGroupOrderOverrides));
+        var groups = appState.boardLayout.slotGroups || [];
+        groups.forEach(function (g) {
+            if (appState.pendingGroupOrderOverrides[g.id] !== undefined) {
+                g.groupOrder = appState.pendingGroupOrderOverrides[g.id];
+            }
+        });
+        appState.pendingGroupOrderOverrides = null;
+    }
 
     // Add to scenario
     scenarioData.scenario.push(newStep);

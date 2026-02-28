@@ -1303,6 +1303,7 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOf
             workingGroupOrders[slotGroups[gi].id] = slotGroups[gi].groupOrder;
         }
     }
+    var cardSlotMap = null; // BUG #5: dynamic card→slot tracking (lazy init)
     var currentTime = timeOffset || 0;
     var moveCounter = 0;  // Tracks order of card movements for z-ordering
 
@@ -1564,8 +1565,20 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOf
             }
         }
 
-        // Process groupOrderOverrides: animate Z for all cards in affected groups
+        // BUG #9 fix: Process groupOrderOverrides BEFORE transforms
+        // This way transforms use the correct (new) group order for Z calculation
+        // BUG #5 fix: Use cardSlotMap for dynamic card→slot tracking
         if (step.groupOrderOverrides && slotGroups) {
+            // Build/update cardSlotMap from initialState on first use
+            if (!cardSlotMap) {
+                cardSlotMap = {};
+                for (var cid3 in initialState) {
+                    if (!initialState.hasOwnProperty(cid3)) continue;
+                    var zone3 = initialState[cid3].zone || '';
+                    cardSlotMap[cid3] = zone3.replace('grid-', '');
+                }
+            }
+
             var GROUP_Z_BAND = 1000;
             for (var gIdx = 0; gIdx < slotGroups.length; gIdx++) {
                 var grp = slotGroups[gIdx];
@@ -1574,30 +1587,34 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOf
                 var oldOrder = workingGroupOrders[grp.id];
                 if (oldOrder === newOrder) continue;
 
-                // Find all cards belonging to this group and animate their Z
+                // Find all cards currently on this group's slots
                 for (var si2 = 0; si2 < grp.slotIds.length; si2++) {
                     var slotId = grp.slotIds[si2];
-                    // Find card(s) on this slot from initialState
-                    for (var cid2 in initialState) {
-                        if (!initialState.hasOwnProperty(cid2)) continue;
-                        var cInfo2 = initialState[cid2];
-                        var cardSlotId = (cInfo2.zone || '').replace('grid-', '');
-                        if (cardSlotId !== slotId) continue;
+                    for (var cid2 in cardSlotMap) {
+                        if (!cardSlotMap.hasOwnProperty(cid2)) continue;
+                        if (cardSlotMap[cid2] !== slotId) continue;
                         var cardLayer2 = layerMap[cid2];
                         if (!cardLayer2) continue;
 
                         // Get current position and compute new Z
                         var posProp = cardLayer2.property('Position');
                         var curPos = posProp.valueAtTime(currentTime, false);
-                        var baseZ = (cInfo2.zOrder || 0) % GROUP_Z_BAND;
+                        var baseZ = (initialState[cid2] ? (initialState[cid2].zOrder || 0) : 0) % GROUP_Z_BAND;
                         var newZ = INITIAL_Z_OFFSET - ((newOrder * GROUP_Z_BAND + baseZ) * Z_SPACING);
-                        // Set hold keyframe at current time, then animate to new Z
                         posProp.setValueAtTime(currentTime, curPos);
                         posProp.setValueAtTime(currentTime + moveDuration, [curPos[0], curPos[1], newZ]);
                     }
                 }
                 // Update working order
                 workingGroupOrders[grp.id] = newOrder;
+            }
+        }
+
+        // Update cardSlotMap: track card movements from TRANSFORM actions
+        for (var tIdx = 0; tIdx < transformActions.length; tIdx++) {
+            var tAction = transformActions[tIdx];
+            if (tAction.endZone && cardSlotMap) {
+                cardSlotMap[tAction.targetId] = tAction.endZone.replace('grid-', '');
             }
         }
         // Advance current time
