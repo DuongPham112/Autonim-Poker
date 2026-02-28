@@ -5886,11 +5886,42 @@ function renderGroupOrderStrip() {
                 // Reorder workingGroups locally
                 var moved = workingGroups.splice(fromIdx, 1)[0];
                 workingGroups.splice(toIdx, 0, moved);
-                // Build pendingGroupOrderOverrides map
-                appState.pendingGroupOrderOverrides = {};
+                // Build overrides map
+                var overrides = {};
                 workingGroups.forEach(function (wg2, i) {
-                    appState.pendingGroupOrderOverrides[wg2.id] = i;
+                    overrides[wg2.id] = i;
                 });
+
+                if (appState.isEditingStep) {
+                    // During active step edit: store as pending, attach on finish
+                    appState.pendingGroupOrderOverrides = overrides;
+                } else {
+                    // Not editing: auto-create standalone group-reorder step
+                    var reorderStep = {
+                        stepId: scenarioData.scenario.length + 1,
+                        duration: stepDuration ? parseFloat(stepDuration.value) : 1.0,
+                        actions: [],
+                        groupOrderOverrides: JSON.parse(JSON.stringify(overrides))
+                    };
+
+                    // Apply overrides to actual group.groupOrder
+                    var groups2 = appState.boardLayout.slotGroups || [];
+                    groups2.forEach(function (g) {
+                        if (overrides[g.id] !== undefined) {
+                            g.groupOrder = overrides[g.id];
+                        }
+                    });
+
+                    // Take snapshot for replay
+                    var snap = takeSnapshot();
+                    scenarioData.scenario.push(reorderStep);
+                    stepSnapshots.push(JSON.parse(JSON.stringify(snap)));
+
+                    totalSteps.textContent = scenarioData.scenario.length;
+                    renderTimeline();
+                    updateUI();
+                    setStatus('Step ' + reorderStep.stepId + ' auto-created: group order changed', 'success');
+                }
                 renderGroupOrderStrip();
             }
         });
