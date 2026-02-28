@@ -5329,6 +5329,7 @@ function initCZSettingsPanel() {
             if (appState.selectedCardPlaces.length > 0) {
                 debugLog(`[LassoSelect] Selected ${appState.selectedCardPlaces.length} markers`);
             }
+            updateCreateGroupBtnState();
         });
     }
 
