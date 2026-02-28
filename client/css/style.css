@@ -2066,6 +2066,61 @@ body {
 }
 
 /* ============================================
+   GROUP ORDER STRIP (Record phase)
+   ============================================ */
+.group-order-section.hidden {
+    display: none;
+}
+
+.group-order-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px 0;
+}
+
+.group-order-chip {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #fff;
+    cursor: grab;
+    user-select: none;
+    transition: opacity 0.15s, transform 0.1s;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.group-order-chip:hover {
+    transform: scale(1.05);
+}
+
+.group-order-chip.dragging {
+    opacity: 0.3;
+}
+
+.group-order-chip.drag-over {
+    box-shadow: 0 0 0 2px #fff;
+    transform: scale(1.1);
+}
+
+.group-order-chip .chip-order {
+    font-size: 9px;
+    opacity: 0.7;
+    margin-right: 2px;
+}
+
+.group-order-hint {
+    font-size: 9px;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-top: 2px;
+}
+
+/* ============================================
    CARD PLACE MARKERS (on table)
    ============================================ */
 .card-place-marker {

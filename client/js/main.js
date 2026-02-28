@@ -805,6 +805,7 @@ function setPhase(phase) {
         if (gameWrapper) gameWrapper.classList.add('recording-mode');
 
         setStatus('Record - Create animation steps');
+        updateGroupOrderSectionVisibility();
     }
 
     // Update grouping section visibility
@@ -2265,6 +2266,19 @@ function handleFinishStep() {
     currentStep.actions = actions;
     currentStep.duration = stepDuration ? parseFloat(stepDuration.value) : 1.0;
 
+    // Attach group order overrides if user reordered groups during this step
+    if (appState.pendingGroupOrderOverrides) {
+        currentStep.groupOrderOverrides = JSON.parse(JSON.stringify(appState.pendingGroupOrderOverrides));
+        // Apply overrides to actual group.groupOrder for subsequent steps
+        var groups = appState.boardLayout.slotGroups || [];
+        groups.forEach(function (g) {
+            if (appState.pendingGroupOrderOverrides[g.id] !== undefined) {
+                g.groupOrder = appState.pendingGroupOrderOverrides[g.id];
+            }
+        });
+        appState.pendingGroupOrderOverrides = null;
+    }
+
     scenarioData.scenario.push(currentStep);
 
     // Save snapshot for replay and edit restore
@@ -2281,6 +2295,7 @@ function handleFinishStep() {
     totalSteps.textContent = scenarioData.scenario.length;
 
     renderTimeline();
+    renderGroupOrderStrip();
     setStatus(`Step ${scenarioData.scenario.length} saved with ${actions.length} actions`, 'success');
     updateUI();
 }
@@ -5066,6 +5081,10 @@ function clearCardDropZones() {
 function deleteCardPlace(placeId) {
     appState.boardLayout.cardPlaces = appState.boardLayout.cardPlaces.filter(p => p.id !== placeId);
 
+    // Remove from any group
+    removeSlotFromAllGroups(placeId);
+    cleanupEmptyGroups();
+
     // Re-label remaining places (preserve community zone labels)
     let normalIdx = 0;
     appState.boardLayout.cardPlaces.forEach((p) => {
@@ -5077,6 +5096,7 @@ function deleteCardPlace(placeId) {
 
     updateCardPlacesList();
     renderCardPlaceMarkers();
+    updateGroupPanelVisibility();
     setStatus('Card place deleted');
 }
 
@@ -5741,6 +5761,101 @@ function highlightGroupMarkers(groupId, highlight) {
     });
 }
 
+/**
+ * Show/hide the group order section in Record phase
+ */
+function updateGroupOrderSectionVisibility() {
+    var section = document.getElementById('groupOrderSection');
+    if (!section) return;
+    var hasGroups = appState.boardLayout.slotGroups && appState.boardLayout.slotGroups.length > 0;
+    if (hasGroups) {
+        section.classList.remove('hidden');
+        renderGroupOrderStrip();
+    } else {
+        section.classList.add('hidden');
+    }
+}
+
+/**
+ * Render group order chips in Record mode — drag to reorder for this step
+ * Order: left = back (lowest groupOrder), right = front (highest)
+ */
+function renderGroupOrderStrip() {
+    var strip = document.getElementById('groupOrderStrip');
+    if (!strip) return;
+    strip.innerHTML = '';
+
+    var groups = appState.boardLayout.slotGroups || [];
+    if (groups.length === 0) return;
+
+    // Build working order: start from current order, apply pending overrides
+    var workingGroups = groups.map(function (g) {
+        var order = g.groupOrder;
+        if (appState.pendingGroupOrderOverrides && appState.pendingGroupOrderOverrides[g.id] !== undefined) {
+            order = appState.pendingGroupOrderOverrides[g.id];
+        }
+        return { id: g.id, name: g.name, color: g.color, workingOrder: order };
+    });
+    workingGroups.sort(function (a, b) { return a.workingOrder - b.workingOrder; });
+
+    workingGroups.forEach(function (wg, displayIdx) {
+        var chip = document.createElement('div');
+        chip.className = 'group-order-chip';
+        chip.style.backgroundColor = wg.color;
+        chip.dataset.groupId = wg.id;
+        chip.dataset.displayIdx = String(displayIdx);
+        chip.draggable = true;
+
+        // Order number
+        var orderSpan = document.createElement('span');
+        orderSpan.className = 'chip-order';
+        orderSpan.textContent = String(displayIdx);
+        chip.appendChild(orderSpan);
+
+        // Name
+        var nameSpan = document.createElement('span');
+        nameSpan.textContent = wg.name;
+        chip.appendChild(nameSpan);
+
+        // Drag handlers
+        chip.addEventListener('dragstart', function (e) {
+            e.dataTransfer.setData('text/plain', String(displayIdx));
+            e.dataTransfer.effectAllowed = 'move';
+            chip.classList.add('dragging');
+        });
+        chip.addEventListener('dragend', function () {
+            chip.classList.remove('dragging');
+            strip.querySelectorAll('.drag-over').forEach(function (el) { el.classList.remove('drag-over'); });
+        });
+        chip.addEventListener('dragover', function (e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            chip.classList.add('drag-over');
+        });
+        chip.addEventListener('dragleave', function () {
+            chip.classList.remove('drag-over');
+        });
+        chip.addEventListener('drop', function (e) {
+            e.preventDefault();
+            chip.classList.remove('drag-over');
+            var fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+            var toIdx = displayIdx;
+            if (fromIdx !== toIdx && !isNaN(fromIdx)) {
+                // Reorder workingGroups locally
+                var moved = workingGroups.splice(fromIdx, 1)[0];
+                workingGroups.splice(toIdx, 0, moved);
+                // Build pendingGroupOrderOverrides map
+                appState.pendingGroupOrderOverrides = {};
+                workingGroups.forEach(function (wg2, i) {
+                    appState.pendingGroupOrderOverrides[wg2.id] = i;
+                });
+                renderGroupOrderStrip();
+            }
+        });
+
+        strip.appendChild(chip);
+    });
+}
 
 // ============================================
 // TIMELINE MODULES INTEGRATION

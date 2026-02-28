@@ -184,6 +184,7 @@ function createSlotGroup(name, slotIds) {
     };
 
     appState.boardLayout.slotGroups.push(newGroup);
+    cleanupEmptyGroups();
     renormalizeGroupOrder();
 
     debugLog('[SlotGroup] Created "' + name + '" with ' + slotIds.length + ' slots');
@@ -271,6 +272,17 @@ function removeSlotFromAllGroups(slotId) {
             group.slotIds.splice(idx, 1);
         }
     });
+}
+
+/**
+ * Remove groups that have 0 slots (orphan cleanup)
+ */
+function cleanupEmptyGroups() {
+    if (!appState.boardLayout.slotGroups) return;
+    appState.boardLayout.slotGroups = appState.boardLayout.slotGroups.filter(function (g) {
+        return g.slotIds && g.slotIds.length > 0;
+    });
+    renormalizeGroupOrder();
 }
 
 /**
