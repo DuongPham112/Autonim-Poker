@@ -4032,8 +4032,18 @@ function handleLoadPreset() {
     } else if (presetValue === 'card-sorting') {
         loadGridLayout(4, 3);
     } else if (presetValue === 'custom') {
-        // Keep current custom layout
-        setStatus('Custom layout - modify as needed');
+        // Start with empty grid (no card places)
+        appState.boardLayout = {
+            type: 'grid',
+            name: 'Custom',
+            boardStyle: 'custom',
+            gridCols: 4,
+            gridRows: 3,
+            cardPlaces: [],
+            slotGroups: []
+        };
+        gameContainer.classList.add('grid-mode');
+        setStatus('Custom layout - Add card places with buttons above');
     }
 
     // Toggle Grid Size controls visibility (only for card-sorting/custom)
