@@ -4053,6 +4053,7 @@ function handleLoadPreset() {
     const presetValue = presetSelect.value;
 
     // Clean up previous layout before loading new one
+    deselectCardPlace();
     clearCardPlaceMarkers();
     clearCardDropZones();
     gameContainer.classList.remove('grid-mode', 'poker-grid-mode');
