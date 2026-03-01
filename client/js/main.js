@@ -152,7 +152,7 @@ let selectAssetsFolderBtn, assetsPathDisplay;
 let addStepBtn, finishStepBtn, stepDuration;
 let currentStepNum, totalSteps, timelinePreview;
 let noCardSelected, cardProperties, selectedCardName, cardFaceState;
-let flipCardCheck, slamEffectCheck;
+let flipCardCheck, slamEffectCheck, spinEffectCheck;
 let cardPosX, cardPosY, cardRot;
 let exportJsonBtn, exportToAEBtn;
 
@@ -166,8 +166,8 @@ let warningModal, warningMessage, confirmWarningBtn, cancelWarningBtn;
 let autoStepPopup, autoStepYes, autoStepNo;
 
 // Context Menu Elements
-let cardContextMenu, ctxFlipBtn, ctxFlipAniBtn, ctxSlamBtn;
-let ctxFlipAllBtn, ctxSlamAllBtn, ctxGroupDivider;
+let cardContextMenu, ctxFlipBtn, ctxFlipAniBtn, ctxSlamBtn, ctxSpinBtn;
+let ctxFlipAllBtn, ctxSlamAllBtn, ctxSpinAllBtn, ctxGroupDivider;
 
 // Grouping Mode Elements
 let groupingSection, groupingModeToggle, autoRecordToggle, autoRecordDelay, autoRecordDelayValue;
@@ -426,6 +426,7 @@ function getDOMElements() {
     cardFaceState = document.getElementById('cardFaceState');
     flipCardCheck = document.getElementById('flipCardCheck');
     slamEffectCheck = document.getElementById('slamEffectCheck');
+    spinEffectCheck = document.getElementById('spinEffectCheck');
     cardPosX = document.getElementById('cardPosX');
     cardPosY = document.getElementById('cardPosY');
     cardRot = document.getElementById('cardRot');
@@ -454,8 +455,10 @@ function getDOMElements() {
     ctxFlipBtn = document.getElementById('ctxFlipBtn');
     ctxFlipAniBtn = document.getElementById('ctxFlipAniBtn');
     ctxSlamBtn = document.getElementById('ctxSlamBtn');
+    ctxSpinBtn = document.getElementById('ctxSpinBtn');
     ctxFlipAllBtn = document.getElementById('ctxFlipAllBtn');
     ctxSlamAllBtn = document.getElementById('ctxSlamAllBtn');
+    ctxSpinAllBtn = document.getElementById('ctxSpinAllBtn');
     ctxGroupDivider = document.getElementById('ctxGroupDivider');
 
     // Status
@@ -570,6 +573,7 @@ function bindEvents() {
     // Card properties
     flipCardCheck.addEventListener('change', handlePropertyChange);
     slamEffectCheck.addEventListener('change', handlePropertyChange);
+    spinEffectCheck.addEventListener('change', handlePropertyChange);
 
     // Export
     if (exportJsonBtn) exportJsonBtn.addEventListener('click', handleExportJSON);
@@ -644,8 +648,10 @@ function bindEvents() {
     if (ctxFlipBtn) ctxFlipBtn.addEventListener('click', toggleCtxFlip);
     if (ctxFlipAniBtn) ctxFlipAniBtn.addEventListener('click', handleFlipAni);
     if (ctxSlamBtn) ctxSlamBtn.addEventListener('click', toggleCtxSlam);
+    if (ctxSpinBtn) ctxSpinBtn.addEventListener('click', toggleCtxSpin);
     if (ctxFlipAllBtn) ctxFlipAllBtn.addEventListener('click', toggleCtxFlipAll);
     if (ctxSlamAllBtn) ctxSlamAllBtn.addEventListener('click', toggleCtxSlamAll);
+    if (ctxSpinAllBtn) ctxSpinAllBtn.addEventListener('click', toggleCtxSpinAll);
 
     // Context menu popup toggle
     var showCtxToggle = document.getElementById('showContextMenuToggle');
@@ -1660,12 +1666,13 @@ function placeCardInZone(card, zoneName, rotation, zoneElement) {
         card.hasChanges = true;
     }
 
-    // Update tray
-    renderCardTray();
-    hideInstructions();
-    updateUI();
-
-    setStatus(`Placed ${card.displayName || card.name} in ${zoneName} zone`);
+    // Update tray (skip during bulk AI apply for performance)
+    if (!appState._bulkApplying) {
+        renderCardTray();
+        hideInstructions();
+        updateUI();
+        setStatus(`Placed ${card.displayName || card.name} in ${zoneName} zone`);
+    }
 
     // Show auto-step popup in Record mode (if not manually editing a step)
     if (snapshotBeforePlace && appState.phase === 'record' && !appState.isEditingStep) {
@@ -1998,6 +2005,7 @@ function selectCard(card) {
 
     flipCardCheck.checked = card.flipAction || false;
     slamEffectCheck.checked = card.slamEffect || false;
+    spinEffectCheck.checked = card.spinEffect || false;
 
     updateCardPosDisplay(card);
 
@@ -2147,9 +2155,9 @@ function reRenderZoneCards() {
 // ============================================
 
 function handleResetTable() {
-    if (appState.tableCards.length === 0) return;
+    if (appState.tableCards.length === 0 && !appState._bulkApplying) return;
 
-    if (!confirm('Return all cards to tray?')) return;
+    if (!appState._bulkApplying && !confirm('Return all cards to tray?')) return;
 
     // Remove card elements
     appState.tableCards.forEach(card => {
@@ -2333,6 +2341,12 @@ function handleFinishStep() {
  * This is used for replay and restore functionality
  */
 function saveInitialState() {
+    // Skip during AI bulk apply — applyAIScenario manages its own snapshots
+    if (appState._bulkApplying) {
+        debugLog('[saveInitialState] Skipped — _bulkApplying is true');
+        return;
+    }
+
     scenarioData.initialState = {};
 
     appState.tableCards.forEach(card => {
@@ -2407,7 +2421,8 @@ function computeActions(startSnap, endSnap) {
                 zone: end.zone,
                 flip: card.flipAction,
                 flipToFaceUp: end.isFaceUp,
-                effect: card.slamEffect ? 'SLAM' : null
+                effect: card.slamEffect ? 'SLAM' : null,
+                spin: card.spinEffect
             });
             return;
         }
@@ -2468,8 +2483,9 @@ function computeActions(startSnap, endSnap) {
         // These flags are "sticky" on card objects, so we must NOT use them for stationary cards
         const hasFlipAction = zoneChanged && card.flipAction;
         const hasSlam = zoneChanged && card.slamEffect;
+        const hasSpin = zoneChanged && card.spinEffect;
 
-        if (posChanged || rotChanged || flipChanged || zoneChanged || hasFlipAction || hasSlam) {
+        if (posChanged || rotChanged || flipChanged || zoneChanged || hasFlipAction || hasSlam || hasSpin) {
             // Get endZOrder using group-aware computation
             var endZOrder = computeZOrderForCard(end);
             actions.push({
@@ -2484,7 +2500,28 @@ function computeActions(startSnap, endSnap) {
                 endZOrder: endZOrder,
                 flip: hasFlipAction || flipChanged,
                 flipToFaceUp: end.isFaceUp,
-                effect: hasSlam ? 'SLAM' : null
+                effect: hasSlam ? 'SLAM' : null,
+                spin: hasSpin
+            });
+        }
+    });
+
+    // Detect REMOVED cards (in startSnap but not in endSnap / not in tableCards)
+    var currentCardIds = new Set(appState.tableCards.map(function (c) { return c.id; }));
+    Object.keys(startSnap).forEach(function (cardId) {
+        if (!endSnap[cardId] && !currentCardIds.has(cardId)) {
+            var start = startSnap[cardId];
+            var startPos = (start.zone && start.zone !== 'table')
+                ? getAEZonePosition(start.zone, start.zonePosition || 0)
+                : { x: Math.round(start.x || 0), y: Math.round(start.y || 0) };
+            actions.push({
+                targetId: cardId,
+                type: 'REMOVE',
+                startPosition: startPos,
+                endPosition: { x: PROJECT_INFO.width + 500, y: startPos.y },
+                startRotation: Math.round(start.rotation || 0),
+                endRotation: Math.round(start.rotation || 0),
+                zone: start.zone
             });
         }
     });
@@ -2500,6 +2537,10 @@ function handlePropertyChange() {
 
     appState.selectedCard.flipAction = flipCardCheck.checked;
     appState.selectedCard.slamEffect = slamEffectCheck.checked;
+    appState.selectedCard.spinEffect = spinEffectCheck.checked;
+
+    // Sync popup menu button states
+    updateContextMenuState(appState.selectedCard);
 }
 
 // ============================================
@@ -3684,6 +3725,7 @@ function initHelpVideoLinks() {
  */
 function showAutoStepPopup(card, previousSnapshot) {
     if (!autoStepPopup) return;
+    if (appState._bulkApplying) return; // Suppress during AI scenario apply
 
     pendingChangeSnapshot = previousSnapshot;
     pendingChangeCard = card;
@@ -3862,6 +3904,7 @@ function showCardContextMenu(card) {
     if (ctxGroupDivider) ctxGroupDivider.classList.toggle('hidden', !hasGroupedCards);
     if (ctxFlipAllBtn) ctxFlipAllBtn.classList.toggle('hidden', !hasGroupedCards);
     if (ctxSlamAllBtn) ctxSlamAllBtn.classList.toggle('hidden', !hasGroupedCards);
+    if (ctxSpinAllBtn) ctxSpinAllBtn.classList.toggle('hidden', !hasGroupedCards);
 
     cardContextMenu.classList.remove('hidden');
 }
@@ -3885,6 +3928,9 @@ function updateContextMenuState(card) {
     }
     if (ctxSlamBtn) {
         ctxSlamBtn.classList.toggle('active', card.slamEffect || false);
+    }
+    if (ctxSpinBtn) {
+        ctxSpinBtn.classList.toggle('active', card.spinEffect || false);
     }
 }
 
@@ -4027,6 +4073,63 @@ function toggleCtxSlamAll() {
     setStatus(newState
         ? `Slam effect enabled for ${appState.groupedCards.length} cards`
         : `Slam effect disabled for ${appState.groupedCards.length} cards`
+    );
+
+    // Auto-hide menu after selection
+    setTimeout(() => {
+        hideCardContextMenu();
+    }, 300);
+}
+
+/**
+ * Toggle spin effect on selected card
+ */
+function toggleCtxSpin() {
+    if (!appState.selectedCard) return;
+
+    appState.selectedCard.spinEffect = !appState.selectedCard.spinEffect;
+
+    // Sync with properties panel
+    spinEffectCheck.checked = appState.selectedCard.spinEffect;
+
+    // Update button state
+    if (ctxSpinBtn) {
+        ctxSpinBtn.classList.toggle('active', appState.selectedCard.spinEffect);
+    }
+
+    setStatus(appState.selectedCard.spinEffect ? 'Spin effect enabled' : 'Spin effect disabled');
+
+    // Auto-hide menu after selection (with brief delay to show state change)
+    setTimeout(() => {
+        hideCardContextMenu();
+    }, 300);
+}
+
+/**
+ * Toggle spin effect on ALL grouped cards
+ */
+function toggleCtxSpinAll() {
+    if (appState.groupedCards.length === 0) return;
+
+    // Determine new state: toggle based on majority
+    const enabledCount = appState.groupedCards.filter(c => c.spinEffect).length;
+    const newState = enabledCount < appState.groupedCards.length / 2;
+
+    appState.groupedCards.forEach(card => {
+        card.spinEffect = newState;
+    });
+
+    // Update properties panel if selected card is in group
+    if (appState.selectedCard && appState.groupedCards.some(c => c.id === appState.selectedCard.id)) {
+        spinEffectCheck.checked = appState.selectedCard.spinEffect;
+        if (ctxSpinBtn) {
+            ctxSpinBtn.classList.toggle('active', appState.selectedCard.spinEffect);
+        }
+    }
+
+    setStatus(newState
+        ? `Spin effect enabled for ${appState.groupedCards.length} cards`
+        : `Spin effect disabled for ${appState.groupedCards.length} cards`
     );
 
     // Auto-hide menu after selection
@@ -6177,6 +6280,10 @@ function hookTimelineFunctions() {
                 stepPropertyManager.setPendingProperty(cardId, 'slam', {
                     enabled: slamEffectCheck.checked
                 });
+
+                stepPropertyManager.setPendingProperty(cardId, 'spin', {
+                    enabled: spinEffectCheck.checked
+                });
             }
 
             // Still call original to update card object
@@ -6738,18 +6845,24 @@ async function handleAIGenerate() {
     var availableCardNames = availableCards.map(function (c) { return c.name || c.baseName; });
     var availableSlotIds = slots.map(function (s) { return s.id; });
 
+    // Check mode toggle
+    var aiModeRadio = document.querySelector('input[name="aiMode"]:checked');
+    var aiMode = aiModeRadio ? aiModeRadio.value : 'setup';
+    var isScenarioMode = aiMode === 'scenario';
+
     if (aiGenerateBtn) {
         aiGenerateBtn.disabled = true;
         aiGenerateBtn.classList.add('loading');
     }
-    showAIStatus('🤖 Generating layout with AI...');
+    showAIStatus(isScenarioMode ? '🎬 Generating scenario with AI...' : '🤖 Generating layout with AI...');
     hideAIError();
 
     try {
         var token = typeof getToken === 'function' ? getToken() : localStorage.getItem('autonim_poker_token');
 
         var apiBase = getAPIBaseUrl();
-        var response = await fetch(apiBase + '/api/poker/ai-generate', {
+        var endpoint = isScenarioMode ? '/api/poker/ai-generate-scenario' : '/api/poker/ai-generate';
+        var response = await fetch(apiBase + endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -6768,36 +6881,53 @@ async function handleAIGenerate() {
         }
 
         var result = await response.json();
-
-        if (!result.cardAssignments || result.cardAssignments.length === 0) {
-            showAIError('AI returned no card assignments. Try a different brief.');
-            return;
-        }
-
-        showAIStatus('✅ AI generated ' + result.cardAssignments.length + ' card placements. Applying...');
-        await applyAILayout(result);
-
-        // Build detailed status with reasoning and debug info
-        var statusParts = ['✅ Done! ' + result.cardAssignments.length + ' cards placed.'];
-        if (result.reasoning) {
-            statusParts.push('💭 AI: ' + result.reasoning);
-        }
-        if (result.debug) {
-            var d = result.debug;
-            var debugParts = ['Model: ' + d.model];
-            if (d.invalidCards && d.invalidCards.length > 0) debugParts.push('⚠ Invalid cards: ' + d.invalidCards.join(', '));
-            if (d.invalidSlots && d.invalidSlots.length > 0) debugParts.push('⚠ Invalid slots: ' + d.invalidSlots.join(', '));
-            if (d.duplicatesRemoved > 0) debugParts.push('⚠ ' + d.duplicatesRemoved + ' duplicates removed');
-            statusParts.push('📊 ' + debugParts.join(' | '));
-        }
-        showAIStatus(statusParts.join('\n'));
-
-        // Log full response for debugging
         console.log('[AI] Full response:', JSON.stringify(result, null, 2));
-        debugLog('[AI] Reasoning: ' + (result.reasoning || 'none'));
-        debugLog('[AI] Assignments: ' + result.cardAssignments.map(function (a) {
-            return a.slotId + ' ← ' + a.cardName + ' (' + (a.faceUp ? 'up' : 'down') + ')';
-        }).join(', '));
+
+        if (isScenarioMode) {
+            // === SCENARIO MODE ===
+            if ((!result.initialSetup || result.initialSetup.length === 0) && (!result.steps || result.steps.length === 0)) {
+                showAIError('AI returned no setup or steps. Try a more detailed brief.');
+                return;
+            }
+
+            showAIStatus('🎬 Applying scenario: ' + (result.initialSetup?.length || 0) + ' cards + ' + (result.steps?.length || 0) + ' steps...');
+            await applyAIScenario(result);
+
+            // Build status
+            var statusParts = ['✅ Scenario applied! ' + (result.initialSetup?.length || 0) + ' cards, ' + (result.steps?.length || 0) + ' steps.'];
+            if (result.reasoning) statusParts.push('💭 AI: ' + result.reasoning);
+            if (result.debug) {
+                var d = result.debug;
+                var debugParts = ['Model: ' + d.model];
+                if (d.warnings && d.warnings.length > 0) debugParts.push('⚠ ' + d.warnings.length + ' warnings');
+                if (d.invalidCardRefs && d.invalidCardRefs.length > 0) debugParts.push('⚠ Invalid cards: ' + d.invalidCardRefs.join(', '));
+                statusParts.push('📊 ' + debugParts.join(' | '));
+            }
+            showAIStatus(statusParts.join('\n'));
+
+        } else {
+            // === SETUP MODE (existing behavior) ===
+            if (!result.cardAssignments || result.cardAssignments.length === 0) {
+                showAIError('AI returned no card assignments. Try a different brief.');
+                return;
+            }
+
+            showAIStatus('✅ AI generated ' + result.cardAssignments.length + ' card placements. Applying...');
+            await applyAILayout(result);
+
+            var statusParts = ['✅ Done! ' + result.cardAssignments.length + ' cards placed.'];
+            if (result.reasoning) statusParts.push('💭 AI: ' + result.reasoning);
+            if (result.debug) {
+                var d = result.debug;
+                var debugParts = ['Model: ' + d.model];
+                if (d.invalidCards && d.invalidCards.length > 0) debugParts.push('⚠ Invalid cards: ' + d.invalidCards.join(', '));
+                if (d.invalidSlots && d.invalidSlots.length > 0) debugParts.push('⚠ Invalid slots: ' + d.invalidSlots.join(', '));
+                if (d.duplicatesRemoved > 0) debugParts.push('⚠ ' + d.duplicatesRemoved + ' duplicates removed');
+                statusParts.push('📊 ' + debugParts.join(' | '));
+            }
+            showAIStatus(statusParts.join('\n'));
+            debugLog('[AI] Reasoning: ' + (result.reasoning || 'none'));
+        }
 
     } catch (error) {
         console.error('[AI] Generate error:', error);
@@ -6876,6 +7006,394 @@ async function applyAILayout(result) {
 
     debugLog('[AI] Applied layout: ' + placedCount + ' cards placed, ' + errors.length + ' errors');
     setStatus('AI placed ' + placedCount + ' cards on the board', 'success');
+}
+
+/**
+ * Find a card in the tray by name (supports fuzzy matching via resolveCardName)
+ */
+function findTrayCardByName(cardName) {
+    var card = null;
+    if (typeof resolveCardName === 'function') {
+        card = resolveCardName(cardName, appState.trayCards.filter(function (c) { return c.inTray !== false; }));
+    }
+    if (!card) {
+        card = appState.trayCards.find(function (c) {
+            return c.inTray !== false && (c.name === cardName || c.baseName === cardName);
+        });
+    }
+    return card;
+}
+
+/**
+ * Find a card on the table by name
+ */
+function findTableCardByName(cardName) {
+    return appState.tableCards.find(function (c) {
+        return c.name === cardName || c.baseName === cardName;
+    });
+}
+
+/**
+ * Place a card silently into a slot (no popups, no status messages)
+ */
+function silentPlaceCard(cardName, slotId, faceUp) {
+    var card = findTrayCardByName(cardName);
+    if (!card) {
+        console.warn('[AI Scenario] Card not in tray: ' + cardName);
+        return false;
+    }
+
+    var place = (appState.boardLayout.cardPlaces || []).find(function (p) { return p.id === slotId; });
+    if (!place) {
+        console.warn('[AI Scenario] Slot not found: ' + slotId);
+        return false;
+    }
+
+    var zoneName = 'grid-' + slotId;
+    var zoneElement = document.querySelector('.card-drop-zone[data-zone="' + zoneName + '"]');
+
+    var desiredFaceUp = faceUp === true;
+    card.isFaceUp = desiredFaceUp;
+
+    if (zoneElement) {
+        placeCardInZone(card, zoneName, place.rotation || 0, zoneElement);
+    } else {
+        debugLog('[AI Scenario] Zone element NOT found for: ' + zoneName + ', falling back to placeCardOnTable(' + (place.x || 640) + ',' + (place.y || 360) + ')');
+        placeCardOnTable(card, place.x || 640, place.y || 360);
+    }
+
+    // Re-set isFaceUp because placeCardInZone overrides it from UI checkboxes
+    card.isFaceUp = desiredFaceUp;
+    if (card.element) {
+        var img = card.element.querySelector('img');
+        if (img) {
+            img.src = desiredFaceUp ? (card.frontImageUrl || '') : (card.backImageUrl || '');
+        }
+        card.element.classList.toggle('face-up', desiredFaceUp);
+        card.element.classList.toggle('face-down', !desiredFaceUp);
+    }
+    return true;
+}
+
+/**
+ * Apply AI-generated multi-step scenario to the board
+ * Creates initial setup + recording steps with proper snapshots
+ */
+async function applyAIScenario(result) {
+    // Save state for rollback on error
+    var savedScenario = JSON.parse(JSON.stringify(scenarioData.scenario));
+    var savedSnapshots = JSON.parse(JSON.stringify(stepSnapshots));
+    var wasRecordPhase = appState.phase === 'record';
+
+    try {
+        // Suppress auto-step popups during bulk apply
+        appState._bulkApplying = true;
+
+        // === STEP 0: Reset and apply initial setup ===
+        var targetPreset = result.preset || 'current';
+        if (targetPreset !== 'current') {
+            var psEl = document.getElementById('presetSelect');
+            if (psEl) {
+                psEl.value = targetPreset;
+                handleLoadPreset();
+            }
+        }
+
+        handleResetTable();
+        await new Promise(function (r) { setTimeout(r, 100); });
+
+        // Ensure grid drop zones are rendered before placement
+        if (appState.boardLayout.type === 'grid') {
+            renderCardDropZones();
+        }
+
+        // Apply initial card placements
+        var setupCount = 0;
+        var setupErrors = [];
+        if (result.initialSetup && result.initialSetup.length > 0) {
+            for (var i = 0; i < result.initialSetup.length; i++) {
+                var entry = result.initialSetup[i];
+                if (silentPlaceCard(entry.card, entry.slot, entry.faceUp)) {
+                    setupCount++;
+                } else {
+                    setupErrors.push(entry.card + ' → ' + entry.slot);
+                }
+            }
+        }
+
+        debugLog('[AI Scenario] Initial setup: ' + setupCount + ' cards placed, ' + setupErrors.length + ' errors');
+        if (setupErrors.length > 0) {
+            console.warn('[AI Scenario] Setup errors:', setupErrors);
+        }
+
+        // Batch UI update after all cards placed
+        renderCardTray();
+        updateUI();
+
+        // Switch to record phase (saveInitialState is SKIPPED due to _bulkApplying)
+        setPhase('record');
+        await new Promise(function (r) { setTimeout(r, 50); });
+
+        // === Manually build scenarioData.initialState (since saveInitialState was skipped) ===
+        scenarioData.initialState = {};
+        appState.tableCards.forEach(function (card) {
+            scenarioData.initialState[card.id] = {
+                x: card.x || 0,
+                y: card.y || 0,
+                rotation: card.rotation || 0,
+                isFaceUp: card.isFaceUp,
+                zone: card.zone,
+                zonePosition: card.zonePosition || 0,
+                zOrder: typeof computeZOrderForCard === 'function' ? computeZOrderForCard(card) : 0,
+                flipAction: card.flipAction || false,
+                slamEffect: card.slamEffect || false,
+                isSelected: false
+            };
+        });
+        debugLog('[AI Scenario] Manual initialState built: ' + Object.keys(scenarioData.initialState).length + ' cards');
+
+        // === Manually build snapshot management (since saveInitialState was skipped) ===
+        scenarioData.scenario = [];
+        stepSnapshots = [];
+
+        // Build initial snapshot from current board state
+        var initialSnap = takeSnapshot();
+        stepSnapshots.push(JSON.parse(JSON.stringify(initialSnap)));
+
+        debugLog('[AI Scenario] Manual initial snapshot. tableCards=' + appState.tableCards.length + ', snapshot keys=' + Object.keys(initialSnap).length + ', stepSnapshots.length=' + stepSnapshots.length);
+
+        // === APPLY STEPS SEQUENTIALLY ===
+        if (result.steps && result.steps.length > 0) {
+            for (var si = 0; si < result.steps.length; si++) {
+                var step = result.steps[si];
+                debugLog('[AI Scenario] Processing step ' + (si + 1) + ': "' + step.label + '"');
+
+                // Take snapshot BEFORE this step's changes
+                var beforeSnapshot = takeSnapshot();
+
+                // Apply each action in this step
+                for (var ai = 0; ai < step.actions.length; ai++) {
+                    var act = step.actions[ai];
+                    applyScenarioAction(act);
+                }
+
+                // Wait for DOM updates
+                await new Promise(function (r) { setTimeout(r, 30); });
+
+                // Take snapshot AFTER this step's changes
+                var afterSnapshot = takeSnapshot();
+
+                // Compute internal actions from the diff
+                var internalActions = computeActions(beforeSnapshot, afterSnapshot);
+
+                // Build the step object
+                var stepObj = {
+                    stepId: si + 1,
+                    duration: step.duration || 1.0,
+                    actions: internalActions,
+                    label: step.label || ('Step ' + (si + 1))
+                };
+
+                // Push to scenario
+                scenarioData.scenario.push(stepObj);
+                stepSnapshots.push(JSON.parse(JSON.stringify(afterSnapshot)));
+
+                debugLog('[AI Scenario] Step ' + (si + 1) + ': ' + internalActions.length + ' internal actions | snapshots=' + stepSnapshots.length + ' scenario=' + scenarioData.scenario.length);
+            }
+        }
+
+        // === VERIFY SNAPSHOT INVARIANT ===
+        debugLog('[AI Scenario] Pre-check: snapshots=' + stepSnapshots.length + ', scenario=' + scenarioData.scenario.length + ', expected=' + (scenarioData.scenario.length + 1));
+        if (stepSnapshots.length !== scenarioData.scenario.length + 1) {
+            console.error('[AI Scenario] INVARIANT VIOLATION: snapshots=' + stepSnapshots.length + ', steps=' + scenarioData.scenario.length + ', expected snapshots=' + (scenarioData.scenario.length + 1));
+            // Log stack trace for debugging
+            console.trace('[AI Scenario] Invariant violation trace');
+            throw new Error('Snapshot invariant violated');
+        }
+
+        debugLog('[AI Scenario] ✓ Complete: ' + setupCount + ' cards, ' + scenarioData.scenario.length + ' steps. Snapshots: ' + stepSnapshots.length);
+
+        // Reset editing state
+        appState.isEditingStep = false;
+        currentStep = null;
+        startSnapshot = null;
+
+        // Update UI
+        if (typeof totalSteps !== 'undefined' && totalSteps) {
+            totalSteps.textContent = scenarioData.scenario.length;
+        }
+        if (typeof currentStepNum !== 'undefined' && currentStepNum) {
+            currentStepNum.textContent = '-';
+        }
+        if (typeof addStepBtn !== 'undefined' && addStepBtn) {
+            addStepBtn.disabled = false;
+        }
+
+        renderTimeline();
+        renderGroupOrderStrip();
+        updateUI();
+
+        setStatus('AI scenario: ' + setupCount + ' cards, ' + scenarioData.scenario.length + ' steps created', 'success');
+
+    } catch (err) {
+        console.error('[AI Scenario] Apply failed:', err);
+        // Rollback
+        scenarioData.scenario = savedScenario;
+        stepSnapshots = savedSnapshots;
+        handleResetTable();
+        throw new Error('Scenario apply failed: ' + err.message);
+    } finally {
+        appState._bulkApplying = false;
+    }
+}
+
+/**
+ * Apply a single AI scenario action to the current board state
+ */
+function applyScenarioAction(act) {
+    switch (act.action) {
+        case 'place': {
+            // Place a card from tray to a slot
+            var card = findTrayCardByName(act.card);
+            if (!card) {
+                console.warn('[AI Scenario] Cannot place - card not in tray: ' + act.card);
+                return;
+            }
+            var place = (appState.boardLayout.cardPlaces || []).find(function (p) { return p.id === act.to; });
+            if (!place) {
+                console.warn('[AI Scenario] Cannot place - slot not found: ' + act.to);
+                return;
+            }
+            var zoneName = 'grid-' + act.to;
+            var zoneElement = document.querySelector('.card-drop-zone[data-zone="' + zoneName + '"]');
+            card.isFaceUp = act.faceUp === true;
+            if (zoneElement) {
+                placeCardInZone(card, zoneName, place.rotation || 0, zoneElement);
+            } else {
+                placeCardOnTable(card, place.x || 640, place.y || 360);
+            }
+            // Re-set isFaceUp because placeCardInZone overrides it from UI checkboxes
+            card.isFaceUp = act.faceUp === true;
+            if (card.element) {
+                var img = card.element.querySelector('img');
+                if (img) {
+                    img.src = card.isFaceUp ? (card.frontImageUrl || '') : (card.backImageUrl || '');
+                }
+                card.element.classList.toggle('face-up', card.isFaceUp);
+                card.element.classList.toggle('face-down', !card.isFaceUp);
+            }
+            break;
+        }
+
+        case 'flip': {
+            // Flip a card in-place
+            var card = findTableCardByName(act.card);
+            if (!card) {
+                console.warn('[AI Scenario] Cannot flip - card not on table: ' + act.card);
+                return;
+            }
+            card.isFaceUp = act.faceUp === true;
+            // Re-render the card element
+            if (card.element) {
+                if (card.isFaceUp) {
+                    card.element.classList.remove('face-down');
+                    card.element.classList.add('face-up');
+                } else {
+                    card.element.classList.remove('face-up');
+                    card.element.classList.add('face-down');
+                }
+                // Update the image
+                var img = card.element.querySelector('img');
+                if (img) {
+                    img.src = card.isFaceUp ? (card.frontImageUrl || '') : (card.backImageUrl || '');
+                }
+            }
+            break;
+        }
+
+        case 'move': {
+            // Move card from current zone to new zone
+            var card = findTableCardByName(act.card);
+            if (!card) {
+                console.warn('[AI Scenario] Cannot move - card not on table: ' + act.card);
+                return;
+            }
+            var oldZone = card.zone;
+
+            // Remove from current zone visually
+            if (card.element) {
+                card.element.remove();
+                card.element = null;
+            }
+
+            // Remove from tableCards
+            var idx = appState.tableCards.indexOf(card);
+            if (idx > -1) appState.tableCards.splice(idx, 1);
+
+            // Re-index remaining cards in old zone
+            if (oldZone) {
+                appState.tableCards.filter(function (c) { return c.zone === oldZone; })
+                    .sort(function (a, b) { return (a.zonePosition || 0) - (b.zonePosition || 0); })
+                    .forEach(function (c, i) { c.zonePosition = i; });
+            }
+
+            // Place in new zone
+            var targetSlotId = act.to;
+            var place = (appState.boardLayout.cardPlaces || []).find(function (p) { return p.id === targetSlotId; });
+            if (!place) {
+                console.warn('[AI Scenario] Cannot move - target slot not found: ' + targetSlotId);
+                return;
+            }
+
+            if (act.faceUp !== undefined) card.isFaceUp = act.faceUp === true;
+            card.rotation = place.rotation || 0;
+            card.zone = 'grid-' + targetSlotId;
+            card.zonePosition = appState.tableCards.filter(function (c) { return c.zone === card.zone; }).length;
+
+            appState.tableCards.push(card);
+            var zoneElement = document.querySelector('.card-drop-zone[data-zone="' + card.zone + '"]');
+            if (zoneElement) {
+                createZoneCardElement(card, zoneElement);
+            }
+            break;
+        }
+
+        case 'remove': {
+            // Remove card from board (return to tray)
+            var card = findTableCardByName(act.card);
+            if (!card) {
+                console.warn('[AI Scenario] Cannot remove - card not on table: ' + act.card);
+                return;
+            }
+            var oldZone = card.zone;
+
+            // Remove element
+            if (card.element) {
+                card.element.remove();
+                card.element = null;
+            }
+
+            // Remove from tableCards
+            var idx = appState.tableCards.indexOf(card);
+            if (idx > -1) appState.tableCards.splice(idx, 1);
+
+            // Re-index remaining cards in old zone
+            if (oldZone) {
+                appState.tableCards.filter(function (c) { return c.zone === oldZone; })
+                    .sort(function (a, b) { return (a.zonePosition || 0) - (b.zonePosition || 0); })
+                    .forEach(function (c, i) { c.zonePosition = i; });
+            }
+
+            // Return to tray
+            card.inTray = true;
+            card.zone = null;
+            card.zonePosition = 0;
+            break;
+        }
+
+        default:
+            console.warn('[AI Scenario] Unknown action: ' + act.action + ' for ' + act.card);
+    }
 }
 
 function showAIStatus(msg) {

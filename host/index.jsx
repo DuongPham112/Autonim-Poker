@@ -69,7 +69,7 @@ var SLAM_OVERSHOOT_SCALE = 130;  // 130% of original
 var SLAM_DURATION_FRAMES = 5;    // 5 frames for slam bounce
 var MOVE_DURATION_FRAMES = 10;   // 10 frames (~0.33s) for position animation
 var FLIP_DURATION_FRAMES = 5;    // 5 frames (~0.17s) for rotation/flip animation
-var Z_SPACING = 1;               // Z spacing between cards (3D ordering - small to avoid perspective size differences)
+var Z_SPACING = 0.01;            // Z spacing between cards (3D ordering - tiny to avoid perspective size differences with group z-orders up to 4000+)
 var INITIAL_Z_OFFSET = 0;        // Initial Z position for all cards
 
 // Zone center positions for poker layout (1920x1080)
@@ -1371,7 +1371,7 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOf
                 selectActions.push(actions[a]);
             } else if (actions[a].type === "FLIP") {
                 flipActions.push(actions[a]);
-            } else if (actions[a].type === "TRANSFORM" || actions[a].type === "PLACE") {
+            } else if (actions[a].type === "TRANSFORM" || actions[a].type === "PLACE" || actions[a].type === "REMOVE") {
                 transformActions.push(actions[a]);
             }
         }
@@ -1472,6 +1472,9 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOf
                 if (initiator.effect === "SLAM") {
                     processSlamEffect(initiatorLayer, initiatorStartTime, stepDuration, comp);
                 }
+                if (initiator.spin === true) {
+                    processSpinEffect(initiatorLayer, initiatorStartTime, stepDuration, comp);
+                }
 
                 // Phase 2: Displaced card moves after initiator finishes + pause
                 var displacedStartTime = initiatorStartTime + moveDuration + pauseDuration;
@@ -1483,6 +1486,9 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOf
                 }
                 if (displaced.effect === "SLAM") {
                     processSlamEffect(displacedLayer, displacedStartTime, stepDuration, comp);
+                }
+                if (displaced.spin === true) {
+                    processSpinEffect(displacedLayer, displacedStartTime, stepDuration, comp);
                 }
 
                 // Clear selection state after swap
@@ -1536,6 +1542,9 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOf
                 }
                 if (action.effect === "SLAM") {
                     processSlamEffect(layer, transformStartTime, stepDuration, comp);
+                }
+                if (action.spin === true) {
+                    processSpinEffect(layer, transformStartTime, stepDuration, comp);
                 }
                 // Zone card shift: if card left a poker zone, shift remaining cards
                 if (action.startZone && action.endZone && action.startZone !== action.endZone) {
@@ -2143,6 +2152,23 @@ function processSlamEffect(layer, startTime, stepDuration, comp) {
 
     // Apply ease for smooth bounce
     applyBezierEasing(scaleProp);
+    layer.motionBlur = true;
+}
+
+function processSpinEffect(layer, startTime, stepDuration, comp) {
+    var zRotProp = layer.property("Z Rotation");
+    var frameDuration = 1 / comp.frameRate;
+    var moveDuration = MOVE_DURATION_FRAMES * frameDuration;
+
+    var spinStartTime = startTime;
+    var spinEndTime = startTime + moveDuration;
+
+    var currentZRot = zRotProp.valueAtTime(spinStartTime, false);
+
+    zRotProp.setValueAtTime(spinStartTime, currentZRot);
+    zRotProp.setValueAtTime(spinEndTime, currentZRot + 360);
+
+    applyBezierEasing(zRotProp);
     layer.motionBlur = true;
 }
 

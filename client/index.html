@@ -263,6 +263,9 @@
                             <button id="ctxSlamBtn" class="ctx-btn" title="Slam Effect">
                                 💥 Slam
                             </button>
+                            <button id="ctxSpinBtn" class="ctx-btn" title="Spin Effect (X rotation)">
+                                🌀 Spin
+                            </button>
                             <!-- Group Actions (visible when grouping mode is active) -->
                             <div id="ctxGroupDivider" class="ctx-divider hidden"></div>
                             <button id="ctxFlipAllBtn" class="ctx-btn ctx-group-btn hidden"
@@ -272,6 +275,10 @@
                             <button id="ctxSlamAllBtn" class="ctx-btn ctx-group-btn hidden"
                                 title="Slam All Grouped Cards">
                                 💥 Slam All
+                            </button>
+                            <button id="ctxSpinAllBtn" class="ctx-btn ctx-group-btn hidden"
+                                title="Spin All Grouped Cards">
+                                🌀 Spin All
                             </button>
                         </div>
                     </div>
@@ -545,6 +552,12 @@
                                     <span>💥 Slam Effect</span>
                                 </label>
                             </div>
+                            <div class="checkbox-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="spinEffectCheck">
+                                    <span>🌀 Spin Effect</span>
+                                </label>
+                            </div>
                             <div class="position-info">
                                 <span>X: <strong id="cardPosX">0</strong></span>
                                 <span>Y: <strong id="cardPosY">0</strong></span>
@@ -556,6 +569,16 @@
                     <!-- AI Layout Generator Section -->
                     <div class="director-section ai-section hidden" id="aiSection">
                         <h3>🤖 AI Layout Generator</h3>
+                        <div class="ai-mode-toggle">
+                            <label class="ai-mode-label">
+                                <input type="radio" name="aiMode" value="setup" checked>
+                                <span>📐 Setup Only</span>
+                            </label>
+                            <label class="ai-mode-label">
+                                <input type="radio" name="aiMode" value="scenario">
+                                <span>🎬 Full Scenario</span>
+                            </label>
+                        </div>
                         <div class="ai-brief-group">
                             <label for="aiBriefInput">Describe your layout:</label>
                             <textarea id="aiBriefInput" class="ai-brief-input" rows="3"
