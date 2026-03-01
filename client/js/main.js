@@ -5526,6 +5526,7 @@ function startRotateMarker(e, place, marker) {
 
 /**
  * Start resizing a community zone marker
+ * Resizes from CENTER (anchor at center, not top-left)
  */
 function startResizeCommunityZone(e, place, marker, scaleX, scaleY) {
     e.preventDefault();
@@ -5535,6 +5536,8 @@ function startResizeCommunityZone(e, place, marker, scaleX, scaleY) {
     const startY = e.clientY;
     const startW = (place.czWidth || 300) * scaleX;
     const startH = (place.czHeight || 120) * scaleY;
+    const startLeft = parseFloat(marker.style.left);
+    const startTop = parseFloat(marker.style.top);
 
     marker.classList.add('resizing');
 
@@ -5545,6 +5548,11 @@ function startResizeCommunityZone(e, place, marker, scaleX, scaleY) {
         const newW = Math.max(CARD_WIDTH * 2, startW + dx);
         const newH = Math.max(CARD_HEIGHT, startH + dy);
 
+        // Adjust left/top to keep center fixed (grow from center, not top-left)
+        const deltaW = newW - startW;
+        const deltaH = newH - startH;
+        marker.style.left = `${startLeft - deltaW / 2}px`;
+        marker.style.top = `${startTop - deltaH / 2}px`;
         marker.style.width = `${newW}px`;
         marker.style.height = `${newH}px`;
 
@@ -5558,7 +5566,7 @@ function startResizeCommunityZone(e, place, marker, scaleX, scaleY) {
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
         debugLog(`[CommunityZone] ${place.id} resized → ${place.czWidth}×${place.czHeight} UI px`);
-        // Re-render to re-center based on new size
+        // Re-render to apply final state
         renderCardPlaceMarkers();
     }
 
