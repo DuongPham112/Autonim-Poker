@@ -5716,6 +5716,63 @@ function renderGroupPanel() {
             highlightGroupMarkers(group.id, false);
         });
 
+        // Click: toggle-select all markers in this group
+        item.addEventListener('click', function (e) {
+            // Don't trigger on delete button or name editing
+            if (e.target.closest('.group-actions') || e.target.closest('.group-name[contenteditable="true"]')) return;
+
+            // Check if this group's slots are already fully selected
+            var allSelected = group.slotIds.length > 0 && group.slotIds.every(function (sid) {
+                return appState.selectedCardPlaces.some(function (p) { return p.id === sid; });
+            });
+
+            if (allSelected) {
+                // Unselect: remove this group's slots from selection
+                appState.selectedCardPlaces = appState.selectedCardPlaces.filter(function (p) {
+                    return group.slotIds.indexOf(p.id) < 0;
+                });
+                item.classList.remove('selected');
+            } else {
+                // Select: add all group's slots (avoid duplicates)
+                group.slotIds.forEach(function (sid) {
+                    var alreadyIn = appState.selectedCardPlaces.some(function (p) { return p.id === sid; });
+                    if (!alreadyIn) {
+                        var place = appState.boardLayout.cardPlaces.find(function (p) { return p.id === sid; });
+                        if (place) appState.selectedCardPlaces.push(place);
+                    }
+                });
+                item.classList.add('selected');
+            }
+
+            // Update marker visual state on board
+            document.querySelectorAll('.card-place-marker').forEach(function (m) {
+                var pid = m.dataset.placeId;
+                if (appState.selectedCardPlaces.some(function (p) { return p.id === pid; })) {
+                    m.classList.add('multi-selected');
+                } else {
+                    m.classList.remove('multi-selected');
+                }
+            });
+
+            // Sync other group items' selected state
+            groupList.querySelectorAll('.group-item').forEach(function (gi) {
+                var gid = gi.dataset.groupId;
+                var grp = groups.find(function (g) { return g.id === gid; });
+                if (!grp) return;
+                var grpAllSelected = grp.slotIds.length > 0 && grp.slotIds.every(function (sid) {
+                    return appState.selectedCardPlaces.some(function (p) { return p.id === sid; });
+                });
+                if (grpAllSelected) {
+                    gi.classList.add('selected');
+                } else {
+                    gi.classList.remove('selected');
+                }
+            });
+
+            updateCreateGroupBtnState();
+            debugLog('[GroupPanel] Click ' + group.name + ' → ' + appState.selectedCardPlaces.length + ' selected');
+        });
+
         // HTML5 Drag-to-reorder
         item.addEventListener('dragstart', function (e) {
             e.dataTransfer.setData('text/plain', String(groups.indexOf(group)));
