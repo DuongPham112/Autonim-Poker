@@ -189,6 +189,9 @@ let stepSnapshots = [];
 let pendingChangeSnapshot = null;
 let pendingChangeCard = null;
 
+// AI Layout Generator Elements
+let aiPhaseBtn, aiSection, aiBriefInput, aiPresetSelect, aiGenerateBtn, aiStatus, aiError;
+
 // Debug logging system
 let debugLogs = [];
 let debugOverlay, debugContent, toggleDebugBtn, copyDebugBtn, clearDebugBtn, closeDebugBtn;
@@ -497,6 +500,27 @@ function bindEvents() {
     // Phase switching
     boardSettingBtn.addEventListener('click', () => setPhase('board-setting'));
     setupPhaseBtn.addEventListener('click', () => setPhase('setup'));
+
+    // AI Phase Button
+    aiPhaseBtn = document.getElementById('aiPhaseBtn');
+    aiSection = document.getElementById('aiSection');
+    aiBriefInput = document.getElementById('aiBriefInput');
+    aiPresetSelect = document.getElementById('aiPresetSelect');
+    aiGenerateBtn = document.getElementById('aiGenerateBtn');
+    aiStatus = document.getElementById('aiStatus');
+    aiError = document.getElementById('aiError');
+    if (aiPhaseBtn) {
+        aiPhaseBtn.addEventListener('click', () => toggleAIPanel());
+    }
+    if (aiGenerateBtn) {
+        aiGenerateBtn.addEventListener('click', () => handleAIGenerate());
+    }
+    // AI Example buttons
+    document.querySelectorAll('.ai-example-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (aiBriefInput) aiBriefInput.value = btn.dataset.brief;
+        });
+    });
     recordPhaseBtn.addEventListener('click', () => setPhase('record'));
 
     // Board Setting Controls
@@ -1014,6 +1038,8 @@ function loadDeckFromPath(folderPath) {
         renderCardTray();
         updateAssetsDisplay();
         setStatus(`Loaded ${appState.trayCards.length} cards from deck`, 'success');
+        // Enable AI button once deck is loaded
+        enableAIButton();
 
     } catch (e) {
         console.error('Error loading deck:', e);
@@ -1062,6 +1088,7 @@ function loadDeckFromFiles(files) {
     renderCardTray();
     updateAssetsDisplay();
     setStatus(`Loaded ${appState.trayCards.length} cards`, 'success');
+    enableAIButton();
 }
 
 function createPlaceholderDeck() {
@@ -1111,6 +1138,7 @@ function createPlaceholderDeck() {
     }
 
     renderCardTray();
+    enableAIButton();
 }
 
 function createCardData(index, filename, baseName, folderPath) {
@@ -6640,3 +6668,235 @@ function handleGroupedCardsDrop(zone) {
     }
 }
 
+
+
+// ============================================
+// AI LAYOUT GENERATOR
+// ============================================
+
+/**
+ * Enable the AI button once a deck is loaded
+ */
+function enableAIButton() {
+    if (aiPhaseBtn) {
+        aiPhaseBtn.disabled = false;
+        aiPhaseBtn.title = 'AI Layout Generator';
+    }
+}
+
+/**
+ * Toggle the AI panel visibility
+ */
+function toggleAIPanel() {
+    if (!aiSection) return;
+
+    const isVisible = !aiSection.classList.contains('hidden');
+    if (isVisible) {
+        aiSection.classList.add('hidden');
+        if (aiPhaseBtn) aiPhaseBtn.classList.remove('active');
+    } else {
+        aiSection.classList.remove('hidden');
+        if (aiPhaseBtn) aiPhaseBtn.classList.add('active');
+        if (aiPresetSelect && appState.boardLayout) {
+            aiPresetSelect.value = appState.boardLayout.boardStyle || 'current';
+        }
+    }
+}
+
+/**
+ * Get the API base URL from config
+ */
+function getAPIBaseUrl() {
+    if (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) {
+        return API_BASE_URL;
+    }
+    return 'https://banner-generator-ai.vercel.app';
+}
+
+/**
+ * Handle AI Generate button click
+ */
+async function handleAIGenerate() {
+    var brief = aiBriefInput ? aiBriefInput.value.trim() : '';
+    if (!brief) {
+        showAIError('Please describe your desired card layout.');
+        return;
+    }
+
+    var availableCards = (appState.trayCards || []).filter(function (c) { return c.inTray !== false; });
+    if (availableCards.length === 0) {
+        showAIError('No cards available. Load a deck first.');
+        return;
+    }
+
+    var slots = appState.boardLayout.cardPlaces || [];
+    if (slots.length === 0) {
+        showAIError('No card slots on the board. Load a preset first.');
+        return;
+    }
+
+    var availableCardNames = availableCards.map(function (c) { return c.name || c.baseName; });
+    var availableSlotIds = slots.map(function (s) { return s.id; });
+
+    if (aiGenerateBtn) {
+        aiGenerateBtn.disabled = true;
+        aiGenerateBtn.classList.add('loading');
+    }
+    showAIStatus('🤖 Generating layout with AI...');
+    hideAIError();
+
+    try {
+        var token = typeof getToken === 'function' ? getToken() : localStorage.getItem('autonim_poker_token');
+
+        var apiBase = getAPIBaseUrl();
+        var response = await fetch(apiBase + '/api/poker/ai-generate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify({
+                brief: brief,
+                availableCards: availableCardNames,
+                availableSlotIds: availableSlotIds
+            })
+        });
+
+        if (!response.ok) {
+            var errData = await response.json().catch(function () { return {}; });
+            throw new Error(errData.error || 'Server error (' + response.status + ')');
+        }
+
+        var result = await response.json();
+
+        if (!result.cardAssignments || result.cardAssignments.length === 0) {
+            showAIError('AI returned no card assignments. Try a different brief.');
+            return;
+        }
+
+        showAIStatus('✅ AI generated ' + result.cardAssignments.length + ' card placements. Applying...');
+        await applyAILayout(result);
+
+        // Build detailed status with reasoning and debug info
+        var statusParts = ['✅ Done! ' + result.cardAssignments.length + ' cards placed.'];
+        if (result.reasoning) {
+            statusParts.push('💭 AI: ' + result.reasoning);
+        }
+        if (result.debug) {
+            var d = result.debug;
+            var debugParts = ['Model: ' + d.model];
+            if (d.invalidCards && d.invalidCards.length > 0) debugParts.push('⚠ Invalid cards: ' + d.invalidCards.join(', '));
+            if (d.invalidSlots && d.invalidSlots.length > 0) debugParts.push('⚠ Invalid slots: ' + d.invalidSlots.join(', '));
+            if (d.duplicatesRemoved > 0) debugParts.push('⚠ ' + d.duplicatesRemoved + ' duplicates removed');
+            statusParts.push('📊 ' + debugParts.join(' | '));
+        }
+        showAIStatus(statusParts.join('\n'));
+
+        // Log full response for debugging
+        console.log('[AI] Full response:', JSON.stringify(result, null, 2));
+        debugLog('[AI] Reasoning: ' + (result.reasoning || 'none'));
+        debugLog('[AI] Assignments: ' + result.cardAssignments.map(function (a) {
+            return a.slotId + ' ← ' + a.cardName + ' (' + (a.faceUp ? 'up' : 'down') + ')';
+        }).join(', '));
+
+    } catch (error) {
+        console.error('[AI] Generate error:', error);
+        showAIError(error.message || 'AI generation failed. Please try again.');
+    } finally {
+        if (aiGenerateBtn) {
+            aiGenerateBtn.disabled = false;
+            aiGenerateBtn.classList.remove('loading');
+        }
+    }
+}
+
+/**
+ * Apply AI-generated layout to the board
+ */
+async function applyAILayout(result) {
+    var targetPreset = result.preset || 'current';
+    if (targetPreset !== 'current') {
+        var psEl = document.getElementById('presetSelect');
+        if (psEl) {
+            psEl.value = targetPreset;
+            handleLoadPreset();
+            setPhase('setup');
+        }
+    }
+
+    handleResetTable();
+    await new Promise(function (r) { setTimeout(r, 100); });
+
+    var placedCount = 0;
+    var errors = [];
+
+    for (var i = 0; i < result.cardAssignments.length; i++) {
+        var assignment = result.cardAssignments[i];
+        var slotId = assignment.slotId;
+        var cardName = assignment.cardName;
+        var faceUp = assignment.faceUp;
+
+        var card = null;
+        if (typeof resolveCardName === 'function') {
+            card = resolveCardName(cardName, appState.trayCards.filter(function (c) { return c.inTray !== false; }));
+        }
+        if (!card) {
+            card = appState.trayCards.find(function (c) {
+                return c.inTray !== false && (c.name === cardName || c.baseName === cardName);
+            });
+        }
+        if (!card) {
+            errors.push('Card not found: ' + cardName);
+            continue;
+        }
+
+        var place = (appState.boardLayout.cardPlaces || []).find(function (p) { return p.id === slotId; });
+        if (!place) {
+            errors.push('Slot not found: ' + slotId);
+            continue;
+        }
+
+        var zoneName = 'grid-' + slotId;
+        var zoneElement = document.querySelector('.card-drop-zone[data-zone="' + zoneName + '"]');
+
+        if (zoneElement) {
+            card.isFaceUp = faceUp === true;
+            placeCardInZone(card, zoneName, place.rotation || 0, zoneElement);
+        } else {
+            card.isFaceUp = faceUp === true;
+            placeCardOnTable(card, place.x || 640, place.y || 360);
+        }
+        placedCount++;
+    }
+
+    if (errors.length > 0) {
+        debugLog('[AI] Placement errors:', errors);
+        console.warn('[AI] Some cards could not be placed:', errors);
+    }
+
+    debugLog('[AI] Applied layout: ' + placedCount + ' cards placed, ' + errors.length + ' errors');
+    setStatus('AI placed ' + placedCount + ' cards on the board', 'success');
+}
+
+function showAIStatus(msg) {
+    if (aiStatus) {
+        aiStatus.textContent = msg;
+        aiStatus.classList.remove('hidden');
+    }
+}
+
+function hideAIStatus() {
+    if (aiStatus) aiStatus.classList.add('hidden');
+}
+
+function showAIError(msg) {
+    if (aiError) {
+        aiError.textContent = '❌ ' + msg;
+        aiError.classList.remove('hidden');
+    }
+    hideAIStatus();
+}
+
+function hideAIError() {
+    if (aiError) aiError.classList.add('hidden');
+}

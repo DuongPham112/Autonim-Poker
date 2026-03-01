@@ -105,10 +105,10 @@
                         </div>
                     </div>
                     <div class="header-right">
+                        <!-- AI Button -->
+                        <button id="aiPhaseBtn" class="btn-ai" disabled title="Load a deck first">🤖</button>
                         <!-- Help Button -->
-                        <button id="btn-help" class="btn-help" title="Tutorial Videos">
-                            ❓
-                        </button>
+                        <button id="btn-help" class="btn-help" title="Tutorial Videos">❓</button>
                         <!-- Update Button -->
                         <button id="btn-check-update" class="btn-update" title="Check for Updates">
                             🔄
@@ -552,6 +552,38 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- AI Layout Generator Section -->
+                    <div class="director-section ai-section hidden" id="aiSection">
+                        <h3>🤖 AI Layout Generator</h3>
+                        <div class="ai-brief-group">
+                            <label for="aiBriefInput">Describe your layout:</label>
+                            <textarea id="aiBriefInput" class="ai-brief-input" rows="3"
+                                placeholder="E.g. Texas Hold'em, 4 players, deal 2 cards each face down, 5 community cards face up"></textarea>
+                        </div>
+                        <div class="ai-preset-group">
+                            <label for="aiPresetSelect">Target Layout:</label>
+                            <select id="aiPresetSelect" class="ai-preset-select">
+                                <option value="current">Current Layout</option>
+                                <option value="poker">Poker (4 Players)</option>
+                                <option value="pusoy">Pusoy</option>
+                                <option value="card-sorting">Card Sorting</option>
+                            </select>
+                        </div>
+                        <button id="aiGenerateBtn" class="btn btn-primary btn-block ai-generate-btn">🚀 Generate
+                            Layout</button>
+                        <div id="aiStatus" class="ai-status hidden"></div>
+                        <div id="aiError" class="ai-error hidden"></div>
+                        <div class="ai-examples">
+                            <span class="ai-examples-label">Examples:</span>
+                            <button class="ai-example-btn"
+                                data-brief="Texas Hold'em, 4 players, 2 cards each face down, 5 community cards face up">Hold'em</button>
+                            <button class="ai-example-btn"
+                                data-brief="Poker showdown: Player 3 has Royal Flush (ace_spades, king_spades, queen_spades, jack_spades, 10_spades), other players have random cards face down">Showdown</button>
+                            <button class="ai-example-btn"
+                                data-brief="Deal 13 cards to each of 4 players, all face down">Full Deal</button>
+                        </div>
+                    </div>
                 </div><!-- End director-content -->
 
                 <!-- AE Settings & Export (sticky footer) -->
@@ -724,6 +756,7 @@
 
     <!-- Load Auth & OTA Modules (before main.js) -->
     <script src="js/modules/auth.js"></script>
+    <script src="js/modules/card_name_resolver.js"></script>
     <script src="js/modules/script_loader.js"></script>
     <script src="js/modules/asset_manager.js"></script>
     <script src="js/modules/updater.js"></script>
