@@ -5334,25 +5334,37 @@ function initCZSettingsPanel() {
         });
     }
 
-    // Ctrl+Z: Undo marker position changes (board-setting phase)
+    // Ctrl+Z: Undo marker positions, rotation, and group operations (board-setting phase)
     document.addEventListener('keydown', (e) => {
         if (appState.phase !== 'board-setting') return;
         if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
             e.preventDefault();
-            if (appState.markerUndoStack.length === 0) return;
 
-            const snapshot = appState.markerUndoStack.pop();
-            snapshot.forEach(saved => {
-                const place = appState.boardLayout.cardPlaces.find(p => p.id === saved.id);
-                if (place) {
-                    place.x = saved.x;
-                    place.y = saved.y;
-                }
-            });
-
-            renderCardPlaceMarkers();
-            updateCardPlacesList();
-            debugLog(`[Undo] Restored marker positions (${appState.markerUndoStack.length} left)`);
+            // Try marker undo stack first (position/rotation changes)
+            if (appState.markerUndoStack.length > 0) {
+                const snapshot = appState.markerUndoStack.pop();
+                snapshot.forEach(saved => {
+                    const place = appState.boardLayout.cardPlaces.find(p => p.id === saved.id);
+                    if (place) {
+                        place.x = saved.x;
+                        place.y = saved.y;
+                        place.rotation = saved.rotation || 0;
+                        // Restore CZ dimensions if present
+                        if (saved.czWidth !== undefined) place.czWidth = saved.czWidth;
+                        if (saved.czHeight !== undefined) place.czHeight = saved.czHeight;
+                    }
+                });
+                renderCardPlaceMarkers();
+                updateCardPlacesList();
+                debugLog(`[Undo] Restored marker state (${appState.markerUndoStack.length} left)`);
+            }
+            // Otherwise try group undo stack
+            else if (typeof undoGroupAction === 'function') {
+                undoGroupAction();
+                renderGroupPanel();
+                renderCardPlaceMarkers();
+                debugLog('[Undo] Restored group state');
+            }
         }
     });
 }
@@ -5540,6 +5552,13 @@ function startResizeCommunityZone(e, place, marker, scaleX, scaleY) {
     const startLeft = parseFloat(marker.style.left);
     const startTop = parseFloat(marker.style.top);
 
+    // Push undo snapshot before resize (includes CZ dimensions)
+    const undoSnapshot = appState.boardLayout.cardPlaces.map(p => ({
+        id: p.id, x: p.x, y: p.y, rotation: p.rotation || 0,
+        czWidth: p.czWidth, czHeight: p.czHeight
+    }));
+    let hasResized = false;
+
     marker.classList.add('resizing');
 
     function onMouseMove(moveE) {
@@ -5548,6 +5567,7 @@ function startResizeCommunityZone(e, place, marker, scaleX, scaleY) {
 
         const newW = Math.max(CARD_WIDTH * 2, startW + dx);
         const newH = Math.max(CARD_HEIGHT, startH + dy);
+        hasResized = true;
 
         // Adjust left/top to keep center fixed (grow from center, not top-left)
         const deltaW = newW - startW;
@@ -5566,6 +5586,10 @@ function startResizeCommunityZone(e, place, marker, scaleX, scaleY) {
         marker.classList.remove('resizing');
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
+        if (hasResized) {
+            appState.markerUndoStack.push(undoSnapshot);
+            if (appState.markerUndoStack.length > 50) appState.markerUndoStack.shift();
+        }
         debugLog(`[CommunityZone] ${place.id} resized → ${place.czWidth}×${place.czHeight} UI px`);
         // Re-render to apply final state
         renderCardPlaceMarkers();
