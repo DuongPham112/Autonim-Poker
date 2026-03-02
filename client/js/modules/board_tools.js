@@ -167,6 +167,8 @@ function handleAddPusoyPack() {
         return;
     }
 
+    pushBoardUndoSnapshot();
+
     const pos = PUSOY_PACK_POSITIONS[packIndex];
 
     // Read slider values for fan parameters
@@ -301,7 +303,7 @@ function editCloner(groupId) {
     // Update UI controls
     const panel = document.getElementById('clonerPanel');
     if (panel) {
-        const modeSelect = panel.querySelector('[data-cloner-mode]');
+        const modeSelect = document.getElementById('clonerMode');
         if (modeSelect) modeSelect.value = clonerState.mode;
         const countSlider = document.getElementById('clonerCount');
         if (countSlider) countSlider.value = clonerState.count;
@@ -366,15 +368,22 @@ function updateClonerPreview() {
     if (!clonerState.active) return;
 
     const positions = generateClonerPositions();
+
+    // Use same coordinate system as renderCardPlaceMarkers() in main.js
+    const pokerTable = document.getElementById('pokerTable');
+    if (!pokerTable) return;
+    const tableRect = pokerTable.getBoundingClientRect();
     const containerRect = gameContainer.getBoundingClientRect();
-    const scaleX = containerRect.width / UI_WIDTH;
-    const scaleY = containerRect.height / UI_HEIGHT;
+    const scaleX = pokerTable.offsetWidth / UI_WIDTH;
+    const scaleY = pokerTable.offsetHeight / UI_HEIGHT;
+    const offsetX = tableRect.left - containerRect.left;
+    const offsetY = tableRect.top - containerRect.top;
 
     positions.forEach((pos, i) => {
         const ghost = document.createElement('div');
         ghost.className = 'card-place-marker cloner-preview-marker';
-        ghost.style.left = (pos.x * scaleX) + 'px';
-        ghost.style.top = (pos.y * scaleY) + 'px';
+        ghost.style.left = (pos.x * scaleX + offsetX) + 'px';
+        ghost.style.top = (pos.y * scaleY + offsetY) + 'px';
         ghost.style.transform = `translate(-50%, -50%) rotate(${pos.rotation}deg)`;
         ghost.innerHTML = `<span class="marker-label">${i + 1}</span>`;
         gameContainer.appendChild(ghost);

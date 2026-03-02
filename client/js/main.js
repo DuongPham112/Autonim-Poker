@@ -332,10 +332,8 @@ function init() {
     getDOMElements();
     bindEvents();
 
-    // Restore saved board layout or load default poker layout
-    if (!autoRestoreBoardLayout()) {
-        loadPokerLayout();
-    }
+    // Load default poker layout (grid-based with slots)
+    loadPokerLayout();
 
     // Start in Board Setting mode with poker layout visible
     setPhase('board-setting');
@@ -722,9 +720,6 @@ function bindEvents() {
 
     // Dealing Card Controls
     setupDealingCardControls();
-
-    // Board Tools (Align, Distribute, Cloner, Pusoy Pack)
-    if (typeof initBoardTools === 'function') initBoardTools();
 }
 
 
@@ -746,10 +741,6 @@ function setPhase(phase) {
     if (boardLayoutInfo) boardLayoutInfo.classList.remove('visible');
     if (stepControlsSection) stepControlsSection.classList.add('hidden');
     gameContainer.classList.remove('board-setting-mode');
-    // Auto-save board layout when leaving board-setting phase
-    if (document.body.classList.contains('phase-board-setting')) {
-        autoSaveBoardLayout();
-    }
     document.body.classList.remove('phase-board-setting');
     document.body.classList.remove('phase-setup');
     clearCardDropZones(); // Clear drop zones when switching phases
@@ -4464,13 +4455,6 @@ function setupPusoySliderControls() {
     const togglePusoyControls = () => {
         const isPusoy = presetSelect.value === 'pusoy';
         pusoyControls.classList.toggle('hidden', !isPusoy);
-
-        // Add Pusoy Pack: visible for both pusoy and custom presets
-        const addPusoyPackSection = document.getElementById('addPusoyPackSection');
-        if (addPusoyPackSection) {
-            const showPack = isPusoy || presetSelect.value === 'custom';
-            addPusoyPackSection.classList.toggle('hidden', !showPack);
-        }
     };
 
     // Function to update layout when sliders change
@@ -4947,158 +4931,6 @@ function downloadPresetJSON(data, filename) {
 
     URL.revokeObjectURL(url);
     setStatus(`Preset downloaded: ${filename}`, 'success');
-}
-
-// ============================================
-// BOARD AUTOSAVE / RESTORE
-// ============================================
-
-const AUTOSAVE_KEY = 'autonim_boardLayout';
-
-/**
- * Get the autosave file path for CEP mode
- * @returns {string|null} File path or null if not in CEP
- */
-function getAutosaveFilePath() {
-    if (!fs || !csInterface) return null;
-    try {
-        const extPath = csInterface.getSystemPath(SystemPath.EXTENSION);
-        return extPath + '/assets/autosave-board.json';
-    } catch (e) {
-        return null;
-    }
-}
-
-/**
- * Auto-save current board layout state
- * Called when leaving board-setting phase
- */
-function autoSaveBoardLayout() {
-    try {
-        const data = {
-            name: appState.boardLayout.name || 'Autosave',
-            boardStyle: appState.boardLayout.boardStyle,
-            type: appState.boardLayout.type,
-            gridCols: appState.boardLayout.gridCols,
-            gridRows: appState.boardLayout.gridRows,
-            cardPlaces: appState.boardLayout.cardPlaces.map(p => {
-                const place = {
-                    id: p.id, x: Math.round(p.x), y: Math.round(p.y),
-                    col: p.col, row: p.row,
-                    rotation: p.rotation || 0,
-                    zOrder: p.zOrder, label: p.label
-                };
-                if (p.isCommunityZone) {
-                    place.isCommunityZone = true;
-                    place.czMode = p.czMode || 'row';
-                    place.czWidth = p.czWidth || 300;
-                    place.czHeight = p.czHeight || 120;
-                }
-                if (p.clonerId) place.clonerId = p.clonerId;
-                return place;
-            }),
-            slotGroups: (appState.boardLayout.slotGroups || []).map(g => {
-                const group = { ...g };
-                if (g.clonerConfig) group.clonerConfig = { ...g.clonerConfig };
-                return group;
-            }),
-            // Save Pusoy slider values if applicable
-            pusoyConfig: null
-        };
-
-        // Capture Pusoy slider state
-        if (data.boardStyle === 'pusoy') {
-            const s = document.getElementById('pusoySpacing');
-            const c = document.getElementById('pusoyCurvature');
-            const l = document.getElementById('pusoyLayerGap');
-            data.pusoyConfig = {
-                spacing: s ? parseInt(s.value) : 150,
-                curvature: c ? parseInt(c.value) : 50,
-                layerGap: l ? parseInt(l.value) : 30
-            };
-        }
-
-        const json = JSON.stringify(data, null, 2);
-
-        // CEP mode: write to filesystem
-        const filepath = getAutosaveFilePath();
-        if (filepath && fs) {
-            fs.writeFileSync(filepath, json);
-            debugLog(`[Autosave] Saved board layout to ${filepath}`);
-        }
-
-        // Also save to localStorage as fallback / browser mode
-        try {
-            localStorage.setItem(AUTOSAVE_KEY, json);
-        } catch (e) { /* ignore quota errors */ }
-
-    } catch (e) {
-        console.error('[Autosave] Failed to save board layout:', e);
-    }
-}
-
-/**
- * Attempt to restore board layout from autosave
- * @returns {boolean} true if restored successfully
- */
-function autoRestoreBoardLayout() {
-    try {
-        let json = null;
-
-        // Try filesystem first (CEP mode)
-        const filepath = getAutosaveFilePath();
-        if (filepath && fs && fs.existsSync(filepath)) {
-            json = fs.readFileSync(filepath, 'utf8');
-            debugLog('[Autosave] Loaded board from filesystem');
-        }
-
-        // Fallback to localStorage (browser mode)
-        if (!json) {
-            json = localStorage.getItem(AUTOSAVE_KEY);
-            if (json) debugLog('[Autosave] Loaded board from localStorage');
-        }
-
-        if (!json) return false;
-
-        const data = JSON.parse(json);
-        if (!data.cardPlaces || data.cardPlaces.length === 0) return false;
-
-        // Restore board layout
-        appState.boardLayout = {
-            type: data.type || 'grid',
-            name: data.name || 'Restored Layout',
-            boardStyle: data.boardStyle || 'custom',
-            gridCols: data.gridCols || 4,
-            gridRows: data.gridRows || 3,
-            cardPlaces: data.cardPlaces,
-            slotGroups: data.slotGroups || []
-        };
-
-        // Restore Pusoy slider values
-        if (data.pusoyConfig) {
-            const s = document.getElementById('pusoySpacing');
-            const c = document.getElementById('pusoyCurvature');
-            const l = document.getElementById('pusoyLayerGap');
-            if (s) s.value = data.pusoyConfig.spacing;
-            if (c) c.value = data.pusoyConfig.curvature;
-            if (l) l.value = data.pusoyConfig.layerGap;
-        }
-
-        // Update preset selector to match restored layout
-        const presetSelect = document.getElementById('presetSelect');
-        if (presetSelect && data.boardStyle) {
-            const option = presetSelect.querySelector(`option[value="${data.boardStyle}"]`);
-            if (option) presetSelect.value = data.boardStyle;
-        }
-
-        gameContainer.classList.add('grid-mode');
-        debugLog(`[Autosave] Restored "${data.name}" with ${data.cardPlaces.length} places`);
-        return true;
-
-    } catch (e) {
-        console.error('[Autosave] Failed to restore board layout:', e);
-        return false;
-    }
 }
 
 /**
@@ -5645,36 +5477,23 @@ function initCZSettingsPanel() {
         if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
             e.preventDefault();
 
-            // Try marker undo stack first (position/rotation changes OR delete undo)
+            // Try marker undo stack first (position/rotation changes)
             if (appState.markerUndoStack.length > 0) {
                 const snapshot = appState.markerUndoStack.pop();
-
-                // Delete undo: restore full cardPlaces + slotGroups
-                if (snapshot.type === 'delete') {
-                    appState.boardLayout.cardPlaces = snapshot.cardPlaces;
-                    appState.boardLayout.slotGroups = snapshot.slotGroups;
-                    renderCardPlaceMarkers();
-                    updateCardPlacesList();
-                    updateGroupPanelVisibility();
-                    debugLog(`[Undo] Restored ${snapshot.cardPlaces.length} markers after delete`);
-                }
-                // Position/rotation undo
-                else {
-                    snapshot.forEach(saved => {
-                        const place = appState.boardLayout.cardPlaces.find(p => p.id === saved.id);
-                        if (place) {
-                            place.x = saved.x;
-                            place.y = saved.y;
-                            place.rotation = saved.rotation || 0;
-                            // Restore CZ dimensions if present
-                            if (saved.czWidth !== undefined) place.czWidth = saved.czWidth;
-                            if (saved.czHeight !== undefined) place.czHeight = saved.czHeight;
-                        }
-                    });
-                    renderCardPlaceMarkers();
-                    updateCardPlacesList();
-                    debugLog(`[Undo] Restored marker state (${appState.markerUndoStack.length} left)`);
-                }
+                snapshot.forEach(saved => {
+                    const place = appState.boardLayout.cardPlaces.find(p => p.id === saved.id);
+                    if (place) {
+                        place.x = saved.x;
+                        place.y = saved.y;
+                        place.rotation = saved.rotation || 0;
+                        // Restore CZ dimensions if present
+                        if (saved.czWidth !== undefined) place.czWidth = saved.czWidth;
+                        if (saved.czHeight !== undefined) place.czHeight = saved.czHeight;
+                    }
+                });
+                renderCardPlaceMarkers();
+                updateCardPlacesList();
+                debugLog(`[Undo] Restored marker state (${appState.markerUndoStack.length} left)`);
             }
             // Otherwise try group undo stack
             else if (typeof undoGroupAction === 'function') {
@@ -5683,31 +5502,6 @@ function initCZSettingsPanel() {
                 renderCardPlaceMarkers();
                 debugLog('[Undo] Restored group state');
             }
-        }
-
-        // Delete/Backspace: delete selected markers (multi-select or single)
-        if (e.key === 'Delete' || e.key === 'Backspace') {
-            // Don't delete if focus is in an input/textarea
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-
-            const toDelete = appState.selectedCardPlaces.length > 0
-                ? [...appState.selectedCardPlaces]
-                : (appState.selectedCardPlace ? [appState.selectedCardPlace] : []);
-            if (toDelete.length === 0) return;
-
-            e.preventDefault();
-
-            // Push full cardPlaces + slotGroups snapshot for undo
-            appState.markerUndoStack.push({
-                type: 'delete',
-                cardPlaces: JSON.parse(JSON.stringify(appState.boardLayout.cardPlaces)),
-                slotGroups: JSON.parse(JSON.stringify(appState.boardLayout.slotGroups || []))
-            });
-
-            toDelete.forEach(p => deleteCardPlace(p.id));
-            deselectCardPlace();
-            debugLog(`[Delete] Removed ${toDelete.length} marker(s)`);
-            setStatus(`Deleted ${toDelete.length} card place(s)`);
         }
     });
 }
