@@ -39,3 +39,10 @@ release/
 
 # Debug files
 debug.log
+
+# Agent / AI tools
+.claude/
+.agent/workflows/implementation_plan*.md
+
+# Autosave data (generated at runtime)
+assets/autosave-board.json
