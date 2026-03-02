@@ -179,25 +179,20 @@
                     </div>
                 </div>
 
-                <!-- Align & Distribute Toolbar -->
+                <!-- Arrange & Stack Toolbar -->
                 <div class="board-tools-section align-toolbar" id="alignToolbar">
-                    <label>Align:</label>
+                    <label>Arrange:</label>
                     <div class="align-buttons">
-                        <button data-align="left" class="btn btn-xs" title="Align Left">⬅️</button>
-                        <button data-align="center-h" class="btn btn-xs" title="Align Center H">↔️</button>
-                        <button data-align="right" class="btn btn-xs" title="Align Right">➡️</button>
-                        <span class="separator">|</span>
-                        <button data-align="top" class="btn btn-xs" title="Align Top">⬆️</button>
-                        <button data-align="center-v" class="btn btn-xs" title="Align Center V">↕️</button>
-                        <button data-align="bottom" class="btn btn-xs" title="Align Bottom">⬇️</button>
+                        <button id="arrangeRowBtn" class="btn btn-xs"
+                            title="Arrange selected slots in a horizontal row with even spacing">↔ Row</button>
+                        <button id="arrangeColBtn" class="btn btn-xs"
+                            title="Arrange selected slots in a vertical column with even spacing">↕ Column</button>
+                        <button id="stackSlotsBtn" class="btn btn-xs" title="Stack slots with overlap">🃏 Stack</button>
                     </div>
-                    <label>Distribute:</label>
-                    <div class="align-buttons">
-                        <button data-distribute="horizontal" class="btn btn-xs" title="Distribute Horizontal">↔
-                            Dist.H</button>
-                        <button data-distribute="vertical" class="btn btn-xs" title="Distribute Vertical">↕
-                            Dist.V</button>
-                        <button id="stackSlotsBtn" class="btn btn-xs" title="Stack with overlap">🃏 Stack</button>
+                    <div class="slider-control">
+                        <span class="slider-label">Spacing:</span>
+                        <input type="range" id="arrangeSpacing" min="20" max="300" value="80">
+                        <span class="slider-value" id="arrangeSpacingValue">80</span>
                     </div>
                 </div>
 

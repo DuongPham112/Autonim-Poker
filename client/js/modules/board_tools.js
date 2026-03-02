@@ -11,91 +11,81 @@
 // ============================================
 
 /**
- * Align selected slots along an edge or center
- * @param {string} direction - 'left' | 'right' | 'top' | 'bottom' | 'center-h' | 'center-v'
+ * Arrange selected slots in a horizontal row (same Y, even X spacing)
+ * Uses spacing from the arrangeSpacing slider
  */
-function alignSlots(direction) {
+function arrangeRow() {
     const places = getActivePlaces();
     if (places.length < 2) {
-        setStatus('Select 2+ slots to align');
+        setStatus('Select 2+ slots to arrange');
         return;
     }
 
-    // Push undo snapshot (full cardPlaces for restore)
     pushBoardUndoSnapshot();
 
-    switch (direction) {
-        case 'left': {
-            const minX = Math.min(...places.map(p => p.x));
-            places.forEach(p => { p.x = minX; });
-            break;
-        }
-        case 'right': {
-            const maxX = Math.max(...places.map(p => p.x));
-            places.forEach(p => { p.x = maxX; });
-            break;
-        }
-        case 'top': {
-            const minY = Math.min(...places.map(p => p.y));
-            places.forEach(p => { p.y = minY; });
-            break;
-        }
-        case 'bottom': {
-            const maxY = Math.max(...places.map(p => p.y));
-            places.forEach(p => { p.y = maxY; });
-            break;
-        }
-        case 'center-h': {
-            const avgX = places.reduce((sum, p) => sum + p.x, 0) / places.length;
-            places.forEach(p => { p.x = Math.round(avgX); });
-            break;
-        }
-        case 'center-v': {
-            const avgY = places.reduce((sum, p) => sum + p.y, 0) / places.length;
-            places.forEach(p => { p.y = Math.round(avgY); });
-            break;
-        }
-    }
+    // Get spacing from slider (default 80)
+    const spacingSlider = document.getElementById('arrangeSpacing');
+    const spacing = spacingSlider ? parseInt(spacingSlider.value) : 80;
+
+    // Calculate average Y position (center line of the row)
+    const avgY = Math.round(places.reduce((sum, p) => sum + p.y, 0) / places.length);
+
+    // Sort by current X to maintain left-to-right order
+    places.sort((a, b) => a.x - b.x);
+
+    // Calculate total width and center the row around the average X
+    const avgX = Math.round(places.reduce((sum, p) => sum + p.x, 0) / places.length);
+    const totalWidth = (places.length - 1) * spacing;
+    const startX = Math.round(avgX - totalWidth / 2);
+
+    places.forEach((p, i) => {
+        p.x = startX + i * spacing;
+        p.y = avgY;
+    });
 
     renderCardPlaceMarkers();
     updateCardPlacesList();
-    debugLog(`[Align] ${direction} on ${places.length} places`);
-    setStatus(`Aligned ${places.length} slots: ${direction}`);
+    debugLog(`[Arrange] Row: ${places.length} places, spacing=${spacing}`);
+    setStatus(`Arranged ${places.length} slots in a row (spacing: ${spacing}px)`);
 }
 
 /**
- * Distribute slots evenly between min and max positions
- * @param {string} direction - 'horizontal' | 'vertical'
+ * Arrange selected slots in a vertical column (same X, even Y spacing)
+ * Uses spacing from the arrangeSpacing slider
  */
-function distributeSlots(direction) {
+function arrangeColumn() {
     const places = getActivePlaces();
-    if (places.length < 3) {
-        setStatus('Select 3+ slots to distribute');
+    if (places.length < 2) {
+        setStatus('Select 2+ slots to arrange');
         return;
     }
 
     pushBoardUndoSnapshot();
 
-    if (direction === 'horizontal') {
-        // Sort by X position
-        places.sort((a, b) => a.x - b.x);
-        const minX = places[0].x;
-        const maxX = places[places.length - 1].x;
-        const step = (maxX - minX) / (places.length - 1);
-        places.forEach((p, i) => { p.x = Math.round(minX + i * step); });
-    } else {
-        // Sort by Y position
-        places.sort((a, b) => a.y - b.y);
-        const minY = places[0].y;
-        const maxY = places[places.length - 1].y;
-        const step = (maxY - minY) / (places.length - 1);
-        places.forEach((p, i) => { p.y = Math.round(minY + i * step); });
-    }
+    // Get spacing from slider (default 80)
+    const spacingSlider = document.getElementById('arrangeSpacing');
+    const spacing = spacingSlider ? parseInt(spacingSlider.value) : 80;
+
+    // Calculate average X position (center line of the column)
+    const avgX = Math.round(places.reduce((sum, p) => sum + p.x, 0) / places.length);
+
+    // Sort by current Y to maintain top-to-bottom order
+    places.sort((a, b) => a.y - b.y);
+
+    // Calculate total height and center the column around the average Y
+    const avgY = Math.round(places.reduce((sum, p) => sum + p.y, 0) / places.length);
+    const totalHeight = (places.length - 1) * spacing;
+    const startY = Math.round(avgY - totalHeight / 2);
+
+    places.forEach((p, i) => {
+        p.x = avgX;
+        p.y = startY + i * spacing;
+    });
 
     renderCardPlaceMarkers();
     updateCardPlacesList();
-    debugLog(`[Distribute] ${direction} on ${places.length} places`);
-    setStatus(`Distributed ${places.length} slots: ${direction}`);
+    debugLog(`[Arrange] Column: ${places.length} places, spacing=${spacing}`);
+    setStatus(`Arranged ${places.length} slots in a column (spacing: ${spacing}px)`);
 }
 
 /**
@@ -550,15 +540,26 @@ function pushBoardUndoSnapshot() {
  * Called from bindEvents() in main.js
  */
 function initBoardTools() {
-    // Align buttons
-    document.querySelectorAll('[data-align]').forEach(btn => {
-        btn.addEventListener('click', () => alignSlots(btn.dataset.align));
-    });
+    // Arrange Row button
+    const arrangeRowBtn = document.getElementById('arrangeRowBtn');
+    if (arrangeRowBtn) {
+        arrangeRowBtn.addEventListener('click', arrangeRow);
+    }
 
-    // Distribute buttons
-    document.querySelectorAll('[data-distribute]').forEach(btn => {
-        btn.addEventListener('click', () => distributeSlots(btn.dataset.distribute));
-    });
+    // Arrange Column button
+    const arrangeColBtn = document.getElementById('arrangeColBtn');
+    if (arrangeColBtn) {
+        arrangeColBtn.addEventListener('click', arrangeColumn);
+    }
+
+    // Arrange Spacing slider
+    const arrangeSpacing = document.getElementById('arrangeSpacing');
+    if (arrangeSpacing) {
+        arrangeSpacing.addEventListener('input', (e) => {
+            const valueEl = document.getElementById('arrangeSpacingValue');
+            if (valueEl) valueEl.textContent = e.target.value;
+        });
+    }
 
     // Stack button
     const stackBtn = document.getElementById('stackSlotsBtn');
