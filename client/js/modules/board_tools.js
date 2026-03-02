@@ -245,6 +245,7 @@ const clonerState = {
     active: false,
     editingGroupId: null,  // If editing existing cloner group
     mode: 'linear-h',     // 'linear-h' | 'linear-v' | 'arc'
+    sourcePlace: null,     // Reference to source place object (for live drag sync)
     sourceX: 640,
     sourceY: 360,
     count: 5,
@@ -261,6 +262,7 @@ const clonerState = {
 function startCloner(sourcePlace) {
     clonerState.active = true;
     clonerState.editingGroupId = null;
+    clonerState.sourcePlace = sourcePlace || null;
     clonerState.sourceX = sourcePlace ? sourcePlace.x : 640;
     clonerState.sourceY = sourcePlace ? sourcePlace.y : 360;
 
@@ -316,7 +318,10 @@ function editCloner(groupId) {
  */
 function generateClonerPositions() {
     const positions = [];
-    const { sourceX, sourceY, count, spacing, mode, arcRadius, arcSpread } = clonerState;
+    // Use live position from sourcePlace reference if available
+    const sourceX = clonerState.sourcePlace ? clonerState.sourcePlace.x : clonerState.sourceX;
+    const sourceY = clonerState.sourcePlace ? clonerState.sourcePlace.y : clonerState.sourceY;
+    const { count, spacing, mode, arcRadius, arcSpread } = clonerState;
 
     for (let i = 0; i < count; i++) {
         if (mode === 'linear-h') {
@@ -462,6 +467,7 @@ function applyCloner() {
 function cancelCloner() {
     clonerState.active = false;
     clonerState.editingGroupId = null;
+    clonerState.sourcePlace = null;
     clonerState.previewPlaces = [];
     document.querySelectorAll('.cloner-preview-marker').forEach(el => el.remove());
     hideClonerPanel();

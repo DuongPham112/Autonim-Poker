@@ -5687,8 +5687,9 @@ function initCZSettingsPanel() {
 
         // Delete/Backspace: delete selected markers (multi-select or single)
         if (e.key === 'Delete' || e.key === 'Backspace') {
-            // Don't delete if focus is in an input/textarea
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            // Don't delete if focus is in a text input/textarea (allow range/checkbox/radio)
+            if (e.target.tagName === 'TEXTAREA') return;
+            if (e.target.tagName === 'INPUT' && !['range', 'checkbox', 'radio'].includes(e.target.type)) return;
 
             const toDelete = appState.selectedCardPlaces.length > 0
                 ? [...appState.selectedCardPlaces]
@@ -5738,8 +5739,8 @@ function startDragMarker(e, place, marker) {
     const startX = e.clientX;
     const startY = e.clientY;
 
-    // Save position snapshot for undo (before any movement)
-    const undoSnapshot = appState.boardLayout.cardPlaces.map(p => ({ id: p.id, x: p.x, y: p.y }));
+    // Save position+rotation snapshot for undo (before any movement)
+    const undoSnapshot = appState.boardLayout.cardPlaces.map(p => ({ id: p.id, x: p.x, y: p.y, rotation: p.rotation || 0 }));
     let hasMoved = false;
 
     // Check if this is a group drag (marker is in multi-select)
@@ -5799,6 +5800,13 @@ function startDragMarker(e, place, marker) {
             item.place.x = (newLeft - offsetX + item.markerW / 2) / scaleX;
             item.place.y = (newTop - offsetY + item.markerH / 2) / scaleY;
         });
+
+        // Update cloner preview if cloner is active and source is being dragged
+        if (typeof clonerState !== 'undefined' && clonerState.active && clonerState.sourcePlace) {
+            clonerState.sourceX = clonerState.sourcePlace.x;
+            clonerState.sourceY = clonerState.sourcePlace.y;
+            if (typeof updateClonerPreview === 'function') updateClonerPreview();
+        }
     }
 
     function onMouseUp() {
