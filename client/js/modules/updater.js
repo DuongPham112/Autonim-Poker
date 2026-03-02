@@ -7,7 +7,7 @@
  */
 
 // Current client version (matches versions.json on server)
-const CLIENT_VERSION = '2.0.5.0';
+const CLIENT_VERSION = '2.0.6.0';
 const UPDATE_CHECK_INTERVAL = 3600000; // 1 hour
 
 /**
