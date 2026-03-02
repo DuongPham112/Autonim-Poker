@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "frontend-design": {
+      "source": "jwynia/agent-skills",
+      "sourceType": "github",
+      "computedHash": "df017e8504626f06e14b093dcf668ada5b40a6fe9eaf565d2cc54b0997d7927a"
+    }
+  }
+}
