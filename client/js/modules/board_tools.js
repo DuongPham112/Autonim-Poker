@@ -625,4 +625,32 @@ function initBoardTools() {
             });
         }
     });
+
+    // Background type selector
+    const bgTypeSelect = document.getElementById('bgTypeSelect');
+    if (bgTypeSelect) {
+        bgTypeSelect.addEventListener('change', (e) => {
+            const pokerTable = document.getElementById('pokerTable');
+            if (!pokerTable) return;
+
+            const type = e.target.value;
+            switch (type) {
+                case 'poker':
+                    pokerTable.style.display = '';
+                    gameContainer.style.background = '';
+                    break;
+                case 'solid':
+                    pokerTable.style.display = 'none';
+                    gameContainer.style.background = '#1a1a2e';
+                    break;
+                case 'image':
+                    pokerTable.style.display = 'none';
+                    gameContainer.style.background = '#1a1a2e';
+                    // TODO: Add custom image picker
+                    setStatus('Custom image background — coming soon');
+                    break;
+            }
+            debugLog(`[Board] Background changed to: ${type}`);
+        });
+    }
 }
