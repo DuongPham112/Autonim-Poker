@@ -399,7 +399,6 @@ function applyCloner() {
     pushBoardUndoSnapshot();
 
     const clonerId = 'cloner-' + Date.now().toString(36);
-    const newPlaces = [];
 
     // If editing, remove old slots first
     if (clonerState.editingGroupId) {
@@ -414,32 +413,50 @@ function applyCloner() {
         }
     }
 
-    // Create new slots
+    // Create new slots — source card becomes position[0], new slots for the rest
     const baseZOrder = Math.max(0, ...appState.boardLayout.cardPlaces.map(p => p.zOrder || 0)) + 1;
-    positions.forEach((pos, i) => {
-        newPlaces.push({
+    const allSlotIds = [];
+
+    // Move the source card to position[0] if it exists
+    const sourcePlace = clonerState.sourcePlace;
+    if (sourcePlace && positions.length > 0) {
+        sourcePlace.x = positions[0].x;
+        sourcePlace.y = positions[0].y;
+        sourcePlace.rotation = positions[0].rotation;
+        sourcePlace.zOrder = baseZOrder;
+        sourcePlace.clonerId = clonerId;
+        allSlotIds.push(sourcePlace.id);
+    }
+
+    // Create new slots for positions[1..N-1] (or all if no source)
+    const startIdx = sourcePlace ? 1 : 0;
+    const newPlaces = [];
+    for (let i = startIdx; i < positions.length; i++) {
+        const newPlace = {
             id: `${clonerId}-${i}`,
-            x: pos.x,
-            y: pos.y,
-            rotation: pos.rotation,
+            x: positions[i].x,
+            y: positions[i].y,
+            rotation: positions[i].rotation,
             zOrder: baseZOrder + i,
-            label: String(appState.boardLayout.cardPlaces.length + i + 1),
+            label: String(appState.boardLayout.cardPlaces.length + newPlaces.length + 1),
             clonerId: clonerId
-        });
-    });
+        };
+        newPlaces.push(newPlace);
+        allSlotIds.push(newPlace.id);
+    }
 
     // Create cloner group (using slotGroups infrastructure)
     const groupOrder = appState.boardLayout.slotGroups.length;
     const clonerGroup = {
         id: clonerId,
-        name: `Cloner (${clonerState.mode}, ${positions.length})`,
-        slotIds: newPlaces.map(p => p.id),
+        name: `Cloner (${clonerState.mode}, ${allSlotIds.length})`,
+        slotIds: allSlotIds,
         groupOrder: groupOrder,
         color: getGroupColor(groupOrder),
         clonerConfig: {
             mode: clonerState.mode,
-            sourceX: clonerState.sourceX,
-            sourceY: clonerState.sourceY,
+            sourceX: positions[0].x,
+            sourceY: positions[0].y,
             count: clonerState.count,
             spacing: clonerState.spacing,
             arcRadius: clonerState.arcRadius,
@@ -457,8 +474,8 @@ function applyCloner() {
     updateCardPlacesList();
     updateGroupPanelVisibility();
 
-    debugLog(`[Cloner] Applied ${newPlaces.length} slots (${clonerState.mode})`);
-    setStatus(`Cloner created: ${newPlaces.length} slots`);
+    debugLog(`[Cloner] Applied ${allSlotIds.length} slots (${clonerState.mode}), source=${sourcePlace ? sourcePlace.id : 'none'}`);
+    setStatus(`Cloner created: ${allSlotIds.length} slots`);
 }
 
 /**
