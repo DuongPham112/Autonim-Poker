@@ -546,6 +546,33 @@ function bindEvents() {
     if (clearBoardBtn) clearBoardBtn.addEventListener('click', handleClearBoard);
     if (savePresetBtn) savePresetBtn.addEventListener('click', handleSavePreset);
 
+    // Delete saved layout button
+    const deletePresetBtn = document.getElementById('deletePresetBtn');
+    if (deletePresetBtn) {
+        deletePresetBtn.addEventListener('click', () => {
+            const val = presetSelect.value;
+            if (!val.startsWith('saved:')) return;
+            const layoutName = val.substring(6);
+            if (!confirm(`Delete saved layout "${layoutName}"?`)) return;
+            deleteSavedLayout(layoutName);
+            presetSelect.value = 'poker'; // Reset to default
+            deletePresetBtn.classList.add('hidden');
+            refreshSavedLayoutsDropdown();
+            setStatus(`Deleted layout: ${layoutName}`);
+        });
+    }
+
+    // Show/hide delete button based on dropdown selection
+    if (presetSelect) {
+        presetSelect.addEventListener('change', () => {
+            const btn = document.getElementById('deletePresetBtn');
+            if (btn) btn.classList.toggle('hidden', !presetSelect.value.startsWith('saved:'));
+        });
+    }
+
+    // Populate saved layouts dropdown from localStorage on init
+    refreshSavedLayoutsDropdown();
+
     // Initialize CZ settings panel
     initCZSettingsPanel();
 
@@ -4204,6 +4231,9 @@ function handleLoadPreset() {
     clearCardDropZones();
     gameContainer.classList.remove('grid-mode', 'poker-grid-mode');
 
+    // Determine effective boardStyle for controls visibility
+    let effectiveBoardStyle = presetValue;
+
     if (presetValue === 'poker') {
         loadPokerLayout();
     } else if (presetValue === 'pusoy') {
@@ -4223,10 +4253,51 @@ function handleLoadPreset() {
         };
         gameContainer.classList.add('grid-mode');
         setStatus('Custom layout - Add card places with buttons above');
+    } else if (presetValue.startsWith('saved:')) {
+        // Load user-saved layout from localStorage
+        const layoutName = presetValue.substring(6);
+        const savedLayouts = loadSavedLayouts();
+        const data = savedLayouts[layoutName];
+
+        if (!data || !data.cardPlaces) {
+            setStatus(`Layout "${layoutName}" not found`, 'error');
+            return;
+        }
+
+        // Restore board layout (same logic as autoRestoreBoardLayout)
+        appState.boardLayout = {
+            type: data.type || 'grid',
+            name: data.name || layoutName,
+            boardStyle: data.boardStyle || 'custom',
+            gridCols: data.gridCols || 4,
+            gridRows: data.gridRows || 3,
+            cardPlaces: data.cardPlaces,
+            slotGroups: data.slotGroups || []
+        };
+
+        // Restore CSS classes based on boardStyle
+        if (data.type === 'grid') gameContainer.classList.add('grid-mode');
+        if (data.boardStyle === 'poker') gameContainer.classList.add('poker-grid-mode');
+
+        // Restore Pusoy slider values
+        if (data.pusoyConfig) {
+            const s = document.getElementById('pusoySpacing');
+            const c = document.getElementById('pusoyCurvature');
+            const l = document.getElementById('pusoyLayerGap');
+            if (s) s.value = data.pusoyConfig.spacing;
+            if (c) c.value = data.pusoyConfig.curvature;
+            if (l) l.value = data.pusoyConfig.layerGap;
+        }
+
+        // Use effective boardStyle for controls visibility (Gap 2)
+        effectiveBoardStyle = data.boardStyle || 'custom';
+
+        debugLog(`[SaveLayout] Loaded "${layoutName}" with ${data.cardPlaces.length} places, ${(data.slotGroups || []).length} groups`);
+        setStatus(`Loaded layout: ${layoutName}`);
     }
 
-    // Toggle Grid Size controls visibility (only for card-sorting/custom)
-    toggleGridControlsVisibility(presetValue);
+    // Toggle Grid Size controls visibility using effective boardStyle (Gap 2)
+    toggleGridControlsVisibility(effectiveBoardStyle);
 
     updateCardPlacesList();
     renderCardPlaceMarkers();
@@ -4874,6 +4945,7 @@ function handleClearBoard() {
 
 /**
  * Save current layout as preset JSON
+ * Serializes full board state: cardPlaces (with zone, clonerId), slotGroups, boardStyle, pusoyConfig
  */
 function handleSavePreset() {
     const name = presetName.value.trim() || 'Custom Layout';
@@ -4881,6 +4953,7 @@ function handleSavePreset() {
     const presetData = {
         name: name,
         type: appState.boardLayout.type,
+        boardStyle: appState.boardLayout.boardStyle,
         description: `Saved preset: ${name}`,
         gridCols: appState.boardLayout.gridCols,
         gridRows: appState.boardLayout.gridRows,
@@ -4893,7 +4966,8 @@ function handleSavePreset() {
                 row: p.row,
                 rotation: p.rotation || 0,
                 zOrder: p.zOrder,
-                label: p.label
+                label: p.label,
+                zone: p.zone || null
             };
             // Serialize community zone fields
             if (p.isCommunityZone) {
@@ -4902,11 +4976,37 @@ function handleSavePreset() {
                 placeData.czWidth = p.czWidth || 300;
                 placeData.czHeight = p.czHeight || 120;
             }
+            // Serialize cloner reference
+            if (p.clonerId) placeData.clonerId = p.clonerId;
             return placeData;
-        })
+        }),
+        // Serialize slot groups (cloner groups, pusoy packs, user groups)
+        slotGroups: (appState.boardLayout.slotGroups || []).map(g => {
+            const group = { ...g };
+            if (g.clonerConfig) group.clonerConfig = { ...g.clonerConfig };
+            return group;
+        }),
+        // Save Pusoy slider values if applicable
+        pusoyConfig: null
     };
 
-    // Try to save to file system (CEP mode)
+    // Capture Pusoy slider state
+    if (presetData.boardStyle === 'pusoy') {
+        const s = document.getElementById('pusoySpacing');
+        const c = document.getElementById('pusoyCurvature');
+        const l = document.getElementById('pusoyLayerGap');
+        presetData.pusoyConfig = {
+            spacing: s ? parseInt(s.value) : 150,
+            curvature: c ? parseInt(c.value) : 50,
+            layerGap: l ? parseInt(l.value) : 30
+        };
+    }
+
+    // Always save to localStorage for persistence
+    saveLayoutToStorage(name, presetData);
+    refreshSavedLayoutsDropdown();
+
+    // Also try to save to file system (CEP mode)
     if (fs && appState.decksFolder) {
         const presetsFolder = appState.decksFolder.replace('/decks', '/presets');
         const filename = name.toLowerCase().replace(/\s+/g, '-') + '.json';
@@ -4919,17 +5019,14 @@ function handleSavePreset() {
             }
 
             fs.writeFileSync(filepath, JSON.stringify(presetData, null, 2));
-            setStatus(`Preset saved: ${filename}`, 'success');
+            debugLog(`[SaveLayout] Also saved to filesystem: ${filepath}`);
         } catch (e) {
-            console.error('Error saving preset:', e);
-            // Fallback: download as file
-            downloadPresetJSON(presetData, filename);
+            console.error('[SaveLayout] Filesystem write failed:', e);
         }
-    } else {
-        // Browser mode: download as file
-        const filename = name.toLowerCase().replace(/\s+/g, '-') + '.json';
-        downloadPresetJSON(presetData, filename);
     }
+
+    setStatus(`Layout saved: ${name}`, 'success');
+    debugLog(`[SaveLayout] Saved "${name}" — ${presetData.cardPlaces.length} places, ${presetData.slotGroups.length} groups`);
 }
 
 /**
@@ -4947,6 +5044,91 @@ function downloadPresetJSON(data, filename) {
 
     URL.revokeObjectURL(url);
     setStatus(`Preset downloaded: ${filename}`, 'success');
+}
+
+// ============================================
+// SAVED LAYOUTS (localStorage persistence)
+// ============================================
+
+const SAVED_LAYOUTS_KEY = 'autonim_savedLayouts';
+
+/**
+ * Save a layout to localStorage
+ * @param {string} name - Layout name (key)
+ * @param {object} data - Full preset data object
+ */
+function saveLayoutToStorage(name, data) {
+    try {
+        const layouts = loadSavedLayouts();
+        layouts[name] = data;
+        localStorage.setItem(SAVED_LAYOUTS_KEY, JSON.stringify(layouts));
+        debugLog(`[SaveLayout] Saved "${name}" to localStorage (${Object.keys(layouts).length} total)`);
+    } catch (e) {
+        console.error('[SaveLayout] Failed to save to localStorage:', e);
+    }
+}
+
+/**
+ * Load all saved layouts from localStorage
+ * @returns {object} { name: layoutData } map
+ */
+function loadSavedLayouts() {
+    try {
+        const json = localStorage.getItem(SAVED_LAYOUTS_KEY);
+        return json ? JSON.parse(json) : {};
+    } catch (e) {
+        console.error('[SaveLayout] Failed to read saved layouts:', e);
+        return {};
+    }
+}
+
+/**
+ * Delete a saved layout from localStorage
+ * @param {string} name - Layout name to delete
+ */
+function deleteSavedLayout(name) {
+    try {
+        const layouts = loadSavedLayouts();
+        delete layouts[name];
+        localStorage.setItem(SAVED_LAYOUTS_KEY, JSON.stringify(layouts));
+        debugLog(`[SaveLayout] Deleted "${name}" from localStorage`);
+    } catch (e) {
+        console.error('[SaveLayout] Failed to delete layout:', e);
+    }
+}
+
+/**
+ * Refresh the preset dropdown with user-saved layouts from localStorage
+ * Adds saved layouts after a separator below built-in presets
+ */
+function refreshSavedLayoutsDropdown() {
+    const select = document.getElementById('presetSelect');
+    if (!select) return;
+
+    // Remove existing saved layout options and separator
+    select.querySelectorAll('.saved-layout-option, .saved-layout-separator').forEach(el => el.remove());
+
+    const layouts = loadSavedLayouts();
+    const names = Object.keys(layouts);
+    if (names.length === 0) return;
+
+    // Add separator
+    const separator = document.createElement('option');
+    separator.disabled = true;
+    separator.textContent = '── Saved Layouts ──';
+    separator.className = 'saved-layout-separator';
+    select.appendChild(separator);
+
+    // Add each saved layout
+    names.forEach(name => {
+        const option = document.createElement('option');
+        option.value = `saved:${name}`;
+        option.textContent = `📁 ${name}`;
+        option.className = 'saved-layout-option';
+        select.appendChild(option);
+    });
+
+    debugLog(`[SaveLayout] Dropdown refreshed with ${names.length} saved layout(s)`);
 }
 
 // ============================================
@@ -4986,7 +5168,8 @@ function autoSaveBoardLayout() {
                     id: p.id, x: Math.round(p.x), y: Math.round(p.y),
                     col: p.col, row: p.row,
                     rotation: p.rotation || 0,
-                    zOrder: p.zOrder, label: p.label
+                    zOrder: p.zOrder, label: p.label,
+                    zone: p.zone || null
                 };
                 if (p.isCommunityZone) {
                     place.isCommunityZone = true;
