@@ -796,19 +796,15 @@ function applyPusoyPositionExpression(cardLayer, controlLayerName, cardInfo, pus
         'var offsetX = newX - defX;\n' +
         'var offsetY = newY - defY;\n' +
         '\n' +
-        '// Only apply offset when card is near its initial position (not during swap)\n' +
+        '// Only apply offset when card is near its initial/default position (not during swap)\n' +
+        '// Use baked defX/defY as reference instead of key(1), because dealing animation\n' +
+        '// puts key(1) at deal slot position — not the setup fan position.\n' +
         'var result = value;\n' +
-        'if (numKeys < 2) {\n' +
+        'var ddx = value[0] - defX;\n' +
+        'var ddy = value[1] - defY;\n' +
+        'var dist = Math.sqrt(ddx*ddx + ddy*ddy);\n' +
+        'if (dist < ' + THRESHOLD + ') {\n' +
         '  result = [value[0] + offsetX, value[1] + offsetY, value[2]];\n' +
-        '} else {\n' +
-        '  var bx = key(1).value[0];\n' +
-        '  var by = key(1).value[1];\n' +
-        '  var ddx = value[0] - bx;\n' +
-        '  var ddy = value[1] - by;\n' +
-        '  var dist = Math.sqrt(ddx*ddx + ddy*ddy);\n' +
-        '  if (dist < ' + THRESHOLD + ') {\n' +
-        '    result = [value[0] + offsetX, value[1] + offsetY, value[2]];\n' +
-        '  }\n' +
         '}\n' +
         'result;';
 
@@ -1184,6 +1180,13 @@ function processDealingAnimation(comp, layerMap, initialState, dealingCard) {
         ((cardArray.length - 1) * staggerDuration + moveDuration) : 0;
     var dealEndTime = lastCardEnd + holdDuration;
 
+    // Z positions for dealing arc animation
+    // Cards fly at Z_DEAL_FRONT (in front of all) while at dealing slot,
+    // lift to Z_DEAL_LIFT mid-flight to clear other cards in 3D,
+    // then settle to their target zPos at destination
+    var Z_DEAL_FRONT = -100;  // In front of all cards while waiting at deal slot
+    var Z_DEAL_LIFT = -50;    // Lifted Z mid-flight to avoid 3D crossing with rotated cards
+
     // Animate each card from dealing position to setup position
     for (var i = 0; i < cardArray.length; i++) {
         var card = cardArray[i];
@@ -1198,8 +1201,9 @@ function processDealingAnimation(comp, layerMap, initialState, dealingCard) {
         // Timing for this card
         var startTime = i * staggerDuration;
         var endTime = startTime + moveDuration;
+        var midTime = startTime + (moveDuration * 0.5);  // Midpoint of flight
 
-        // Get layer's Z position from initial transform
+        // Get layer's Z position from initial transform (final resting Z)
         var zPos = 0;
         try {
             var currentPos = layer.property("Position").value;
@@ -1208,23 +1212,52 @@ function processDealingAnimation(comp, layerMap, initialState, dealingCard) {
             zPos = 0;
         }
 
-        // --- POSITION keyframes (dealing → setup) ---
+        // Midpoint XY (for Z-lift arc keyframe)
+        var midX = dealX + (targetX - dealX) * 0.5;
+        var midY = dealY + (targetY - dealY) * 0.5;
+
+        // --- POSITION keyframes with Z-lift arc (dealing → lift → setup) ---
+        // Cards start at deal position with Z_DEAL_FRONT (above all other cards),
+        // lift to Z_DEAL_LIFT at mid-flight to avoid 3D crossing during rotation,
+        // then descend to their target zPos at destination
         var posProperty = layer.property("Position");
-        posProperty.setValueAtTime(0, [dealX, dealY, zPos]);
+        posProperty.setValueAtTime(0, [dealX, dealY, Z_DEAL_FRONT]);
         if (startTime > 0) {
-            posProperty.setValueAtTime(startTime, [dealX, dealY, zPos]);
+            posProperty.setValueAtTime(startTime, [dealX, dealY, Z_DEAL_FRONT]);
         }
+        // Mid-flight: lifted Z to clear other cards in 3D
+        posProperty.setValueAtTime(midTime, [midX, midY, Z_DEAL_LIFT]);
+        // Arrive at target with final Z
         posProperty.setValueAtTime(endTime, [targetX, targetY, zPos]);
         posProperty.setValueAtTime(dealEndTime, [targetX, targetY, zPos]);
 
-        // --- Z ROTATION keyframes (0 → setup rotation) ---
+        // --- Z ROTATION keyframes ---
+        // Pusoy fan cards (have row/col) get Z Rotation expression from applyPusoyPositionExpression
+        // that computes rotation from fan formula. If we animate 0→targetRot here,
+        // the expression adds its offset on top → rotation is doubled/wrong.
+        // Solution: For Pusoy cards, bake targetRot as constant (expression handles delta).
+        //           For non-Pusoy cards (cloner arc, poker, grid), animate 0→targetRot.
+        var hasPusoyExpression = (info.row !== undefined && info.col !== undefined);
         var rotProperty = layer.property("Z Rotation");
-        rotProperty.setValueAtTime(0, 0);
-        if (startTime > 0) {
-            rotProperty.setValueAtTime(startTime, 0);
+
+        if (hasPusoyExpression) {
+            // Pusoy fan: keep rotation at targetRot throughout
+            // Expression will compute offset = (newRot - defRot) and add to this value
+            rotProperty.setValueAtTime(0, targetRot);
+            if (startTime > 0) {
+                rotProperty.setValueAtTime(startTime, targetRot);
+            }
+            rotProperty.setValueAtTime(endTime, targetRot);
+            rotProperty.setValueAtTime(dealEndTime, targetRot);
+        } else {
+            // Non-Pusoy: animate from 0° → targetRot (no expression override)
+            rotProperty.setValueAtTime(0, 0);
+            if (startTime > 0) {
+                rotProperty.setValueAtTime(startTime, 0);
+            }
+            rotProperty.setValueAtTime(endTime, targetRot);
+            rotProperty.setValueAtTime(dealEndTime, targetRot);
         }
-        rotProperty.setValueAtTime(endTime, targetRot);
-        rotProperty.setValueAtTime(dealEndTime, targetRot);
 
         // --- Y ROTATION (face state) ---
         // Cards are ALWAYS face-down (180°) during dealing

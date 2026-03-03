@@ -1,0 +1,1361 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autonim-Poker — User Manual</title>
+    <meta name="description"
+        content="Complete user manual for Autonim-Poker AE Director Tool. Board setup, recording, AE export, FAQ, and glossary.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <div class="bg-glow bg-glow--1"></div>
+    <div class="bg-glow bg-glow--2"></div>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="header__inner">
+            <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle Table of Contents"
+                title="Toggle Table of Contents">
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                    <rect x="1" y="2" width="16" height="1.8" rx="0.9" fill="currentColor" />
+                    <rect x="1" y="7" width="11" height="1.8" rx="0.9" fill="currentColor" />
+                    <rect x="1" y="12" width="13" height="1.8" rx="0.9" fill="currentColor" />
+                </svg>
+            </button>
+            <div class="header__brand">
+                <span class="header__icon">🎬</span>
+                <div>
+                    <h1 class="header__title">Autonim-Poker</h1>
+                    <p class="header__subtitle">AE Director Tool — User Manual</p>
+                </div>
+            </div>
+            <nav class="header__nav" id="headerNav">
+                <a href="#getting-started" class="nav-link">Getting Started</a>
+                <a href="#board-setup" class="nav-link">Board</a>
+                <a href="#setup-phase" class="nav-link">Setup</a>
+                <a href="#recording" class="nav-link">Recording</a>
+                <a href="#ae-export" class="nav-link">AE Export</a>
+                <a href="#faq" class="nav-link">FAQ</a>
+            </nav>
+            <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+                <span></span><span></span><span></span>
+            </button>
+        </div>
+    </header>
+
+    <div class="page-layout">
+
+        <!-- ======== SIDEBAR TOC ======== -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar__inner">
+                <div class="sidebar__header">
+                    <span class="sidebar__label">
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="opacity:.5">
+                            <rect x="0" y="1" width="12" height="1.4" rx="0.7" fill="currentColor" />
+                            <rect x="0" y="4.8" width="8" height="1.4" rx="0.7" fill="currentColor" />
+                            <rect x="0" y="8.6" width="10" height="1.4" rx="0.7" fill="currentColor" />
+                        </svg>
+                        Table of Contents
+                    </span>
+                </div>
+
+                <nav class="toc" aria-label="Table of Contents">
+
+                    <div class="toc-group">
+                        <a href="#getting-started" class="toc-group__title">
+                            <span class="toc-num">01</span>Getting Started
+                        </a>
+                        <div class="toc-items">
+                            <a href="#s1-requirements" class="toc-link">1.1 Yêu cầu hệ thống</a>
+                            <a href="#s1-installation" class="toc-link">1.2 Cài đặt plugin</a>
+                            <a href="#s1-login" class="toc-link">1.3 Đăng nhập</a>
+                            <a href="#s1-interface" class="toc-link">1.4 Giao diện chính</a>
+                        </div>
+                    </div>
+
+                    <div class="toc-group">
+                        <a href="#board-setup" class="toc-group__title">
+                            <span class="toc-num">02</span>Board Setup
+                        </a>
+                        <div class="toc-items">
+                            <a href="#s2-layouts" class="toc-link">2.1 Các loại layout</a>
+                            <a href="#s2-tools" class="toc-link">2.2 Board Tools</a>
+                            <a href="#s2-zones" class="toc-link">2.3 Card Zones</a>
+                            <a href="#s2-save-load" class="toc-link">2.4 Lưu & Tải Layout</a>
+                        </div>
+                    </div>
+
+                    <div class="toc-group">
+                        <a href="#setup-phase" class="toc-group__title">
+                            <span class="toc-num">03</span>Setup Phase
+                        </a>
+                        <div class="toc-items">
+                            <a href="#s3-tray" class="toc-link">3.1 Card Tray</a>
+                            <a href="#s3-placing" class="toc-link">3.2 Đặt bài vào Zone</a>
+                            <a href="#s3-properties" class="toc-link">3.3 Thuộc tính Card</a>
+                        </div>
+                    </div>
+
+                    <div class="toc-group">
+                        <a href="#recording" class="toc-group__title">
+                            <span class="toc-num">04</span>Recording & Animation
+                        </a>
+                        <div class="toc-items">
+                            <a href="#s4-workflow" class="toc-link">4.1 Pose-to-Pose</a>
+                            <a href="#s4-grouping" class="toc-link">4.2 Grouping Mode</a>
+                            <a href="#s4-auto-record" class="toc-link">4.3 Auto-Record</a>
+                            <a href="#s4-card-actions" class="toc-link">4.4 Card Actions</a>
+                            <a href="#s4-dealing" class="toc-link">4.5 Dealing Card</a>
+                        </div>
+                    </div>
+
+                    <div class="toc-group">
+                        <a href="#ae-export" class="toc-group__title">
+                            <span class="toc-num">05</span>AE Export
+                        </a>
+                        <div class="toc-items">
+                            <a href="#s5-assets" class="toc-link">5.1 Chuẩn bị Assets</a>
+                            <a href="#s5-export" class="toc-link">5.2 Quy trình Export</a>
+                            <a href="#s5-control-layer" class="toc-link">5.3 Control Layer</a>
+                            <a href="#s5-per-card" class="toc-link">5.4 Per-Card Controls</a>
+                            <a href="#s5-blending" class="toc-link">5.5 Step Blending</a>
+                        </div>
+                    </div>
+
+                    <div class="toc-group">
+                        <a href="#shortcuts" class="toc-group__title">
+                            <span class="toc-num">06</span>Keyboard Shortcuts
+                        </a>
+                    </div>
+
+                    <div class="toc-group">
+                        <a href="#faq" class="toc-group__title">
+                            <span class="toc-num">07</span>FAQ & Troubleshooting
+                        </a>
+                        <div class="toc-items">
+                            <a href="#s7-installation" class="toc-link">7.1 Plugin không hiện</a>
+                            <a href="#s7-login" class="toc-link">7.2 Lỗi đăng nhập</a>
+                            <a href="#s7-export-issues" class="toc-link">7.3 Lỗi Export</a>
+                            <a href="#s7-animation" class="toc-link">7.4 Lỗi Animation</a>
+                            <a href="#s7-update" class="toc-link">7.5 Cập nhật plugin</a>
+                        </div>
+                    </div>
+
+                    <div class="toc-group">
+                        <a href="#glossary" class="toc-group__title">
+                            <span class="toc-num">08</span>Glossary
+                        </a>
+                    </div>
+
+                </nav>
+
+                <div class="sidebar__version">v2.0.6.0</div>
+            </div>
+        </aside>
+
+        <!-- Mobile overlay -->
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+        <!-- ======== MAIN CONTENT ======== -->
+        <div class="content-wrapper" id="contentWrapper">
+
+            <!-- Hero -->
+            <section class="hero">
+                <div class="container">
+                    <div class="hero__badge">v2.0.6.0</div>
+                    <h2 class="hero__title">Poker Animation<br><span class="gradient-text">Director Tool</span></h2>
+                    <p class="hero__desc">Transform After Effects into a powerful poker animation studio.<br>Arrange
+                        cards, record poses, export keyframes — zero coding required.</p>
+                    <div class="hero__actions">
+                        <a href="#getting-started" class="btn btn--primary">Get Started</a>
+                        <a href="#faq" class="btn btn--ghost">Troubleshooting</a>
+                    </div>
+                </div>
+            </section>
+
+            <main class="main">
+                <div class="container">
+
+                    <!-- ========== 01 GETTING STARTED ========== -->
+                    <section id="getting-started" class="section">
+                        <div class="section__header">
+                            <span class="section__number">01</span>
+                            <div>
+                                <h2 class="section__title">Getting Started</h2>
+                                <p class="section__desc">Cài đặt, đăng nhập và khám phá giao diện</p>
+                            </div>
+                        </div>
+
+                        <!-- 1.1 -->
+                        <div class="subsection" id="s1-requirements">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">1.1</span>Yêu cầu hệ thống
+                            </h3>
+                            <table class="spec-table">
+                                <thead>
+                                    <tr>
+                                        <th>Thành phần</th>
+                                        <th>Yêu cầu tối thiểu</th>
+                                        <th>Khuyến nghị</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>After Effects</td>
+                                        <td>CC 2022 (v22.x)+</td>
+                                        <td>CC 2024+</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Hệ điều hành</td>
+                                        <td>Windows 10 / macOS 10.14</td>
+                                        <td>Windows 11 / macOS 13</td>
+                                    </tr>
+                                    <tr>
+                                        <td>RAM</td>
+                                        <td>8 GB</td>
+                                        <td>16 GB+</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Scripting Access</td>
+                                        <td colspan="2">Edit → Preferences → Scripting → Allow Scripts to Write Files
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <div class="callout callout--info">
+                                <span class="callout__icon">ℹ️</span>
+                                <p>Plugin chạy trên nền tảng <strong>CEP (Common Extensibility Platform)</strong>. Đảm
+                                    bảo AE đã bật scripting mode — xem mục <a href="#s7-installation">7.1</a> nếu plugin
+                                    không hiện.</p>
+                            </div>
+                        </div>
+
+                        <!-- 1.2 -->
+                        <div class="subsection" id="s1-installation">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">1.2</span>Cài đặt plugin
+                            </h3>
+                            <ol class="step-list">
+                                <li>Nhận folder plugin <strong>Autonim-Poker</strong> từ admin của team.</li>
+                                <li>
+                                    Mở <strong>Windows Explorer</strong>, gõ vào thanh địa chỉ:
+                                    <div class="code-block"><code>%APPDATA%</code></div>
+                                    <p style="margin-top:6px;">Hoặc nhấn <kbd>Win</kbd> + <kbd>R</kbd> → gõ
+                                        <code>%APPDATA%</code> → Enter.</p>
+                                </li>
+                                <li>
+                                    Tìm đến thư mục:
+                                    <div class="code-block"><code>Roaming → Adobe → CEP → extensions</code></div>
+                                    <p style="margin-top:6px;">Nếu thư mục <code>CEP</code> hoặc <code>extensions</code>
+                                        chưa tồn tại → <strong>tạo mới</strong> thư mục đó.</p>
+                                </li>
+                                <li>Copy toàn bộ folder <strong>Autonim-Poker</strong> vào thư mục
+                                    <code>extensions</code>.</li>
+                                <li>
+                                    Chạy file <strong><code>enable-debug.reg</code></strong> (đi kèm plugin) để bật CEP
+                                    Debug Mode.
+                                    <div class="callout callout--warning" style="margin-top:8px;">
+                                        <span class="callout__icon">⚠️</span>
+                                        <p>File <code>.reg</code> này thêm key <code>PlayerDebugMode=1</code> vào
+                                            Registry. Cần chạy <strong>một lần duy nhất</strong> để AE nhận extension
+                                            không cần ký số.</p>
+                                    </div>
+                                </li>
+                                <li><strong>Restart After Effects</strong> (tắt hoàn toàn rồi mở lại).</li>
+                                <li>Vào menu <strong>Window → Extensions → Autonim-Poker</strong>.</li>
+                            </ol>
+
+                            <div class="callout callout--info">
+                                <span class="callout__icon">📁</span>
+                                <p>Đường dẫn đầy đủ:<br>
+                                    <code>C:\Users\{username}\AppData\Roaming\Adobe\CEP\extensions\Autonim-Poker</code>
+                                </p>
+                            </div>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">Windows Explorer: %APPDATA% → Roaming → Adobe → CEP
+                                        → extensions → Autonim-Poker</span>
+                                </div>
+                                <figcaption>Fig 1.2a — Copy folder plugin vào đường dẫn CEP extensions</figcaption>
+                            </figure>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">After Effects menu: Window → Extensions →
+                                        Autonim-Poker</span>
+                                </div>
+                                <figcaption>Fig 1.2b — Mở plugin từ menu <strong>Window → Extensions</strong> trong
+                                    After Effects</figcaption>
+                            </figure>
+                        </div>
+
+                        <!-- 1.3 -->
+                        <div class="subsection" id="s1-login">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">1.3</span>Đăng nhập
+                            </h3>
+                            <p>Khi mở plugin lần đầu, màn hình đăng nhập sẽ xuất hiện:</p>
+                            <ol class="step-list">
+                                <li>Nhập <strong>Email</strong> và <strong>Password</strong> do admin cấp.</li>
+                                <li>Nhấn <strong>Login</strong>. Nếu thành công, plugin chuyển sang màn hình Board.</li>
+                                <li>Nếu thất bại → kiểm tra quyền <code>poker_access</code> với admin. Xem <a
+                                        href="#s7-login">7.2 Lỗi đăng nhập</a>.</li>
+                            </ol>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder screenshot__placeholder--tall">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">Màn hình đăng nhập — email, password, nút
+                                        Login</span>
+                                </div>
+                                <figcaption>Fig 1.3 — Màn hình đăng nhập Autonim-Poker</figcaption>
+                            </figure>
+
+                            <div class="callout callout--tip">
+                                <span class="callout__icon">💡</span>
+                                <p>Tài khoản mới cần admin bật quyền <code>poker_access</code> trước khi đăng nhập được.
+                                    Liên hệ admin nếu bị từ chối.</p>
+                            </div>
+                        </div>
+
+                        <!-- 1.4 -->
+                        <div class="subsection" id="s1-interface">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">1.4</span>Giao diện chính
+                            </h3>
+                            <p>Plugin hoạt động qua <strong>3 phase tuần tự</strong>. Thanh phase nằm ở trên cùng:</p>
+
+                            <div class="phase-list" style="margin: 16px 0 20px;">
+                                <div class="phase-item">
+                                    <span class="phase-badge phase-badge--board">Board</span>
+                                    <div>
+                                        <strong>Thiết lập layout</strong> — Chọn loại bàn (Poker, Pusoy, Grid), thêm/xóa
+                                        card places, dùng Cloner, Align và các Board Tools.
+                                    </div>
+                                </div>
+                                <div class="phase-item">
+                                    <span class="phase-badge phase-badge--setup">Setup</span>
+                                    <div>
+                                        <strong>Chuẩn bị bài</strong> — Kéo bài từ Card Tray vào Zone, đặt mặt úp/ngửa,
+                                        xác định trạng thái ban đầu trước khi ghi.
+                                    </div>
+                                </div>
+                                <div class="phase-item">
+                                    <span class="phase-badge phase-badge--record">Record</span>
+                                    <div>
+                                        <strong>Ghi animation</strong> — Di chuyển bài, flip, slam và nhấn Add Step để
+                                        lưu từng pose. Export sang AE khi hoàn tất.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder screenshot__placeholder--wide">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">Giao diện tổng quan: (A) Thanh phase, (B) Board
+                                        canvas, (C) Card tray, (D) Director Panel / AE Settings</span>
+                                </div>
+                                <figcaption>Fig 1.4 — Giao diện tổng quan Autonim-Poker với 4 khu vực chính</figcaption>
+                            </figure>
+                        </div>
+                    </section>
+
+                    <!-- ========== 02 BOARD SETUP ========== -->
+                    <section id="board-setup" class="section">
+                        <div class="section__header">
+                            <span class="section__number">02</span>
+                            <div>
+                                <h2 class="section__title">Board Setup</h2>
+                                <p class="section__desc">Layout bàn chơi, công cụ và zones</p>
+                            </div>
+                        </div>
+
+                        <!-- 2.1 -->
+                        <div class="subsection" id="s2-layouts">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">2.1</span>Các loại layout
+                            </h3>
+
+                            <div class="layout-grid">
+                                <div class="layout-item">
+                                    <h4>Poker</h4>
+                                    <p>Texas Hold'em chuẩn. 4 player zones (Top, Bottom, Left, Right) + Community zone ở
+                                        giữa. Mỗi zone có 2 slot hand card + 5 community card slots.</p>
+                                </div>
+                                <div class="layout-item">
+                                    <h4>Pusoy</h4>
+                                    <p>Fan layout kiểu Pusoy Dos. 13 lá xếp thành 3 hàng (3-5-5), tự xoay theo góc arc.
+                                        Rotation do expression điều khiển (không baked keyframe).</p>
+                                </div>
+                                <div class="layout-item">
+                                    <h4>Grid</h4>
+                                    <p>Layout lưới tự do. Kéo thả card places vào bất kỳ vị trí nào. Kết hợp với Cloner
+                                        để tạo hàng/cột/quạt nhanh.</p>
+                                </div>
+                                <div class="layout-item">
+                                    <h4>Custom</h4>
+                                    <p>Lưu layout tùy chỉnh vào localStorage. Load lại từ dropdown preset bất kỳ lúc
+                                        nào. Xem <a href="#s2-save-load">2.4</a>.</p>
+                                </div>
+                            </div>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder screenshot__placeholder--wide">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">Board layout selector — tabs Poker / Pusoy / Grid +
+                                        board canvas</span>
+                                </div>
+                                <figcaption>Fig 2.1a — Layout selector và board canvas với Poker layout</figcaption>
+                            </figure>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">Pusoy fan layout — 13 cards xếp arc 3-5-5</span>
+                                </div>
+                                <figcaption>Fig 2.1b — Pusoy fan layout: 13 cards xếp theo hàng 3-5-5, tự xoay theo góc
+                                    arc</figcaption>
+                            </figure>
+                        </div>
+
+                        <!-- 2.2 -->
+                        <div class="subsection" id="s2-tools">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">2.2</span>Board Tools
+                            </h3>
+
+                            <dl class="tool-list">
+                                <dt>Cloner</dt>
+                                <dd>
+                                    Nhân bản card places theo pattern. Card nguồn được tích hợp làm slot đầu tiên:
+                                    <ul style="margin-top: 8px; padding-left: 18px; color: inherit;">
+                                        <li><strong>Row</strong> — hàng ngang với khoảng cách đều</li>
+                                        <li><strong>Column</strong> — hàng dọc</li>
+                                        <li><strong>Arc</strong> — quạt theo góc xoay. Điều chỉnh <em>spread angle</em>
+                                            và <em>radius</em>.</li>
+                                    </ul>
+                                </dd>
+                                <dt>Align</dt>
+                                <dd>Chọn nhiều card places (Ctrl+click) → căn chỉnh theo: Left, Center H, Right, Top,
+                                    Middle V, Bottom.</dd>
+                                <dt>Distribute</dt>
+                                <dd>Phân bố đều khoảng cách ngang hoặc dọc giữa các card places đã chọn.</dd>
+                                <dt>Delete Multi</dt>
+                                <dd>Chọn nhiều card places + nhấn <kbd>Delete</kbd> để xóa cùng lúc.</dd>
+                                <dt>Background</dt>
+                                <dd>Chọn màu nền hoặc ảnh nền cho board canvas (preview only, không ảnh hưởng AE
+                                    export).</dd>
+                            </dl>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">Board Tools panel — Cloner settings, Arc mode,
+                                        spread/radius sliders</span>
+                                </div>
+                                <figcaption>Fig 2.2a — Board Tools panel với Cloner ở chế độ Arc</figcaption>
+                            </figure>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">Board canvas — 7 card places tạo bởi Cloner
+                                        Arc</span>
+                                </div>
+                                <figcaption>Fig 2.2b — 7 card places tạo bởi Cloner Arc trên board</figcaption>
+                            </figure>
+                        </div>
+
+                        <!-- 2.3 -->
+                        <div class="subsection" id="s2-zones">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">2.3</span>Card Zones & Slots
+                            </h3>
+                            <p>Một <strong>Zone</strong> là vùng trên board chứa một hoặc nhiều <strong>Slot</strong>
+                                (vị trí đặt bài). Mỗi zone có các thuộc tính:</p>
+                            <dl class="tool-list" style="margin-top: 12px;">
+                                <dt>Zone ID</dt>
+                                <dd>Tên định danh duy nhất (ví dụ: <code>player-top</code>, <code>community</code>).
+                                    Dùng trong AE để nhóm layers và áp expression.</dd>
+                                <dt>Zone Position</dt>
+                                <dd>Vị trí zone trên board: Top, Bottom, Left, Right, Center. Ảnh hưởng đến thứ tự
+                                    dealing round-robin.</dd>
+                                <dt>Default Face</dt>
+                                <dd>Khi bài được kéo vào zone này, mặc định sẽ là <strong>Face Up</strong> hay
+                                    <strong>Face Down</strong>.</dd>
+                                <dt>Slot Count</dt>
+                                <dd>Số card places trong zone. Tạo nhanh bằng Cloner hoặc kéo thêm từ toolbar.</dd>
+                            </dl>
+                        </div>
+
+                        <!-- 2.4 -->
+                        <div class="subsection" id="s2-save-load">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">2.4</span>Lưu & Tải Layout
+                            </h3>
+
+                            <div class="two-col">
+                                <div>
+                                    <p class="col-heading">Lưu layout</p>
+                                    <ol class="step-list">
+                                        <li>Sắp xếp layout theo ý muốn</li>
+                                        <li>Nhấn <strong>Save</strong> trên Board toolbar</li>
+                                        <li>Nhập tên cho layout → OK</li>
+                                        <li>Layout lưu vào <code>localStorage</code></li>
+                                    </ol>
+                                </div>
+                                <div>
+                                    <p class="col-heading">Tải & Xóa layout</p>
+                                    <ol class="step-list">
+                                        <li>Mở dropdown <strong>Preset</strong></li>
+                                        <li>Chọn layout đã lưu (có prefix <code>saved:</code>)</li>
+                                        <li>Nhấn <strong>Load</strong> để áp dụng</li>
+                                        <li>Nhấn 🗑️ để xóa layout đó</li>
+                                    </ol>
+                                </div>
+                            </div>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">Save dialog + preset dropdown với saved layouts và
+                                        delete button</span>
+                                </div>
+                                <figcaption>Fig 2.4 — Save dialog và preset dropdown với các layout đã lưu</figcaption>
+                            </figure>
+                        </div>
+                    </section>
+
+                    <!-- ========== 03 SETUP PHASE ========== -->
+                    <section id="setup-phase" class="section">
+                        <div class="section__header">
+                            <span class="section__number">03</span>
+                            <div>
+                                <h2 class="section__title">Setup Phase</h2>
+                                <p class="section__desc">Kéo bài vào zone và thiết lập trạng thái ban đầu</p>
+                            </div>
+                        </div>
+
+                        <!-- 3.1 -->
+                        <div class="subsection" id="s3-tray">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">3.1</span>Card Tray
+                            </h3>
+                            <p>Card Tray là khu vực chứa 52 lá bài (cộng thêm joker nếu có). Mỗi lá bài hiển thị là icon
+                                nhỏ có thể kéo thả.</p>
+                            <ul class="detail-list">
+                                <li>Bài được sắp xếp theo <strong>suit</strong> (♠ ♥ ♦ ♣) và <strong>rank</strong> (A →
+                                    K)</li>
+                                <li>Lá bài đã đặt vào zone sẽ <strong>mờ đi</strong> trong tray — tránh đặt trùng</li>
+                                <li>Hover vào lá bài để xem tên đầy đủ (ví dụ: <em>Ace of Spades</em>)</li>
+                            </ul>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">Card Tray panel — 52 cards theo suit, một số mờ (đã
+                                        đặt)</span>
+                                </div>
+                                <figcaption>Fig 3.1 — Card Tray: bài đã đặt bị mờ để tránh nhầm lẫn</figcaption>
+                            </figure>
+                        </div>
+
+                        <!-- 3.2 -->
+                        <div class="subsection" id="s3-placing">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">3.2</span>Đặt bài vào Zone
+                            </h3>
+                            <ol class="step-list">
+                                <li>Xác nhận đang ở <strong>Setup phase</strong> (tab Setup được chọn trong thanh phase)
+                                </li>
+                                <li>Kéo một lá bài từ Card Tray</li>
+                                <li>Thả vào <strong>Slot trống</strong> trên board — lá bài hiện ngay với face
+                                    orientation mặc định của zone</li>
+                                <li>Để <strong>di chuyển bài</strong>: kéo thả card từ slot này sang slot khác trong
+                                    board</li>
+                                <li>Để <strong>xóa bài</strong>: kéo card ra ngoài board, hoặc right-click → Remove</li>
+                            </ol>
+
+                            <div class="callout callout--info">
+                                <span class="callout__icon">📝</span>
+                                <p>Nếu bạn thả bài vào slot đã có bài, bài cũ sẽ <strong>swap</strong> về tray và bài
+                                    mới sẽ vào slot đó.</p>
+                            </div>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder screenshot__placeholder--wide">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">Board với bài đặt vào zones — drag từ tray sang
+                                        slot</span>
+                                </div>
+                                <figcaption>Fig 3.2 — Kéo bài từ Tray và thả vào Slot trên board</figcaption>
+                            </figure>
+                        </div>
+
+                        <!-- 3.3 -->
+                        <div class="subsection" id="s3-properties">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">3.3</span>Thuộc tính Card
+                            </h3>
+                            <p>Mỗi card trong slot có thể được điều chỉnh:</p>
+                            <dl class="tool-list">
+                                <dt>Face Up / Face Down</dt>
+                                <dd>Click checkbox cạnh card hoặc right-click → <strong>Flip</strong>. Face Down = chỉ
+                                    thấy mặt lưng (back.png).</dd>
+                                <dt>Context Menu (right-click)</dt>
+                                <dd>Flip · Flip.Ani · Slam · Remove · Face Up All · Face Down All — áp dụng cho card
+                                    hoặc toàn bộ zone.</dd>
+                            </dl>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">Right-click context menu trên card — Flip, Slam,
+                                        Remove, Face Up All</span>
+                                </div>
+                                <figcaption>Fig 3.3 — Context menu khi right-click card trong Setup mode</figcaption>
+                            </figure>
+                        </div>
+                    </section>
+
+                    <!-- ========== 04 RECORDING ========== -->
+                    <section id="recording" class="section">
+                        <div class="section__header">
+                            <span class="section__number">04</span>
+                            <div>
+                                <h2 class="section__title">Recording & Animation</h2>
+                                <p class="section__desc">Ghi pose-to-pose và các tính năng animation</p>
+                            </div>
+                        </div>
+
+                        <!-- 4.1 -->
+                        <div class="subsection" id="s4-workflow">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">4.1</span>Pose-to-Pose Workflow
+                            </h3>
+                            <p>Autonim-Poker dùng kỹ thuật <strong>pose-to-pose</strong>: bạn định nghĩa các trạng thái
+                                chính, plugin tự tạo keyframes chuyển tiếp.</p>
+
+                            <div class="step-flow">
+                                <div class="flow-step">
+                                    <div class="flow-step__num">1</div>
+                                    <h4>Setup</h4>
+                                    <p>Đặt bài vào zone, xác định trạng thái ban đầu</p>
+                                </div>
+                                <div class="flow-arrow">→</div>
+                                <div class="flow-step">
+                                    <div class="flow-step__num">2</div>
+                                    <h4>Record</h4>
+                                    <p>Nhấn "Record" — phase chuyển sang Record mode</p>
+                                </div>
+                                <div class="flow-arrow">→</div>
+                                <div class="flow-step">
+                                    <div class="flow-step__num">3</div>
+                                    <h4>Pose</h4>
+                                    <p>Di chuyển card, flip, slam tạo pose mới</p>
+                                </div>
+                                <div class="flow-arrow">→</div>
+                                <div class="flow-step">
+                                    <div class="flow-step__num">4</div>
+                                    <h4>Add Step</h4>
+                                    <p>Nhấn "Add Step" — lưu snapshot pose này</p>
+                                </div>
+                                <div class="flow-arrow">→</div>
+                                <div class="flow-step">
+                                    <div class="flow-step__num">5</div>
+                                    <h4>Repeat</h4>
+                                    <p>Lặp Pose → Add Step đến khi đủ các pose cần thiết</p>
+                                </div>
+                            </div>
+
+                            <div class="callout callout--info">
+                                <span class="callout__icon">📝</span>
+                                <p>Mỗi Step là một <strong>snapshot toàn bộ trạng thái board</strong>. Plugin so sánh
+                                    Step N và Step N-1 để tính delta và chỉ tạo keyframes cho các card thực sự thay đổi.
+                                </p>
+                            </div>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder screenshot__placeholder--wide">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">Record phase — Director Panel với danh sách steps,
+                                        Add Step button, step timing</span>
+                                </div>
+                                <figcaption>Fig 4.1 — Director Panel trong Record mode với danh sách Steps đã ghi
+                                </figcaption>
+                            </figure>
+                        </div>
+
+                        <!-- 4.2 -->
+                        <div class="subsection" id="s4-grouping">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">4.2</span>Grouping Mode
+                            </h3>
+                            <p>Di chuyển nhiều card cùng lúc với cùng offset:</p>
+                            <ol class="step-list">
+                                <li>Bật <strong>Enable Grouping</strong> trong Director Panel</li>
+                                <li>Click từng card để chọn — card được chọn sẽ <em>nhích lên</em> (lifted) để dễ nhận
+                                    ra</li>
+                                <li>Kéo bất kỳ card nào trong nhóm → tất cả di chuyển theo cùng offset</li>
+                                <li>Mỗi lần click select/deselect tạo thành một bước trong step</li>
+                            </ol>
+
+                            <div class="callout callout--tip">
+                                <span class="callout__icon">💡</span>
+                                <p>Right-click khi đang ở Grouping Mode → <strong>"Flip All"</strong> / <strong>"Slam
+                                        All"</strong> để áp dụng hiệu ứng cho toàn bộ nhóm cùng lúc.</p>
+                            </div>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">Board với 3 cards được chọn trong Group mode — cards
+                                        nhích lên, viền highlight</span>
+                                </div>
+                                <figcaption>Fig 4.2 — 3 cards được chọn trong Grouping Mode (nhích lên với viền
+                                    highlight)</figcaption>
+                            </figure>
+                        </div>
+
+                        <!-- 4.3 -->
+                        <div class="subsection" id="s4-auto-record">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">4.3</span>Auto-Record
+                            </h3>
+                            <p>Tự động ghi step sau mỗi thao tác, không cần nhấn "Add Step" thủ công:</p>
+                            <ol class="step-list">
+                                <li>Bật <strong>Auto Record</strong> trong Grouping section của Director Panel</li>
+                                <li>Đặt thời gian countdown (1–10 giây)</li>
+                                <li>Di chuyển card → bộ đếm ngược bắt đầu → hết giờ → step tự lưu</li>
+                                <li>Nếu thực hiện thêm thao tác trước khi đếm xong → bộ đếm reset lại</li>
+                            </ol>
+                            <div class="callout callout--tip">
+                                <span class="callout__icon">💡</span>
+                                <p>Countdown 3-5 giây là tốt nhất khi làm việc theo nhịp độ tự nhiên. Dùng countdown
+                                    ngắn hơn (1-2s) khi đã quen luồng.</p>
+                            </div>
+                        </div>
+
+                        <!-- 4.4 -->
+                        <div class="subsection" id="s4-card-actions">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">4.4</span>Card Actions
+                            </h3>
+                            <dl class="tool-list">
+                                <dt>Flip</dt>
+                                <dd>Lật bài tức thì (ngửa ↔ úp). Click checkbox hoặc right-click → <em>Flip</em>. Ghi
+                                    vào delta của step hiện tại.</dd>
+                                <dt>Flip.Ani</dt>
+                                <dd>Lật bài với animation Y-rotation riêng biệt. Tạo keyframes flip độc lập với movement
+                                    keyframes. Lật rõ ràng và có thể điều chỉnh timing riêng trong AE.</dd>
+                                <dt>Slam</dt>
+                                <dd>Hiệu ứng đập bài — scale bounce. Thường dùng khi reveal bài quan trọng hoặc muốn
+                                    nhấn mạnh.</dd>
+                                <dt>Face Up / Face Down</dt>
+                                <dd>Set mặc định cho zone: bài mới kéo vào zone sẽ tự động face up hoặc face down.</dd>
+                            </dl>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">Context menu trong Record mode — Flip, Flip.Ani,
+                                        Slam, Flip All, Slam All</span>
+                                </div>
+                                <figcaption>Fig 4.4 — Context menu đầy đủ trong Record mode</figcaption>
+                            </figure>
+                        </div>
+
+                        <!-- 4.5 -->
+                        <div class="subsection" id="s4-dealing">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">4.5</span>Dealing Card Animation
+                            </h3>
+                            <p>Tự động tạo animation chia bài từ một điểm trung tâm đến các zone theo thứ tự
+                                round-robin:</p>
+                            <ol class="step-list">
+                                <li>Trong <strong>AE Settings</strong> panel, bật toggle <strong>Dealing Card</strong>
+                                </li>
+                                <li>Kéo icon dealing slot để đặt vị trí trên board (thường là giữa bàn)</li>
+                                <li>Export sang AE → cards bay từ dealing slot đến từng zone</li>
+                            </ol>
+
+                            <div class="callout callout--info">
+                                <span class="callout__icon">ℹ️</span>
+                                <p><strong>Round-robin order:</strong> Card 1→P1, Card 2→P2, …, Card N+1→P1, … Thứ tự
+                                    giống chia bài thật trong poker.</p>
+                            </div>
+
+                            <div class="callout callout--tip">
+                                <span class="callout__icon">💡</span>
+                                <p>Từ <strong>v2.0.6.0+</strong>, dealing dùng <strong>Z-lift arc</strong>: card bay cao
+                                    hơn giữa đường để tránh xuyên qua nhau trong AE 3D.</p>
+                            </div>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">AE Settings panel — Dealing Card toggle ON, dealing
+                                        slot trên board</span>
+                                </div>
+                                <figcaption>Fig 4.5 — AE Settings với Dealing Card bật và dealing slot được đặt trên
+                                    board</figcaption>
+                            </figure>
+                        </div>
+                    </section>
+
+                    <!-- ========== 05 AE EXPORT ========== -->
+                    <section id="ae-export" class="section">
+                        <div class="section__header">
+                            <span class="section__number">05</span>
+                            <div>
+                                <h2 class="section__title">After Effects Export</h2>
+                                <p class="section__desc">Xuất animation sang AE với keyframes tự động</p>
+                            </div>
+                        </div>
+
+                        <!-- 5.1 -->
+                        <div class="subsection" id="s5-assets">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">5.1</span>Chuẩn bị Assets
+                            </h3>
+                            <p>Trước khi export, cần có thư mục ảnh card đúng format:</p>
+                            <dl class="tool-list">
+                                <dt>Tên file card</dt>
+                                <dd><code>ace_of_spades.png</code>, <code>two_of_hearts.png</code>, …,
+                                    <code>king_of_clubs.png</code> (lowercase, underscore)</dd>
+                                <dt>Mặt lưng</dt>
+                                <dd><code>back.png</code> — ảnh mặt úp dùng chung cho tất cả card trong deck</dd>
+                                <dt>Kích thước khuyến nghị</dt>
+                                <dd>500×726px hoặc tỉ lệ tương đương (2:3). Plugin tự scale qua <strong>Card
+                                        Scale</strong> slider.</dd>
+                                <dt>Color Profile</dt>
+                                <dd>PNG nên embed ICC sRGB. Plugin tự inject profile từ v2.0.5.1+.</dd>
+                            </dl>
+
+                            <div class="callout callout--info">
+                                <span class="callout__icon">🔧</span>
+                                <p>Dùng <strong>Deck Prepper</strong> tool (trong <code>tools/deck-prepper/</code>) để
+                                    tự động rename và chuẩn bị toàn bộ bộ bài từ nguồn gốc.</p>
+                            </div>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">Deck Prepper tool interface + cấu trúc thư mục
+                                        assets đúng format</span>
+                                </div>
+                                <figcaption>Fig 5.1 — Deck Prepper và cấu trúc thư mục assets chuẩn</figcaption>
+                            </figure>
+                        </div>
+
+                        <!-- 5.2 -->
+                        <div class="subsection" id="s5-export">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">5.2</span>Quy trình Export
+                            </h3>
+
+                            <div class="step-flow">
+                                <div class="flow-step">
+                                    <div class="flow-step__num">1</div>
+                                    <h4>Assets Folder</h4>
+                                    <p>Chọn thư mục chứa PNG cards đã chuẩn bị</p>
+                                </div>
+                                <div class="flow-arrow">→</div>
+                                <div class="flow-step">
+                                    <div class="flow-step__num">2</div>
+                                    <h4>AE Settings</h4>
+                                    <p>Cài step duration, overlap, dealing toggle</p>
+                                </div>
+                                <div class="flow-arrow">→</div>
+                                <div class="flow-step">
+                                    <div class="flow-step__num">3</div>
+                                    <h4>Export to AE</h4>
+                                    <p>Nhấn nút "Export to AE" — plugin gửi JSON sang ExtendScript</p>
+                                </div>
+                                <div class="flow-arrow">→</div>
+                                <div class="flow-step">
+                                    <div class="flow-step__num">4</div>
+                                    <h4>Comp Ready</h4>
+                                    <p>AE tạo comp, import assets, bake tất cả keyframes</p>
+                                </div>
+                            </div>
+
+                            <p style="margin-top: 16px; color: var(--text-secondary); font-size: 0.88rem;">Sau khi
+                                export thành công, AE tạo ra:</p>
+                            <ul class="detail-list">
+                                <li><strong>Main Comp</strong> — 1920×1080, chứa tất cả card layers với keyframes đã
+                                    bake</li>
+                                <li><strong>Card Pre-comps</strong> — mỗi card là pre-comp 2 layer (front + back) với
+                                    Flip slider</li>
+                                <li><strong>🎛️ Controls Layer</strong> — layer điều chỉnh global parameters</li>
+                            </ul>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder screenshot__placeholder--wide">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">AE timeline — Main Comp với card layers, pre-comps
+                                        folder, Controls layer</span>
+                                </div>
+                                <figcaption>Fig 5.2 — AE Main Comp sau export: card layers, pre-comps và Controls layer
+                                </figcaption>
+                            </figure>
+                        </div>
+
+                        <!-- 5.3 -->
+                        <div class="subsection" id="s5-control-layer">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">5.3</span>Control Layer
+                            </h3>
+                            <p>Layer <code>🎛️ Controls</code> chứa các <strong>Expression Control sliders</strong> để
+                                điều chỉnh toàn comp sau khi export, không cần re-export:</p>
+                            <dl class="tool-list">
+                                <dt>Card Scale</dt>
+                                <dd>Kích thước tất cả card (default: 62%). Thay đổi mà không cần re-export.</dd>
+                                <dt>Fan Spacing</dt>
+                                <dd><em>(Pusoy)</em> Điều chỉnh độ rộng quạt bài.</dd>
+                                <dt>Fan Curvature</dt>
+                                <dd><em>(Pusoy)</em> Điều chỉnh độ cong arc của quạt.</dd>
+                                <dt>Zone Y / X Offset</dt>
+                                <dd><em>(Poker)</em> Dịch chuyển toàn bộ zone theo trục Y hoặc X.</dd>
+                                <dt>Stroke Size</dt>
+                                <dd>Kích thước viền highlight khi card được select (0 = ẩn).</dd>
+                                <dt>Stroke Color</dt>
+                                <dd>Màu viền highlight (mặc định: vàng).</dd>
+                            </dl>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">AE Controls layer expanded — tất cả Expression
+                                        Control sliders</span>
+                                </div>
+                                <figcaption>Fig 5.3 — Controls layer với các Expression Control sliders trong AE
+                                </figcaption>
+                            </figure>
+                        </div>
+
+                        <!-- 5.4 -->
+                        <div class="subsection" id="s5-per-card">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">5.4</span>Per-Card Controls
+                            </h3>
+                            <p>Mỗi card layer trong AE có 3 slider riêng trong <strong>Effects panel</strong>:</p>
+                            <dl class="tool-list">
+                                <dt>Flip <span style="font-weight:400;opacity:.6">(0–100)</span></dt>
+                                <dd>Kéo để lật bài thủ công trong AE. <strong>50</strong> = giữa chừng (điểm đổi mặt),
+                                    <strong>100</strong> = hoàn tất 180° Y rotation. Keyframes được bake từ
+                                    Flip/Flip.Ani actions.</dd>
+                                <dt>Slam Scale</dt>
+                                <dd>Scale riêng cho card này, nhân với global Card Scale. Keyframes bake từ Slam actions
+                                    trong Recording.</dd>
+                                <dt>Selection Size</dt>
+                                <dd>Override kích thước viền highlight cho card này. 0 = theo global Stroke Size.</dd>
+                            </dl>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">AE card layer — Effects panel với Flip, Slam Scale,
+                                        Selection Size sliders</span>
+                                </div>
+                                <figcaption>Fig 5.4 — Effects panel của một card layer với 3 per-card sliders
+                                </figcaption>
+                            </figure>
+                        </div>
+
+                        <!-- 5.5 -->
+                        <div class="subsection" id="s5-blending">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">5.5</span>Step Blending (Overlap)
+                            </h3>
+                            <p>Slider <strong>Overlap</strong> trong AE Settings quyết định các step có chồng lên nhau
+                                không:</p>
+
+                            <div class="layout-grid" style="margin: 16px 0;">
+                                <div class="layout-item">
+                                    <h4>Overlap 0%</h4>
+                                    <p>Tuần tự hoàn toàn. Step 2 chỉ bắt đầu sau khi Step 1 kết thúc hoàn toàn.
+                                        Animation rõ ràng, từng bước.</p>
+                                </div>
+                                <div class="layout-item">
+                                    <h4>Overlap 50%</h4>
+                                    <p>Step 2 bắt đầu khi Step 1 đi được nửa thời gian. Animation mượt và tự nhiên hơn,
+                                        phù hợp với nhiều card di chuyển.</p>
+                                </div>
+                            </div>
+
+                            <figure class="screenshot">
+                                <div class="screenshot__placeholder screenshot__placeholder--wide">
+                                    <span class="screenshot__badge">Screenshot Placeholder</span>
+                                    <span class="screenshot__icon">📷</span>
+                                    <span class="screenshot__label">AE timeline — so sánh Overlap 0% (tuần tự) vs 50%
+                                        (staggered keyframes)</span>
+                                </div>
+                                <figcaption>Fig 5.5 — Timeline AE: Overlap 0% (trái, tuần tự) vs 50% (phải, chồng lên
+                                    nhau)</figcaption>
+                            </figure>
+                        </div>
+                    </section>
+
+                    <!-- ========== 06 SHORTCUTS ========== -->
+                    <section id="shortcuts" class="section">
+                        <div class="section__header">
+                            <span class="section__number">06</span>
+                            <div>
+                                <h2 class="section__title">Keyboard Shortcuts</h2>
+                                <p class="section__desc">Phím tắt tiện ích</p>
+                            </div>
+                        </div>
+
+                        <div class="shortcuts-grid">
+                            <div class="shortcut">
+                                <kbd>Delete</kbd>
+                                <span>Xóa selected card places (Board mode)</span>
+                            </div>
+                            <div class="shortcut">
+                                <kbd>Ctrl</kbd> + <kbd>Z</kbd>
+                                <span>Undo thao tác gần nhất</span>
+                            </div>
+                            <div class="shortcut">
+                                <kbd>Right-click</kbd>
+                                <span>Context menu — Flip / Flip.Ani / Slam / Remove</span>
+                            </div>
+                            <div class="shortcut">
+                                <kbd>Drag</kbd>
+                                <span>Di chuyển card giữa zones hoặc trên board</span>
+                            </div>
+                            <div class="shortcut">
+                                <kbd>Ctrl</kbd> + <kbd>Click</kbd>
+                                <span>Multi-select card places (Board mode)</span>
+                            </div>
+                            <div class="shortcut">
+                                <kbd>Click</kbd>
+                                <span>Chọn card vào group (Grouping Mode)</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- ========== 07 FAQ ========== -->
+                    <section id="faq" class="section">
+                        <div class="section__header">
+                            <span class="section__number">07</span>
+                            <div>
+                                <h2 class="section__title">FAQ & Troubleshooting</h2>
+                                <p class="section__desc">Xử lý các sự cố thường gặp</p>
+                            </div>
+                        </div>
+
+                        <!-- 7.1 -->
+                        <div class="subsection" id="s7-installation">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">7.1</span>Plugin không hiện trong After Effects
+                            </h3>
+                            <div class="faq-list">
+                                <details class="faq-item">
+                                    <summary class="faq-question">
+                                        <span class="faq-icon">❓</span>Plugin không xuất hiện trong Window → Extensions
+                                    </summary>
+                                    <div class="faq-answer">
+                                        <ol>
+                                            <li>Kiểm tra phiên bản AE: yêu cầu <strong>CC 2019 (v16.x)+</strong></li>
+                                            <li>Xác nhận đã cài đúng file <code>.zxp</code> (không phải
+                                                <code>.zip</code>)</li>
+                                            <li>Restart After Effects sau khi cài</li>
+                                            <li>Vào <code>Edit → Preferences → Scripting & Expressions</code> → bật
+                                                <strong>"Allow Scripts to Write Files and Access Network"</strong></li>
+                                            <li><strong>Windows:</strong> Mở <code>regedit</code> → điều hướng đến
+                                                <code>HKEY_CURRENT_USER\SOFTWARE\Adobe\CSXS.11</code> → tạo String Value
+                                                <code>PlayerDebugMode</code> = <code>1</code>
+                                            </li>
+                                        </ol>
+                                    </div>
+                                </details>
+                                <details class="faq-item">
+                                    <summary class="faq-question">
+                                        <span class="faq-icon">❓</span>Panel trống / màn hình trắng khi mở plugin
+                                    </summary>
+                                    <div class="faq-answer">
+                                        <ul>
+                                            <li>Right-click vào panel → <strong>Reload</strong> (hoặc nhấn
+                                                <kbd>Ctrl</kbd>+<kbd>F5</kbd> trong panel)</li>
+                                            <li>Xóa CEP cache: <code>%AppData%\Adobe\CEP\cache\</code> (Windows)</li>
+                                            <li>Đảm bảo <code>PlayerDebugMode = 1</code> đã được set trong registry</li>
+                                        </ul>
+                                    </div>
+                                </details>
+                            </div>
+                        </div>
+
+                        <!-- 7.2 -->
+                        <div class="subsection" id="s7-login">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">7.2</span>Lỗi đăng nhập
+                            </h3>
+                            <div class="faq-list">
+                                <details class="faq-item">
+                                    <summary class="faq-question">
+                                        <span class="faq-icon">❓</span>Login thất bại / bị loop màn hình đăng nhập
+                                    </summary>
+                                    <div class="faq-answer">
+                                        <ul>
+                                            <li><strong>Chưa được cấp quyền:</strong> Admin cần bật
+                                                <code>poker_access</code> cho tài khoản</li>
+                                            <li><strong>Sai password:</strong> Liên hệ admin để reset</li>
+                                            <li><strong>Firewall / VPN:</strong> Plugin cần kết nối server
+                                                authentication — kiểm tra không bị block</li>
+                                            <li><strong>Token hết hạn:</strong> Đăng xuất hoàn toàn và đăng nhập lại
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </details>
+                            </div>
+                        </div>
+
+                        <!-- 7.3 -->
+                        <div class="subsection" id="s7-export-issues">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">7.3</span>Lỗi Export & Assets
+                            </h3>
+                            <div class="faq-list">
+                                <details class="faq-item">
+                                    <summary class="faq-question">
+                                        <span class="faq-icon">❓</span>Card không tìm thấy khi export (missing asset
+                                        error)
+                                    </summary>
+                                    <div class="faq-answer">
+                                        <ul>
+                                            <li>Đã chọn đúng <strong>Assets Folder</strong> chứa PNG cards chưa?</li>
+                                            <li>Tên file phải đúng format: <code>ace_of_spades.png</code>,
+                                                <code>back.png</code> (lowercase, underscore)</li>
+                                            <li>Dùng <strong>Deck Prepper</strong> (<code>tools/deck-prepper/</code>) để
+                                                chuẩn bị</li>
+                                            <li>Kiểm tra file không bị locked hoặc read-only</li>
+                                        </ul>
+                                    </div>
+                                </details>
+                                <details class="faq-item">
+                                    <summary class="faq-question">
+                                        <span class="faq-icon">❓</span>PNG không hiện thumbnail trên Windows Explorer
+                                    </summary>
+                                    <div class="faq-answer">
+                                        <p>File PNG cần có ICC color profile (sRGB). Plugin tự inject từ v2.0.5.1+:</p>
+                                        <ul>
+                                            <li>Re-download ảnh từ server (đã được fix tự động)</li>
+                                            <li>Hoặc mở Photoshop → Save As → đảm bảo <strong>"Embed Color
+                                                    Profile"</strong> được check</li>
+                                        </ul>
+                                    </div>
+                                </details>
+                            </div>
+                        </div>
+
+                        <!-- 7.4 -->
+                        <div class="subsection" id="s7-animation">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">7.4</span>Lỗi Animation & AE
+                            </h3>
+                            <div class="faq-list">
+                                <details class="faq-item">
+                                    <summary class="faq-question">
+                                        <span class="faq-icon">❓</span>Bài bị ngược / lệch khi dùng layout quạt (Pusoy /
+                                        Arc)
+                                    </summary>
+                                    <div class="faq-answer">
+                                        <p>Đã được fix trong v2.0.6.0+. Nếu vẫn gặp:</p>
+                                        <ul>
+                                            <li>Kiểm tra đang dùng phiên bản mới nhất</li>
+                                            <li><strong>Pusoy fan:</strong> rotation tính qua expression — không bake
+                                                keyframe rotation</li>
+                                            <li><strong>Cloner Arc:</strong> rotation baked vào keyframe — kiểm tra arc
+                                                spread angle hợp lý</li>
+                                        </ul>
+                                    </div>
+                                </details>
+                                <details class="faq-item">
+                                    <summary class="faq-question">
+                                        <span class="faq-icon">❓</span>Cards bị xuyên qua nhau trong AE (3D Z-crossing)
+                                    </summary>
+                                    <div class="faq-answer">
+                                        <p>AE 3D Z-spacing chỉ 0.01 per card — khi xoay, surfaces có thể intersect. Fix
+                                            từ v2.0.6.0+:</p>
+                                        <ul>
+                                            <li><strong>Dealing:</strong> Z-lift arc — cards bay cao giữa đường để tránh
+                                                crossing</li>
+                                            <li><strong>Move/Swap:</strong> Card tự nhảy lên Z front (-200) khi di
+                                                chuyển</li>
+                                            <li>Nếu vẫn bị: giảm <strong>Card Scale</strong> slider → cards nhỏ hơn → ít
+                                                overlap hơn</li>
+                                        </ul>
+                                    </div>
+                                </details>
+                                <details class="faq-item">
+                                    <summary class="faq-question">
+                                        <span class="faq-icon">❓</span>Timeline AE bị chậm / keyframes sai thứ tự
+                                    </summary>
+                                    <div class="faq-answer">
+                                        <ul>
+                                            <li><strong>Chậm:</strong> Giảm Step Blending (Overlap) về 0% để tuần tự rõ
+                                                ràng</li>
+                                            <li><strong>Card đứng im:</strong> Kiểm tra comp duration đủ dài để chứa tất
+                                                cả steps</li>
+                                            <li><strong>Flip không đúng:</strong> Kéo Flip slider trong Effects panel (0
+                                                = original, 100 = flipped)</li>
+                                        </ul>
+                                    </div>
+                                </details>
+                            </div>
+                        </div>
+
+                        <!-- 7.5 -->
+                        <div class="subsection" id="s7-update">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">7.5</span>Cập nhật Plugin (OTA)
+                            </h3>
+                            <p>Plugin có hệ thống <strong>Over-the-Air (OTA)</strong> update tự động:</p>
+                            <ol class="step-list">
+                                <li>Khi mở plugin, nó tự check phiên bản mới với server</li>
+                                <li>Nếu có update → icon ⚙️ hiện badge <em>"Update available"</em></li>
+                                <li>Nhấn ⚙️ → chọn <strong>"Update Now"</strong></li>
+                                <li>Chờ download hoàn tất</li>
+                                <li><strong>Restart After Effects</strong> hoàn toàn để áp dụng</li>
+                            </ol>
+                            <div class="callout callout--warning">
+                                <span class="callout__icon">⚠️</span>
+                                <p>Sau khi update, <strong>phải đóng và mở lại AE hoàn toàn</strong>. Chỉ reload panel
+                                    không đủ để áp dụng version mới.</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- ========== 08 GLOSSARY ========== -->
+                    <section id="glossary" class="section">
+                        <div class="section__header">
+                            <span class="section__number">08</span>
+                            <div>
+                                <h2 class="section__title">Glossary</h2>
+                                <p class="section__desc">Thuật ngữ và định nghĩa</p>
+                            </div>
+                        </div>
+
+                        <dl class="glossary-list">
+                            <div class="glossary-item">
+                                <dt>Zone</dt>
+                                <dd>Vùng trên board chứa một hoặc nhiều Slot. Ví dụ: <code>player-top</code>,
+                                    <code>community</code>. Dùng để nhóm layers trong AE.</dd>
+                            </div>
+                            <div class="glossary-item">
+                                <dt>Slot</dt>
+                                <dd>Vị trí đặt bài trong một Zone. Một Zone có thể có nhiều Slot (ví dụ: 2 hand cards
+                                    trong Poker zone).</dd>
+                            </div>
+                            <div class="glossary-item">
+                                <dt>Step</dt>
+                                <dd>Snapshot toàn bộ trạng thái board tại một thời điểm. Plugin so sánh Step N và N-1 để
+                                    tính delta và tạo keyframes chỉ cho card thay đổi.</dd>
+                            </div>
+                            <div class="glossary-item">
+                                <dt>Preset</dt>
+                                <dd>Layout board đã lưu vào localStorage. Load lại từ dropdown Preset bất kỳ lúc nào mà
+                                    không mất dữ liệu.</dd>
+                            </div>
+                            <div class="glossary-item">
+                                <dt>Cloner</dt>
+                                <dd>Board tool nhân bản card places theo Row, Column, hoặc Arc pattern. Card nguồn được
+                                    tích hợp làm slot đầu tiên.</dd>
+                            </div>
+                            <div class="glossary-item">
+                                <dt>Control Layer</dt>
+                                <dd>Layer <code>🎛️ Controls</code> trong AE Main Comp chứa Expression Control sliders
+                                    để điều chỉnh global parameters sau export.</dd>
+                            </div>
+                            <div class="glossary-item">
+                                <dt>Dealing</dt>
+                                <dd>Animation chia bài từ dealing slot đến các zone theo round-robin. Kích hoạt qua AE
+                                    Settings → Dealing Card toggle.</dd>
+                            </div>
+                            <div class="glossary-item">
+                                <dt>Pose-to-Pose</dt>
+                                <dd>Kỹ thuật animation: định nghĩa các trạng thái chính (key poses), phần mềm tự nội suy
+                                    chuyển động giữa các pose.</dd>
+                            </div>
+                            <div class="glossary-item">
+                                <dt>Hold Keyframe</dt>
+                                <dd>Loại keyframe trong AE giữ nguyên giá trị cho đến keyframe tiếp theo (không
+                                    tween/ease). Plugin dùng loại này để animation rõ ràng, pose-to-pose.</dd>
+                            </div>
+                            <div class="glossary-item">
+                                <dt>OTA (Over-the-Air)</dt>
+                                <dd>Hệ thống cập nhật plugin tự động qua internet, không cần cài lại <code>.zxp</code>
+                                    thủ công.</dd>
+                            </div>
+                            <div class="glossary-item">
+                                <dt>Z-lift Arc</dt>
+                                <dd>Kỹ thuật trong dealing animation: card bay lên cao theo trục Z giữa đường để tránh
+                                    xuyên qua nhau trong AE 3D view.</dd>
+                            </div>
+                            <div class="glossary-item">
+                                <dt>CEP</dt>
+                                <dd>Common Extensibility Platform — nền tảng Adobe cho phép chạy extensions HTML/CSS/JS
+                                    trong các app Creative Cloud (After Effects, Premiere, Photoshop…).</dd>
+                            </div>
+                            <div class="glossary-item">
+                                <dt>ExtendScript</dt>
+                                <dd>Ngôn ngữ scripting (JavaScript dialect) của Adobe để điều khiển AE từ phía native.
+                                    Plugin dùng ExtendScript để tạo comp và bake keyframes.</dd>
+                            </div>
+                            <div class="glossary-item">
+                                <dt>Step Blending / Overlap</dt>
+                                <dd>Tham số quyết định step tiếp theo bắt đầu khi nào. 0% = tuần tự hoàn toàn, 50% =
+                                    step sau bắt đầu khi step trước đi nửa đường.</dd>
+                            </div>
+                        </dl>
+                    </section>
+
+                </div>
+            </main>
+
+            <footer class="footer">
+                <div class="container">
+                    <p>Autonim-Poker — AE Director Tool &copy; 2026. Built for VNG Animation Team.</p>
+                </div>
+            </footer>
+
+        </div><!-- end content-wrapper -->
+    </div><!-- end page-layout -->
+
+    <script src="script.js"></script>
+</body>
+
+</html>
