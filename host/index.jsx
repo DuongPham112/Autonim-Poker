@@ -139,9 +139,9 @@ function generateSequence(jsonString, assetsRootPath) {
             for (var cid in data.initialState) {
                 if (data.initialState.hasOwnProperty(cid)) numCards++;
             }
-            // Match timing constants from processDealingAnimation
-            var staggerFrames = 3;
-            var holdFrames = 30;
+            // Match timing constants from processDealingAnimation, using exported speed setting
+            var staggerFrames = (data.dealingCard.staggerFrames !== undefined) ? data.dealingCard.staggerFrames : 3;
+            var holdFrames = Math.max(5, Math.round(30 * staggerFrames / 3));  // Scale hold with stagger
             dealingDuration = ((Math.max(numCards - 1, 0) * staggerFrames) + MOVE_DURATION_FRAMES + holdFrames) / FRAME_RATE;
         }
 
@@ -1128,9 +1128,9 @@ function applyZoneOffsetExpression(cardLayer, controlLayerName, zoneName) {
 function processDealingAnimation(comp, layerMap, initialState, dealingCard) {
     var frameDuration = 1 / FRAME_RATE;
     var moveDuration = MOVE_DURATION_FRAMES * frameDuration; // ~10 frames per card
-    var staggerFrames = 3; // Frames between each card's deal start
+    var staggerFrames = (dealingCard.staggerFrames !== undefined) ? dealingCard.staggerFrames : 3;
     var staggerDuration = staggerFrames * frameDuration;
-    var holdFrames = 30; // Hold after dealing before recorded steps
+    var holdFrames = Math.max(5, Math.round(30 * staggerFrames / 3));  // Scale hold with stagger
     var holdDuration = holdFrames * frameDuration;
 
     var dealX = dealingCard.x || 960;

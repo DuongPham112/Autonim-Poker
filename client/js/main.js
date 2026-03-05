@@ -72,6 +72,7 @@ const appState = {
     // Settings
     cardOverlap: 25,              // Overlap in pixels
     stepBlending: 0,              // Step blending % for AE export (0-50)
+    dealSpeed: 3,                  // Deal stagger frames per card (1=fast, 5=slow)
 
     // Board Layout
     boardLayout: {
@@ -629,6 +630,18 @@ function bindEvents() {
         stepBlendingSlider.addEventListener('input', () => {
             appState.stepBlending = parseInt(stepBlendingSlider.value);
             if (stepBlendingValue) stepBlendingValue.textContent = appState.stepBlending + '%';
+        });
+    }
+
+    // Deal Speed slider
+    const dealSpeedSlider = document.getElementById('dealSpeedSlider');
+    const dealSpeedValue = document.getElementById('dealSpeedValue');
+    const dealTimeEstimate = document.getElementById('dealTimeEstimate');
+    if (dealSpeedSlider) {
+        dealSpeedSlider.addEventListener('input', () => {
+            appState.dealSpeed = parseInt(dealSpeedSlider.value);
+            if (dealSpeedValue) dealSpeedValue.textContent = appState.dealSpeed + 'f/card';
+            updateDealTimeEstimate();
         });
     }
 
@@ -2841,7 +2854,8 @@ function handleExportToAE() {
         exportData.dealingCard = {
             enabled: true,
             x: aePos.x,
-            y: aePos.y
+            y: aePos.y,
+            staggerFrames: appState.dealSpeed || 3  // Frames between each card deal (1=fast, 5=slow)
         };
     }
 
@@ -2941,6 +2955,7 @@ function handleSaveProject() {
         deckPath: appState.deckPath,
         assetsRootPath: appState.assetsRootPath,
         stepBlending: appState.stepBlending,
+        dealSpeed: appState.dealSpeed,
         boardLayout: appState.boardLayout,
         // Save card states (without DOM elements)
         tableCards: appState.tableCards.map(c => ({
@@ -3029,6 +3044,7 @@ function handleLoadProject(e) {
             appState.deckPath = projectData.deckPath || null;
             appState.assetsRootPath = projectData.assetsRootPath || null;
             appState.stepBlending = projectData.stepBlending || 0;
+            appState.dealSpeed = projectData.dealSpeed || 3;
             appState.boardLayout = projectData.boardLayout || appState.boardLayout;
             // Fallback for old projects without slotGroups
             if (!appState.boardLayout.slotGroups) {
@@ -3058,6 +3074,12 @@ function handleLoadProject(e) {
                 const value = document.getElementById('stepBlendingValue');
                 if (slider) slider.value = projectData.stepBlending;
                 if (value) value.textContent = projectData.stepBlending + '%';
+            }
+            if (projectData.dealSpeed) {
+                const dealSlider = document.getElementById('dealSpeedSlider');
+                const dealValue = document.getElementById('dealSpeedValue');
+                if (dealSlider) dealSlider.value = projectData.dealSpeed;
+                if (dealValue) dealValue.textContent = projectData.dealSpeed + 'f/card';
             }
 
             // Re-render cards on table
@@ -4748,14 +4770,38 @@ function setupDealingCardControls() {
 
     dealingCardToggle.addEventListener('change', (e) => {
         appState.dealingCard.enabled = e.target.checked;
+        const dealSpeedRow = document.getElementById('dealSpeedRow');
         if (e.target.checked) {
             renderDealingSlot();
+            if (dealSpeedRow) dealSpeedRow.classList.remove('hidden');
+            updateDealTimeEstimate();
             setStatus('Dealing Card enabled — drag the deck marker to position');
         } else {
             removeDealingSlot();
+            if (dealSpeedRow) dealSpeedRow.classList.add('hidden');
             setStatus('Dealing Card disabled');
         }
     });
+}
+
+/**
+ * Update the estimated dealing duration display
+ * Formula matches AE: ((numCards-1) * staggerFrames + moveFrames + holdFrames) / fps
+ */
+function updateDealTimeEstimate() {
+    const el = document.getElementById('dealTimeEstimate');
+    if (!el) return;
+    const numCards = appState.tableCards.length;
+    if (numCards === 0) {
+        el.textContent = '';
+        return;
+    }
+    const stagger = appState.dealSpeed || 3;
+    const moveFrames = 10;  // MOVE_DURATION_FRAMES in AE
+    const holdFrames = Math.max(5, Math.round(30 / (3 / stagger)));  // Scale hold with speed
+    const totalFrames = Math.max(numCards - 1, 0) * stagger + moveFrames + holdFrames;
+    const seconds = (totalFrames / 30).toFixed(1);
+    el.textContent = '~' + seconds + 's';
 }
 
 /**

@@ -685,6 +685,12 @@
                                 <span>🃏 Dealing Card</span>
                             </label>
                         </div>
+                        <div class="setting-row hidden" id="dealSpeedRow">
+                            <label>Deal Speed:</label>
+                            <input type="range" id="dealSpeedSlider" min="1" max="5" step="1" value="3">
+                            <span id="dealSpeedValue">3f/card</span>
+                            <span class="deal-time-estimate" id="dealTimeEstimate"></span>
+                        </div>
                         <div class="setting-row">
                             <label>Step Blending:</label>
                             <input type="range" id="stepBlendingSlider" min="0" max="50" step="10" value="0">
