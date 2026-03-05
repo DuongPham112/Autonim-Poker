@@ -1,0 +1,6 @@
+{
+    "clientVersion": "2.0.6.1",
+    "scriptVersion": "1.0.0",
+    "assetVersion": "1.0.0",
+    "changelog": "Chuyển version check sang GitHub Raw URL"
+}

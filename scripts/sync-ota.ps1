@@ -4,14 +4,15 @@
     
 .DESCRIPTION
     1. Copies client/ -> BannerGeneratorAI/server/poker-assets/client-bundle/
-    2. Updates versions.json with current CLIENT_VERSION from updater.js
+    2. Updates versions.json at Autonim-Poker repo root (for GitHub Raw check)
     3. Optionally accepts a changelog message
+    4. Commits + pushes Autonim-Poker (versions.json) — NO commit to BannerGeneratorAI
 
 .PARAMETER Changelog
     Optional changelog message for this version
 
 .PARAMETER NoPush
-    If set, skip git commit/push for BannerGeneratorAI
+    If set, skip git commit/push
 
 .EXAMPLE
     .\sync-ota.ps1 -Changelog "feat: Save/Load layout with localStorage"
@@ -25,11 +26,11 @@ param(
 $ErrorActionPreference = "Stop"
 
 # Paths
-$PokerRoot = "I:\WebDev\Autonim-Poker"
-$ServerRoot = "I:\WebDev\BannerGeneratorAI\server"
+$PokerRoot = "I:\WebAppDev\Autonim-Poker"
+$ServerRoot = "I:\WebAppDev\BannerGeneratorAI\server"
 $ClientSrc = "$PokerRoot\client"
 $BundleDest = "$ServerRoot\poker-assets\client-bundle"
-$VersionsFile = "$ServerRoot\poker-assets\versions.json"
+$VersionsFile = "$PokerRoot\versions.json"
 $UpdaterFile = "$ClientSrc\js\modules\updater.js"
 
 Write-Host "========================================" -ForegroundColor Cyan
@@ -48,7 +49,7 @@ if ($updaterContent -match "const CLIENT_VERSION\s*=\s*'([^']+)'") {
     exit 1
 }
 
-# Step 2: Clean and sync client files
+# Step 2: Clean and sync client files to BannerGeneratorAI (for bundle download)
 Write-Host "[2/5] Syncing client/ -> client-bundle/..." -ForegroundColor Yellow
 
 # Remove old bundle
@@ -69,8 +70,8 @@ foreach ($pattern in $excludePatterns) {
 $fileCount = (Get-ChildItem $BundleDest -Recurse -File).Count
 Write-Host "       Copied $fileCount files" -ForegroundColor Green
 
-# Step 3: Update versions.json
-Write-Host "[3/5] Updating versions.json..." -ForegroundColor Yellow
+# Step 3: Update versions.json in Autonim-Poker repo root (GitHub Raw source)
+Write-Host "[3/5] Updating versions.json (Autonim-Poker repo root)..." -ForegroundColor Yellow
 
 $versions = Get-Content $VersionsFile -Raw | ConvertFrom-Json
 $oldVersion = $versions.clientVersion
@@ -86,28 +87,28 @@ if ($Changelog) {
     Write-Host "       Changelog: $Changelog" -ForegroundColor DarkGray
 }
 
-# Step 4: Git commit BannerGeneratorAI
-Write-Host "[4/5] Git commit (BannerGeneratorAI)..." -ForegroundColor Yellow
+# Step 4: Git commit + push Autonim-Poker (versions.json + source code)
+Write-Host "[4/5] Git commit (Autonim-Poker)..." -ForegroundColor Yellow
 
 if (-not $NoPush) {
-    Push-Location $ServerRoot\..
+    Push-Location $PokerRoot
     try {
-        git add server/poker-assets/client-bundle/ server/poker-assets/versions.json
-        git commit -m "chore: sync poker client v$clientVersion for OTA`n`n$Changelog"
-        Write-Host "       Committed" -ForegroundColor Green
+        git add versions.json
+        git commit -m "release: v$clientVersion`n`n$Changelog"
+        Write-Host "       Committed versions.json" -ForegroundColor Green
     } catch {
-        Write-Host "       Git commit failed: $_" -ForegroundColor Red
+        Write-Host "       Git commit skipped (maybe nothing changed): $_" -ForegroundColor DarkGray
     }
     Pop-Location
 } else {
     Write-Host "       Skipped (--NoPush)" -ForegroundColor DarkGray
 }
 
-# Step 5: Push
+# Step 5: Push Autonim-Poker
 Write-Host "[5/5] Pushing to remote..." -ForegroundColor Yellow
 
 if (-not $NoPush) {
-    Push-Location $ServerRoot\..
+    Push-Location $PokerRoot
     try {
         git push
         Write-Host "       Pushed to remote" -ForegroundColor Green
@@ -127,4 +128,5 @@ Write-Host "  Version: v$clientVersion" -ForegroundColor Green
 Write-Host "  Files:   $fileCount" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Next: Deploy BannerGeneratorAI to Vercel to make OTA live." -ForegroundColor Yellow
+Write-Host "Version check: GitHub Raw URL (live in ~5 min after push)" -ForegroundColor Yellow
+Write-Host "Bundle download: Deploy BannerGeneratorAI to Vercel to make OTA bundle live." -ForegroundColor Yellow

@@ -1,55 +1,84 @@
 /**
  * updater.js — OTA Client Update Module
  * 
- * Checks server for newer client version, downloads updated files,
- * writes them to the extension directory using Node.js fs.
- * Requires: authFetch (from auth.js), CEP environment with --enable-nodejs
+ * Version check: fetches versions.json from GitHub Raw URL (no auth needed).
+ * Bundle download: uses authFetch (from auth.js) for authenticated download.
+ * Requires: CEP environment with --enable-nodejs
  */
 
-// Current client version (matches versions.json on server)
+// Current client version (matches versions.json in Autonim-Poker repo root)
 const CLIENT_VERSION = '2.0.6.1';
 const UPDATE_CHECK_INTERVAL = 3600000; // 1 hour
 const JUST_UPDATED_KEY = 'poker_just_updated_version';
 
+// GitHub Raw URL for version check (public repo, no auth needed)
+// Cache TTL: ~5 min (GitHub Fastly CDN). After push, có thể delay ~5 phút.
+const GITHUB_VERSIONS_URL = 'https://raw.githubusercontent.com/DuongPham112/Autonim-Poker/main/versions.json';
+
 /**
- * Check if a newer client version is available
+ * Check if a newer client version is available.
+ * Primary: fetch versions.json from GitHub Raw URL (no auth, fast).
+ * Fallback: authFetch from server endpoint (if GitHub unreachable).
  * @returns {{ updateAvailable: boolean, serverVersion: string, changelog: string }}
  */
 async function checkForUpdates() {
     console.log('[Updater] Checking for updates... (current: v' + CLIENT_VERSION + ')');
 
+    let versions = null;
+    let source = '';
+
+    // --- Primary: GitHub Raw URL (no auth needed) ---
     try {
-        const response = await authFetch('/api/poker/check-version');
-        console.log('[Updater] check-version response status:', response.status);
-
-        if (!response.ok) {
-            throw new Error('Server returned ' + response.status);
+        console.log('[Updater] Trying GitHub Raw URL...');
+        const ghResponse = await fetch(GITHUB_VERSIONS_URL, { cache: 'no-store' });
+        if (ghResponse.ok) {
+            versions = await ghResponse.json();
+            source = 'github';
+            console.log('[Updater] ✓ Got versions from GitHub');
+        } else {
+            console.warn('[Updater] GitHub returned ' + ghResponse.status);
         }
-
-        const versions = await response.json();
-        const serverVersion = versions.clientVersion || '0.0.0';
-        const updateAvailable = compareVersions(serverVersion, CLIENT_VERSION) > 0;
-
-        console.log('[Updater] Server version: v' + serverVersion + ', update available: ' + updateAvailable);
-
-        return {
-            updateAvailable,
-            serverVersion,
-            currentVersion: CLIENT_VERSION,
-            scriptVersion: versions.scriptVersion || '0.0.0',
-            assetVersion: versions.assetVersion || '0.0.0',
-            changelog: versions.changelog || ''
-        };
-    } catch (error) {
-        console.warn('[Updater] Update check failed:', error.message, error);
-        // Don't show error in UI for auto-check — only for manual check
-        return {
-            updateAvailable: false,
-            serverVersion: CLIENT_VERSION,
-            currentVersion: CLIENT_VERSION,
-            error: error.message
-        };
+    } catch (ghErr) {
+        console.warn('[Updater] GitHub fetch failed:', ghErr.message);
     }
+
+    // --- Fallback: Server endpoint (needs auth) ---
+    if (!versions) {
+        try {
+            console.log('[Updater] Falling back to server endpoint...');
+            const srvResponse = await authFetch('/api/poker/check-version');
+            if (srvResponse.ok) {
+                versions = await srvResponse.json();
+                source = 'server';
+                console.log('[Updater] ✓ Got versions from server (fallback)');
+            } else {
+                throw new Error('Server returned ' + srvResponse.status);
+            }
+        } catch (srvErr) {
+            console.warn('[Updater] Server fallback also failed:', srvErr.message);
+            // Both sources failed — return error (NOT "up to date")
+            return {
+                updateAvailable: false,
+                serverVersion: CLIENT_VERSION,
+                currentVersion: CLIENT_VERSION,
+                error: 'Cannot check for updates. Both GitHub and server unreachable.'
+            };
+        }
+    }
+
+    const serverVersion = versions.clientVersion || '0.0.0';
+    const updateAvailable = compareVersions(serverVersion, CLIENT_VERSION) > 0;
+
+    console.log('[Updater] Version: v' + serverVersion + ' (from ' + source + '), update: ' + updateAvailable);
+
+    return {
+        updateAvailable,
+        serverVersion,
+        currentVersion: CLIENT_VERSION,
+        scriptVersion: versions.scriptVersion || '0.0.0',
+        assetVersion: versions.assetVersion || '0.0.0',
+        changelog: versions.changelog || ''
+    };
 }
 
 /**
