@@ -1,0 +1,114 @@
+{
+  "name": "test_01",
+  "type": "grid",
+  "boardStyle": "custom",
+  "description": "Saved preset: test_01",
+  "gridCols": 4,
+  "gridRows": 3,
+  "cardPlaces": [
+    {
+      "id": "place-13",
+      "x": 632,
+      "y": 183,
+      "rotation": 0,
+      "zOrder": 13,
+      "label": "1",
+      "zone": null
+    },
+    {
+      "id": "place-14",
+      "x": 741,
+      "y": 183,
+      "rotation": 0,
+      "zOrder": 14,
+      "label": "2",
+      "zone": null
+    },
+    {
+      "id": "place-15",
+      "x": 515,
+      "y": 569,
+      "rotation": -38,
+      "zOrder": 25,
+      "label": "3",
+      "zone": null,
+      "clonerId": "cloner-mma05zh9"
+    },
+    {
+      "id": "cloner-mma05zh9-1",
+      "x": 567,
+      "y": 539,
+      "rotation": -23,
+      "zOrder": 26,
+      "label": "4",
+      "zone": null,
+      "clonerId": "cloner-mma05zh9"
+    },
+    {
+      "id": "cloner-mma05zh9-2",
+      "x": 625,
+      "y": 523,
+      "rotation": -8,
+      "zOrder": 27,
+      "label": "5",
+      "zone": null,
+      "clonerId": "cloner-mma05zh9"
+    },
+    {
+      "id": "cloner-mma05zh9-3",
+      "x": 685,
+      "y": 523,
+      "rotation": 8,
+      "zOrder": 28,
+      "label": "6",
+      "zone": null,
+      "clonerId": "cloner-mma05zh9"
+    },
+    {
+      "id": "cloner-mma05zh9-4",
+      "x": 743,
+      "y": 539,
+      "rotation": 23,
+      "zOrder": 29,
+      "label": "7",
+      "zone": null,
+      "clonerId": "cloner-mma05zh9"
+    },
+    {
+      "id": "cloner-mma05zh9-5",
+      "x": 794,
+      "y": 569,
+      "rotation": 38,
+      "zOrder": 30,
+      "label": "8",
+      "zone": null,
+      "clonerId": "cloner-mma05zh9"
+    }
+  ],
+  "slotGroups": [
+    {
+      "id": "cloner-mma05zh9",
+      "name": "Cloner (arc, 6)",
+      "slotIds": [
+        "place-15",
+        "cloner-mma05zh9-1",
+        "cloner-mma05zh9-2",
+        "cloner-mma05zh9-3",
+        "cloner-mma05zh9-4",
+        "cloner-mma05zh9-5"
+      ],
+      "groupOrder": 0,
+      "color": "#c586c0",
+      "clonerConfig": {
+        "mode": "arc",
+        "sourceX": 181,
+        "sourceY": 386,
+        "count": 6,
+        "spacing": 123,
+        "arcRadius": 227,
+        "arcSpread": 76
+      }
+    }
+  ],
+  "pusoyConfig": null
+}

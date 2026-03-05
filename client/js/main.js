@@ -2766,6 +2766,17 @@ function saveInitialStateForExport() {
                 exportState[card.id].rowCount = rowCount;
             }
         }
+
+        // Include clonerId if the card's place belongs to a cloner group
+        // This helps dealing animation group source cards with their cloner
+        var clonerZone = wasInInitialSnap ? initialSnap[card.id].zone : card.zone;
+        if (clonerZone && clonerZone.startsWith('grid-')) {
+            const placeId = clonerZone.replace('grid-', '');
+            const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
+            if (place && place.clonerId) {
+                exportState[card.id].clonerId = place.clonerId;
+            }
+        }
     });
 
     return exportState;

@@ -194,7 +194,7 @@ function handleAddPusoyPack() {
             const x = pos.cx + (fanRadius * Math.sin(angle));
             const y = pivotY - (fanRadius * Math.cos(angle));
             const rotation = Math.round((angle * 180) / Math.PI);
-            const zOrder = zOrderBase + (row * 10) + col;
+            const zOrder = zOrderBase + (row * 10) + col; // Ascending: leftmost = lowest = behind, rightmost = in front
 
             newPlaces.push({
                 id: `${pos.packPrefix}-place-${placeIdx}`,

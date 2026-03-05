@@ -1,0 +1,265 @@
+{
+  "name": "fda",
+  "type": "grid",
+  "boardStyle": "custom",
+  "description": "Saved preset: fda",
+  "gridCols": 4,
+  "gridRows": 3,
+  "cardPlaces": [
+    {
+      "id": "p0-place-0",
+      "x": 554,
+      "y": 112,
+      "col": 0,
+      "row": 0,
+      "rotation": -15,
+      "zOrder": 0,
+      "label": "T1",
+      "zone": null
+    },
+    {
+      "id": "p0-place-1",
+      "x": 600,
+      "y": 106,
+      "col": 1,
+      "row": 0,
+      "rotation": 0,
+      "zOrder": 1,
+      "label": "T2",
+      "zone": null
+    },
+    {
+      "id": "p0-place-2",
+      "x": 647,
+      "y": 112,
+      "col": 2,
+      "row": 0,
+      "rotation": 15,
+      "zOrder": 2,
+      "label": "T3",
+      "zone": null
+    },
+    {
+      "id": "p0-place-3",
+      "x": 537,
+      "y": 180,
+      "col": 0,
+      "row": 1,
+      "rotation": -25,
+      "zOrder": 10,
+      "label": "T4",
+      "zone": null
+    },
+    {
+      "id": "p0-place-4",
+      "x": 568,
+      "y": 170,
+      "col": 1,
+      "row": 1,
+      "rotation": -12,
+      "zOrder": 11,
+      "label": "T5",
+      "zone": null
+    },
+    {
+      "id": "p0-place-5",
+      "x": 600,
+      "y": 166,
+      "col": 2,
+      "row": 1,
+      "rotation": 0,
+      "zOrder": 12,
+      "label": "T6",
+      "zone": null
+    },
+    {
+      "id": "p0-place-6",
+      "x": 633,
+      "y": 170,
+      "col": 3,
+      "row": 1,
+      "rotation": 13,
+      "zOrder": 13,
+      "label": "T7",
+      "zone": null
+    },
+    {
+      "id": "p0-place-7",
+      "x": 663,
+      "y": 180,
+      "col": 4,
+      "row": 1,
+      "rotation": 25,
+      "zOrder": 14,
+      "label": "T8",
+      "zone": null
+    },
+    {
+      "id": "p0-place-8",
+      "x": 545,
+      "y": 240,
+      "col": 0,
+      "row": 2,
+      "rotation": -27,
+      "zOrder": 20,
+      "label": "T9",
+      "zone": null
+    },
+    {
+      "id": "p0-place-9",
+      "x": 572,
+      "y": 229,
+      "col": 1,
+      "row": 2,
+      "rotation": -14,
+      "zOrder": 21,
+      "label": "T10",
+      "zone": null
+    },
+    {
+      "id": "p0-place-10",
+      "x": 600,
+      "y": 226,
+      "col": 2,
+      "row": 2,
+      "rotation": 0,
+      "zOrder": 22,
+      "label": "T11",
+      "zone": null
+    },
+    {
+      "id": "p0-place-11",
+      "x": 629,
+      "y": 229,
+      "col": 3,
+      "row": 2,
+      "rotation": 14,
+      "zOrder": 23,
+      "label": "T12",
+      "zone": null
+    },
+    {
+      "id": "p0-place-12",
+      "x": 656,
+      "y": 240,
+      "col": 4,
+      "row": 2,
+      "rotation": 28,
+      "zOrder": 24,
+      "label": "T13",
+      "zone": null
+    },
+    {
+      "id": "place-13",
+      "x": 463,
+      "y": 543,
+      "rotation": 0,
+      "zOrder": 25,
+      "label": "14",
+      "zone": null,
+      "clonerId": "cloner-mm9zilw8"
+    },
+    {
+      "id": "cloner-mm9zilw8-1",
+      "x": 543,
+      "y": 543,
+      "rotation": 0,
+      "zOrder": 26,
+      "label": "15",
+      "zone": null,
+      "clonerId": "cloner-mm9zilw8"
+    },
+    {
+      "id": "cloner-mm9zilw8-2",
+      "x": 623,
+      "y": 543,
+      "rotation": 0,
+      "zOrder": 27,
+      "label": "16",
+      "zone": null,
+      "clonerId": "cloner-mm9zilw8"
+    },
+    {
+      "id": "cloner-mm9zilw8-3",
+      "x": 703,
+      "y": 543,
+      "rotation": 0,
+      "zOrder": 28,
+      "label": "17",
+      "zone": null,
+      "clonerId": "cloner-mm9zilw8"
+    },
+    {
+      "id": "cloner-mm9zilw8-4",
+      "x": 783,
+      "y": 543,
+      "rotation": 0,
+      "zOrder": 29,
+      "label": "18",
+      "zone": null,
+      "clonerId": "cloner-mm9zilw8"
+    }
+  ],
+  "slotGroups": [
+    {
+      "id": "pusoy-p0-top",
+      "name": "Top Top",
+      "slotIds": [
+        "p0-place-0",
+        "p0-place-1",
+        "p0-place-2"
+      ],
+      "groupOrder": 0,
+      "color": "#4ec9b0"
+    },
+    {
+      "id": "pusoy-p0-mid",
+      "name": "Top Middle",
+      "slotIds": [
+        "p0-place-3",
+        "p0-place-4",
+        "p0-place-5",
+        "p0-place-6",
+        "p0-place-7"
+      ],
+      "groupOrder": 1,
+      "color": "#ce9178"
+    },
+    {
+      "id": "pusoy-p0-bottom",
+      "name": "Top Bottom",
+      "slotIds": [
+        "p0-place-8",
+        "p0-place-9",
+        "p0-place-10",
+        "p0-place-11",
+        "p0-place-12"
+      ],
+      "groupOrder": 2,
+      "color": "#569cd6"
+    },
+    {
+      "id": "cloner-mm9zilw8",
+      "name": "Cloner (linear-h, 5)",
+      "slotIds": [
+        "place-13",
+        "cloner-mm9zilw8-1",
+        "cloner-mm9zilw8-2",
+        "cloner-mm9zilw8-3",
+        "cloner-mm9zilw8-4"
+      ],
+      "groupOrder": 3,
+      "color": "#c586c0",
+      "clonerConfig": {
+        "mode": "linear-h",
+        "sourceX": 466,
+        "sourceY": 512.6279069767442,
+        "count": 5,
+        "spacing": 80,
+        "arcRadius": 200,
+        "arcSpread": 90
+      }
+    }
+  ],
+  "pusoyConfig": null
+}

@@ -7,8 +7,9 @@
  */
 
 // Current client version (matches versions.json on server)
-const CLIENT_VERSION = '2.0.6.0';
+const CLIENT_VERSION = '2.0.6.1';
 const UPDATE_CHECK_INTERVAL = 3600000; // 1 hour
+const JUST_UPDATED_KEY = 'poker_just_updated_version';
 
 /**
  * Check if a newer client version is available
@@ -19,8 +20,10 @@ async function checkForUpdates() {
 
     try {
         const response = await authFetch('/api/poker/check-version');
+        console.log('[Updater] check-version response status:', response.status);
+
         if (!response.ok) {
-            throw new Error('Version check failed: ' + response.status);
+            throw new Error('Server returned ' + response.status);
         }
 
         const versions = await response.json();
@@ -38,8 +41,8 @@ async function checkForUpdates() {
             changelog: versions.changelog || ''
         };
     } catch (error) {
-        console.warn('[Updater] Update check failed:', error.message);
-        updateStatusUI('error', 'Check failed: ' + error.message);
+        console.warn('[Updater] Update check failed:', error.message, error);
+        // Don't show error in UI for auto-check — only for manual check
         return {
             updateAvailable: false,
             serverVersion: CLIENT_VERSION,
@@ -76,13 +79,22 @@ async function applyUpdate() {
     updateStatusUI('downloading', 'Downloading update...');
 
     try {
+        console.log('[Updater] Fetching /api/poker/client-bundle...');
         const response = await authFetch('/api/poker/client-bundle');
+        console.log('[Updater] client-bundle response status:', response.status);
+
         if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            throw new Error(err.error || 'Bundle download failed: ' + response.status);
+            let errMsg = 'Server returned ' + response.status;
+            try {
+                const errBody = await response.json();
+                errMsg = errBody.error || errMsg;
+            } catch (_) { }
+            throw new Error(errMsg);
         }
 
+        console.log('[Updater] Parsing bundle JSON...');
         const bundle = await response.json();
+        console.log('[Updater] Bundle received: ' + (bundle.files ? bundle.files.length : 0) + ' files, version: ' + bundle.version);
 
         if (!bundle.files || bundle.files.length === 0) {
             updateStatusUI('idle', 'No files to update');
@@ -94,9 +106,11 @@ async function applyUpdate() {
         // Get the extension directory using CEP API
         const csInterface = new CSInterface();
         const extensionDir = csInterface.getSystemPath(SystemPath.EXTENSION);
+        console.log('[Updater] Extension dir:', extensionDir);
 
         // Write each file
         let filesUpdated = 0;
+        let fileErrors = [];
         for (const file of bundle.files) {
             try {
                 const targetPath = extensionDir + '/client/' + file.path.replace(/\//g, '/');
@@ -109,21 +123,28 @@ async function applyUpdate() {
                 const content = Buffer.from(file.content, 'base64');
                 require('fs').writeFileSync(targetPath, content);
                 filesUpdated++;
-                console.log('[Updater] Updated: ' + file.path + ' (' + file.size + ' bytes)');
+                console.log('[Updater] ✓ Updated: ' + file.path + ' (' + file.size + ' bytes)');
             } catch (fileErr) {
-                console.error('[Updater] Failed to write ' + file.path + ':', fileErr.message);
+                fileErrors.push(file.path);
+                console.error('[Updater] ✗ Failed to write ' + file.path + ':', fileErr.message);
             }
         }
 
-        // Store the new version
+        // Store the new version and "just updated" flag
         localStorage.setItem('poker_client_version', bundle.version);
+        localStorage.setItem(JUST_UPDATED_KEY, bundle.version);
 
-        console.log('[Updater] Update complete: ' + filesUpdated + '/' + bundle.files.length + ' files updated to v' + bundle.version);
-        updateStatusUI('success', 'Updated to v' + bundle.version + '! Restart panel to apply.');
+        const msg = 'Updated to v' + bundle.version + '! (' + filesUpdated + '/' + bundle.files.length + ' files)';
+        console.log('[Updater] ' + msg);
+        if (fileErrors.length > 0) {
+            console.warn('[Updater] Failed files:', fileErrors.join(', '));
+        }
+
+        updateStatusUI('success', msg + ' Restart to apply.');
 
         return { success: true, filesUpdated, version: bundle.version };
     } catch (error) {
-        console.error('[Updater] Update failed:', error.message);
+        console.error('[Updater] Update failed:', error.message, error);
         updateStatusUI('error', 'Update failed: ' + error.message);
         return { success: false, filesUpdated: 0, error: error.message };
     }
@@ -173,12 +194,30 @@ function initUpdaterUI() {
         versionEl.textContent = 'v' + CLIENT_VERSION;
     }
 
+    // Check if we just updated on last boot — show success message
+    const justUpdatedVersion = localStorage.getItem(JUST_UPDATED_KEY);
+    if (justUpdatedVersion) {
+        // Clear the flag so it only shows once
+        localStorage.removeItem(JUST_UPDATED_KEY);
+        console.log('[Updater] Just updated to v' + justUpdatedVersion + ', showing success');
+        updateStatusUI('success', 'Updated to v' + justUpdatedVersion + ' ✓');
+        // Auto-clear after 5 seconds
+        setTimeout(() => updateStatusUI('idle', ''), 5000);
+    }
+
     if (btnEl) {
         btnEl.addEventListener('click', async () => {
             btnEl.disabled = true;
             updateStatusUI('checking', 'Checking...');
 
             const result = await checkForUpdates();
+
+            if (result.error) {
+                // Show error only on manual check
+                updateStatusUI('error', 'Check failed: ' + result.error);
+                btnEl.disabled = false;
+                return;
+            }
 
             if (result.updateAvailable) {
                 updateStatusUI('available', 'v' + result.serverVersion + ' available!');
@@ -209,8 +248,16 @@ function initUpdaterUI() {
 
 /**
  * Auto-check for updates on boot (non-blocking)
+ * Does NOT show error if check fails — only shows badge if update available
  */
 async function autoCheckUpdate() {
+    // Skip auto-check if we just showed "just updated" message
+    const justUpdatedVersion = localStorage.getItem(JUST_UPDATED_KEY);
+    if (justUpdatedVersion) {
+        console.log('[Updater] Skipping auto-check — just updated flag present');
+        return;
+    }
+
     try {
         const result = await checkForUpdates();
         if (result.updateAvailable) {
@@ -221,7 +268,9 @@ async function autoCheckUpdate() {
                 btnEl.classList.add('has-update');
             }
         }
+        // If check failed or no update, stay silent — don't show error on boot
     } catch (e) {
-        // Silent fail — don't disrupt the user
+        // Silent fail — don't disrupt the user on auto-check
+        console.warn('[Updater] Auto-check silently failed:', e.message);
     }
 }

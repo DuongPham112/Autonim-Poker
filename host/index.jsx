@@ -313,6 +313,16 @@ function setupInitialScene(comp, initialState, assetsRootPath, layerMap, folderI
         return a.zOrder - b.zOrder;
     });
 
+    // DEBUG: Log sort order
+    $.writeln("[setupInitialScene] Sorted " + assetArray.length + " cards by zOrder:");
+    for (var di = 0; di < assetArray.length; di++) {
+        var dInfo = initialState[assetArray[di].id];
+        $.writeln("  [" + di + "] " + assetArray[di].id +
+            " zOrder=" + assetArray[di].zOrder +
+            " zone=" + (dInfo.zone || "?") +
+            " rot=" + (dInfo.rotation || 0) +
+            " faceUp=" + dInfo.isFaceUp);
+    }
 
     for (var i = 0; i < assetArray.length; i++) {
         var assetId = assetArray[i].id;
@@ -330,6 +340,13 @@ function setupInitialScene(comp, initialState, assetsRootPath, layerMap, folderI
 
             // Apply initial transform properties to the Pre-Comp Layer in Main Comp
             applyInitialTransform(layer, assetInfo, comp);
+
+            // DEBUG: Log layer index and actual Z after applying transform
+            var actualPos = layer.property("Position").valueAtTime(0, false);
+            $.writeln("  → Added " + assetId +
+                " layerIdx=" + layer.index +
+                " Z=" + actualPos[2].toFixed(4) +
+                " pos=[" + Math.round(actualPos[0]) + "," + Math.round(actualPos[1]) + "]");
 
             // Store reference in layer map
             layerMap[assetId] = layer;
@@ -626,7 +643,14 @@ function applyInitialTransform(layer, assetInfo, comp) {
     layer.property("Position").setValueAtTime(0, [posX, posY, zPos]);
 
     // Z Rotation (table rotation) — also as keyframe to hold
+    // IMPORTANT: When Y Rotation = 180° (face-down), AE's 3D rotation order (Rz × Ry)
+    // causes Z Rotation to appear visually MIRRORED to the viewer.
+    // A card with Z Rot = -45° and Y Rot = 180° LOOKS like +45° rotation.
+    // To compensate, we NEGATE Z Rotation for face-down cards.
     var rotation = assetInfo.rotation !== undefined ? assetInfo.rotation : 0;
+    if (!assetInfo.isFaceUp) {
+        rotation = -rotation; // Compensate for Y=180° mirroring the visual rotation
+    }
     layer.property("Z Rotation").setValueAtTime(0, rotation);
 
     // Y Rotation for card face: Face-up = 0°, Face-down = 180°
@@ -1123,11 +1147,27 @@ function processDealingAnimation(comp, layerMap, initialState, dealingCard) {
             var zone = cardInfo.zone || "table";
 
             // Extract player key from zone name
+            // "grid-bottom-5" → "bottom"
+            // "grid-cloner-mmcwejxf-1" → "cloner-mmcwejxf" (keep full cloner ID)
+            // "grid-place-5" → check clonerId, or use "place"
+            // "grid-cz-0" → "cz"
+            // "grid-pusoy-p0-top" → "pusoy-p0-top"
             var playerKey = zone;
             if (zone.indexOf("grid-") === 0) {
-                // "grid-bottom-5" → "bottom", "grid-top-8" → "top"
-                var parts = zone.replace("grid-", "").split("-");
-                playerKey = parts[0]; // "bottom", "top", etc.
+                var stripped = zone.replace("grid-", ""); // e.g. "cloner-mmcwejxf-1"
+                var parts = stripped.split("-");
+                if (parts[0] === "cloner" && parts.length >= 3) {
+                    // "cloner-mmcwejxf-1" → playerKey = "cloner-mmcwejxf"
+                    playerKey = parts[0] + "-" + parts[1];
+                } else if (parts[0] === "place" && cardInfo.clonerId) {
+                    // Source card of a cloner — group with its cloner
+                    playerKey = cardInfo.clonerId;
+                } else if (parts[0] === "pusoy" && parts.length >= 3) {
+                    // "pusoy-p0-top-2" → playerKey = "pusoy-p0"
+                    playerKey = parts[0] + "-" + parts[1];
+                } else {
+                    playerKey = parts[0]; // "bottom", "top", "cz", etc.
+                }
             }
 
             if (!zoneGroups[playerKey]) {
@@ -1141,12 +1181,16 @@ function processDealingAnimation(comp, layerMap, initialState, dealingCard) {
         }
     }
 
-    // Sort each player's cards by zonePosition (left to right)
+    // Sort each player's cards by zonePosition, then by zOrder as tiebreaker
+    // For grid/cloner slots (1 card per slot), zonePosition is always 0,
+    // so zOrder determines dealing order within the group
     var playerKeys = [];
     for (var pk in zoneGroups) {
         if (zoneGroups.hasOwnProperty(pk)) {
             zoneGroups[pk].sort(function (a, b) {
-                return a.zonePosition - b.zonePosition;
+                var posDiff = (a.zonePosition || 0) - (b.zonePosition || 0);
+                if (posDiff !== 0) return posDiff;
+                return (a.info.zOrder || 0) - (b.info.zOrder || 0);
             });
             playerKeys.push(pk);
         }
@@ -1184,8 +1228,9 @@ function processDealingAnimation(comp, layerMap, initialState, dealingCard) {
     // Cards fly at Z_DEAL_FRONT (in front of all) while at dealing slot,
     // lift to Z_DEAL_LIFT mid-flight to clear other cards in 3D,
     // then settle to their target zPos at destination
-    var Z_DEAL_FRONT = -100;  // In front of all cards while waiting at deal slot
+    var Z_DEAL_FRONT = -100;  // Base Z for dealing pile (in front of all setup cards)
     var Z_DEAL_LIFT = -50;    // Lifted Z mid-flight to avoid 3D crossing with rotated cards
+    var Z_DEAL_STAGGER = 0.5; // Z spacing between cards at dealing pile
 
     // Animate each card from dealing position to setup position
     for (var i = 0; i < cardArray.length; i++) {
@@ -1212,18 +1257,23 @@ function processDealingAnimation(comp, layerMap, initialState, dealingCard) {
             zPos = 0;
         }
 
+        // Calculate dealing pile Z: card dealt first (i=0) = closest to camera (most negative Z)
+        // Card dealt last = furthest back in pile. This ensures visual stacking matches dealing order,
+        // regardless of AE layer stack order (which depends on setupInitialScene zOrder sorting).
+        var dealZ = Z_DEAL_FRONT - ((cardArray.length - 1 - i) * Z_DEAL_STAGGER);
+
         // Midpoint XY (for Z-lift arc keyframe)
         var midX = dealX + (targetX - dealX) * 0.5;
         var midY = dealY + (targetY - dealY) * 0.5;
 
         // --- POSITION keyframes with Z-lift arc (dealing → lift → setup) ---
-        // Cards start at deal position with Z_DEAL_FRONT (above all other cards),
+        // Cards start at deal position with staggered Z (pile order matches dealing order),
         // lift to Z_DEAL_LIFT at mid-flight to avoid 3D crossing during rotation,
         // then descend to their target zPos at destination
         var posProperty = layer.property("Position");
-        posProperty.setValueAtTime(0, [dealX, dealY, Z_DEAL_FRONT]);
+        posProperty.setValueAtTime(0, [dealX, dealY, dealZ]);
         if (startTime > 0) {
-            posProperty.setValueAtTime(startTime, [dealX, dealY, Z_DEAL_FRONT]);
+            posProperty.setValueAtTime(startTime, [dealX, dealY, dealZ]);
         }
         // Mid-flight: lifted Z to clear other cards in 3D
         posProperty.setValueAtTime(midTime, [midX, midY, Z_DEAL_LIFT]);
@@ -1232,31 +1282,29 @@ function processDealingAnimation(comp, layerMap, initialState, dealingCard) {
         posProperty.setValueAtTime(dealEndTime, [targetX, targetY, zPos]);
 
         // --- Z ROTATION keyframes ---
-        // Pusoy fan cards (have row/col) get Z Rotation expression from applyPusoyPositionExpression
-        // that computes rotation from fan formula. If we animate 0→targetRot here,
-        // the expression adds its offset on top → rotation is doubled/wrong.
-        // Solution: For Pusoy cards, bake targetRot as constant (expression handles delta).
-        //           For non-Pusoy cards (cloner arc, poker, grid), animate 0→targetRot.
+        // IMPORTANT: Y Rotation = 180° (face-down) mirrors Z Rotation visually.
+        // Cards start face-down during dealing, so initial rotation 0° is fine.
+        // At destination: if card stays face-down, negate targetRot to compensate.
         var hasPusoyExpression = (info.row !== undefined && info.col !== undefined);
         var rotProperty = layer.property("Z Rotation");
+        var visualTargetRot = info.isFaceUp ? targetRot : -targetRot; // Negate for face-down cards
 
         if (hasPusoyExpression) {
             // Pusoy fan: keep rotation at targetRot throughout
-            // Expression will compute offset = (newRot - defRot) and add to this value
-            rotProperty.setValueAtTime(0, targetRot);
+            rotProperty.setValueAtTime(0, visualTargetRot);
             if (startTime > 0) {
-                rotProperty.setValueAtTime(startTime, targetRot);
+                rotProperty.setValueAtTime(startTime, visualTargetRot);
             }
-            rotProperty.setValueAtTime(endTime, targetRot);
-            rotProperty.setValueAtTime(dealEndTime, targetRot);
+            rotProperty.setValueAtTime(endTime, visualTargetRot);
+            rotProperty.setValueAtTime(dealEndTime, visualTargetRot);
         } else {
-            // Non-Pusoy: animate from 0° → targetRot (no expression override)
+            // Non-Pusoy: animate from 0° → visualTargetRot
             rotProperty.setValueAtTime(0, 0);
             if (startTime > 0) {
                 rotProperty.setValueAtTime(startTime, 0);
             }
-            rotProperty.setValueAtTime(endTime, targetRot);
-            rotProperty.setValueAtTime(dealEndTime, targetRot);
+            rotProperty.setValueAtTime(endTime, visualTargetRot);
+            rotProperty.setValueAtTime(dealEndTime, visualTargetRot);
         }
 
         // --- Y ROTATION (face state) ---
