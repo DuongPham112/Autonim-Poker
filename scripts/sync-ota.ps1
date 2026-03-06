@@ -26,8 +26,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 # Paths
-$PokerRoot = "I:\WebAppDev\Autonim-Poker"
-$ServerRoot = "I:\WebAppDev\BannerGeneratorAI\server"
+$PokerRoot = "I:\WebDev\Autonim-Poker"
+$ServerRoot = "I:\WebDev\BannerGeneratorAI\server"
 $ClientSrc = "$PokerRoot\client"
 $BundleDest = "$ServerRoot\poker-assets\client-bundle"
 $VersionsFile = "$PokerRoot\versions.json"
@@ -44,7 +44,8 @@ $updaterContent = Get-Content $UpdaterFile -Raw
 if ($updaterContent -match "const CLIENT_VERSION\s*=\s*'([^']+)'") {
     $clientVersion = $Matches[1]
     Write-Host "       Client version: v$clientVersion" -ForegroundColor Green
-} else {
+}
+else {
     Write-Host "ERROR: Could not find CLIENT_VERSION in updater.js" -ForegroundColor Red
     exit 1
 }
@@ -96,11 +97,13 @@ if (-not $NoPush) {
         git add versions.json
         git commit -m "release: v$clientVersion`n`n$Changelog"
         Write-Host "       Committed versions.json" -ForegroundColor Green
-    } catch {
+    }
+    catch {
         Write-Host "       Git commit skipped (maybe nothing changed): $_" -ForegroundColor DarkGray
     }
     Pop-Location
-} else {
+}
+else {
     Write-Host "       Skipped (--NoPush)" -ForegroundColor DarkGray
 }
 
@@ -112,11 +115,13 @@ if (-not $NoPush) {
     try {
         git push
         Write-Host "       Pushed to remote" -ForegroundColor Green
-    } catch {
+    }
+    catch {
         Write-Host "       Git push failed: $_" -ForegroundColor Red
     }
     Pop-Location
-} else {
+}
+else {
     Write-Host "       Skipped (--NoPush)" -ForegroundColor DarkGray
 }
 
