@@ -1,6 +1,6 @@
-{
-    "clientVersion": "2.0.6.1",
-    "scriptVersion": "1.0.0",
-    "assetVersion": "1.0.0",
-    "changelog": "Chuyển version check sang GitHub Raw URL"
+﻿{
+    "clientVersion":  "2.0.6.1",
+    "scriptVersion":  "1.0.0",
+    "assetVersion":  "1.0.0",
+    "changelog":  "v2.0.6.1: switch version check to GitHub Raw URL (no auth needed), fix arc/pusoy card z-order, fix dealing animation player grouping, fix update status after successful update"
 }
