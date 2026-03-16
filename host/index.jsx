@@ -1650,6 +1650,18 @@ function processScenarioAnimation(comp, scenario, layerMap, stepBlending, timeOf
                     }
                 }
 
+                // Record move info for visual mouse (non-swap transforms)
+                if (action.startPosition && action.endPosition) {
+                    swapTimeline.push({
+                        isMove: true,
+                        stepIndex: s,
+                        initiatorStartTime: transformStartTime,
+                        initiatorEndTime: transformStartTime + moveDuration,
+                        initiatorStartPos: action.startPosition,
+                        initiatorEndPos: action.endPosition
+                    });
+                }
+
             } catch (e) {
                 $.writeln("Error processing action for " + action.targetId + ": " + e.toString());
             }
@@ -2265,6 +2277,11 @@ function processSpinEffect(layer, startTime, stepDuration, comp) {
 function createVisualMouseLayer(comp, swapTimeline, finalTime) {
     if (!swapTimeline || swapTimeline.length === 0) return null;
 
+    // Sort timeline by initiatorStartTime to ensure chronological order
+    swapTimeline.sort(function(a, b) {
+        return a.initiatorStartTime - b.initiatorStartTime;
+    });
+
     var frameDuration = 1 / FRAME_RATE;
     var leadInFrames = 5;  // 5 frames to travel to card position
     var leadInDuration = leadInFrames * frameDuration;
@@ -2293,21 +2310,20 @@ function createVisualMouseLayer(comp, swapTimeline, finalTime) {
     positionProp.setValueAtTime(0, [offScreenX, offScreenY, mouseZ]);
 
     for (var i = 0; i < swapTimeline.length; i++) {
-        var swap = swapTimeline[i];
+        var entry = swapTimeline[i];
 
-        // Get positions from swap data
-        var initStartX = swap.initiatorStartPos ? swap.initiatorStartPos.x : comp.width / 2;
-        var initStartY = swap.initiatorStartPos ? swap.initiatorStartPos.y : comp.height / 2;
-        var initEndX = swap.initiatorEndPos ? swap.initiatorEndPos.x : initStartX;
-        var initEndY = swap.initiatorEndPos ? swap.initiatorEndPos.y : initStartY;
+        // Get positions from entry data
+        var initStartX = entry.initiatorStartPos ? entry.initiatorStartPos.x : comp.width / 2;
+        var initStartY = entry.initiatorStartPos ? entry.initiatorStartPos.y : comp.height / 2;
+        var initEndX = entry.initiatorEndPos ? entry.initiatorEndPos.x : initStartX;
+        var initEndY = entry.initiatorEndPos ? entry.initiatorEndPos.y : initStartY;
 
         // Phase 1: Travel to initiator's start position (lead-in)
-        var arrivalTime = swap.initiatorStartTime;
+        var arrivalTime = entry.initiatorStartTime;
         var departTime = arrivalTime - leadInDuration;
         if (departTime < 0) departTime = 0;
 
-        // If this is the first swap, travel from off-screen
-        // If not, the previous keyframe handles transition
+        // If this is the first entry, travel from off-screen
         if (i === 0) {
             positionProp.setValueAtTime(departTime, [offScreenX, offScreenY, mouseZ]);
         }
@@ -2316,19 +2332,16 @@ function createVisualMouseLayer(comp, swapTimeline, finalTime) {
         positionProp.setValueAtTime(arrivalTime, [initStartX, initStartY, mouseZ]);
 
         // Phase 2: Follow initiator to its end position
-        positionProp.setValueAtTime(swap.initiatorEndTime, [initEndX, initEndY, mouseZ]);
-
-        // Phase 3: If there's a next swap, travel to next initiator's start
-        // Otherwise stay at current position (will exit off-screen after loop)
+        positionProp.setValueAtTime(entry.initiatorEndTime, [initEndX, initEndY, mouseZ]);
     }
 
-    // Exit off-screen after last swap
-    var lastSwap = swapTimeline[swapTimeline.length - 1];
-    var exitStartTime = lastSwap.initiatorEndTime + (2 * frameDuration); // Small pause
+    // Exit off-screen after last entry
+    var lastEntry = swapTimeline[swapTimeline.length - 1];
+    var exitStartTime = lastEntry.initiatorEndTime + (2 * frameDuration); // Small pause
     var exitEndTime = exitStartTime + exitDuration;
 
-    var lastEndX = lastSwap.initiatorEndPos ? lastSwap.initiatorEndPos.x : comp.width / 2;
-    var lastEndY = lastSwap.initiatorEndPos ? lastSwap.initiatorEndPos.y : comp.height / 2;
+    var lastEndX = lastEntry.initiatorEndPos ? lastEntry.initiatorEndPos.x : comp.width / 2;
+    var lastEndY = lastEntry.initiatorEndPos ? lastEntry.initiatorEndPos.y : comp.height / 2;
 
     positionProp.setValueAtTime(exitStartTime, [lastEndX, lastEndY, mouseZ]);
     positionProp.setValueAtTime(exitEndTime, [offScreenX, offScreenY, mouseZ]);
@@ -2336,18 +2349,18 @@ function createVisualMouseLayer(comp, swapTimeline, finalTime) {
     // Apply easing to all keyframes
     applyBezierEasing(positionProp);
 
-    // Set opacity: visible only during swap sequences
+    // Set opacity: visible only during movement sequences
     var opacityProp = mouseLayer.property("Opacity");
     opacityProp.setValueAtTime(0, 0); // Start invisible
 
-    // First swap: fade in
-    var firstSwap = swapTimeline[0];
-    var fadeInStart = firstSwap.initiatorStartTime - leadInDuration;
+    // First entry: fade in
+    var firstEntry = swapTimeline[0];
+    var fadeInStart = firstEntry.initiatorStartTime - leadInDuration;
     if (fadeInStart < 0) fadeInStart = 0;
     opacityProp.setValueAtTime(fadeInStart, 0);
     opacityProp.setValueAtTime(fadeInStart + (2 * frameDuration), 100);
 
-    // Last swap: fade out
+    // Last entry: fade out
     opacityProp.setValueAtTime(exitStartTime, 100);
     opacityProp.setValueAtTime(exitEndTime, 0);
 

@@ -1616,7 +1616,7 @@ body {
    ============================================ */
 .card-context-menu {
     position: absolute;
-    z-index: 10000;
+    z-index: 99999;
     display: flex;
     gap: 4px;
     background: var(--bg-secondary);
@@ -2065,6 +2065,10 @@ body {
 
 .group-actions button.delete-group:hover {
     color: var(--accent-red);
+}
+
+.group-actions button.edit-group:hover {
+    color: var(--accent-green);
 }
 
 /* Marker highlight when hovering a group in panel */
@@ -4283,4 +4287,196 @@ body.grouping-mode-active .zone-card:hover:not(.grouped) {
     border-color: var(--accent-green);
     color: var(--accent-green);
     background: rgba(78, 201, 176, 0.08);
+}
+
+/* ============================================
+   SLOT FILL FEATURE
+   ============================================ */
+
+/* Multi-selected drop zone — gold highlight */
+.card-drop-zone.zone-multi-selected {
+    border-color: #ffd700 !important;
+    box-shadow: 0 0 12px rgba(255, 215, 0, 0.4),
+        inset 0 0 8px rgba(255, 215, 0, 0.15);
+    background: rgba(255, 215, 0, 0.08) !important;
+}
+
+.card-drop-zone.zone-multi-selected .zone-number {
+    color: #ffd700;
+    font-weight: 700;
+}
+
+/* Slot Fill Context Menu */
+.slot-context-menu {
+    position: absolute;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--accent-green);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    min-width: 130px;
+}
+
+.slot-context-menu.hidden {
+    display: none;
+}
+
+.slot-context-menu .ctx-btn {
+    width: 100%;
+    text-align: left;
+    padding: 6px 10px;
+    font-size: 12px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.slot-context-menu .ctx-btn:hover {
+    background: rgba(78, 201, 176, 0.15);
+    border-color: rgba(78, 201, 176, 0.3);
+    color: var(--accent-green);
+}
+
+/* Manual Fill Overlay */
+.manual-fill-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(3px);
+    animation: manualFillFadeIn 0.15s ease;
+}
+
+.manual-fill-overlay.hidden {
+    display: none;
+}
+
+@keyframes manualFillFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.manual-fill-panel {
+    width: 400px;
+    max-width: 90%;
+    background: var(--bg-secondary);
+    border: 1px solid var(--accent-green);
+    border-radius: 10px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+    padding: 20px;
+}
+
+.manual-fill-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+
+.manual-fill-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.manual-fill-count {
+    font-size: 11px;
+    color: var(--accent-green);
+    font-weight: 600;
+    padding: 2px 8px;
+    background: rgba(78, 201, 176, 0.12);
+    border-radius: 10px;
+}
+
+.manual-fill-input {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    letter-spacing: 0.5px;
+    transition: border-color 0.2s;
+    margin-bottom: 8px;
+}
+
+.manual-fill-input:focus {
+    outline: none;
+    border-color: var(--accent-green);
+}
+
+.manual-fill-input::placeholder {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-family: inherit;
+}
+
+.manual-fill-error {
+    padding: 6px 10px;
+    background: rgba(241, 76, 76, 0.1);
+    border: 1px solid rgba(241, 76, 76, 0.3);
+    border-radius: 5px;
+    font-size: 11px;
+    color: var(--accent-red);
+    margin-bottom: 8px;
+    white-space: pre-line;
+}
+
+.manual-fill-error.hidden {
+    display: none;
+}
+
+.manual-fill-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+/* ============================================
+   BACKGROUND IMAGE CONTROLS
+   ============================================ */
+
+.bg-image-controls {
+    margin-top: 8px;
+}
+
+.bg-image-controls.hidden {
+    display: none;
+}
+
+.bg-image-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.bg-image-preview {
+    margin-top: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--bg-primary);
+}
+
+.bg-image-preview.hidden {
+    display: none;
+}
+
+.bg-image-preview img {
+    width: 100%;
+    max-height: 100px;
+    object-fit: cover;
+    display: block;
 }

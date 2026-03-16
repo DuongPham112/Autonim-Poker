@@ -200,7 +200,7 @@
 
                 <!-- Cloner Tool -->
                 <div class="board-tools-section">
-                    <button id="clonerBtn" class="btn btn-sm btn-accent btn-block">🔲 Cloner</button>
+                    <button id="clonerBtn" class="btn btn-sm btn-accent btn-block" disabled title="Select a slot first">🔲 Cloner</button>
                 </div>
 
                 <!-- Cloner Settings Panel (hidden by default) -->
@@ -223,6 +223,11 @@
                         <span class="slider-label">Spacing:</span>
                         <input type="range" id="clonerSpacing" min="30" max="300" value="80">
                         <span class="slider-value" id="clonerSpacingValue">80</span>
+                    </div>
+                    <div class="slider-control">
+                        <span class="slider-label">Rotation:</span>
+                        <input type="range" id="clonerRotation" min="-180" max="180" value="0">
+                        <span class="slider-value" id="clonerRotationValue">0°</span>
                     </div>
                     <div id="clonerArcControls" class="hidden">
                         <div class="slider-control">
@@ -261,6 +266,17 @@
                             <option value="image">Custom Image</option>
                         </select>
                     </div>
+                    <!-- Image Background Controls (shown when 'image' selected) -->
+                    <div class="bg-image-controls hidden" id="bgImageControls">
+                        <div class="bg-image-actions">
+                            <button id="bgImageBrowseBtn" class="btn btn-sm btn-secondary">📷 Browse</button>
+                            <button id="bgImageRemoveBtn" class="btn btn-sm btn-danger hidden">🗑️ Remove</button>
+                            <input type="file" id="bgImageFileInput" accept="image/*" style="display:none">
+                        </div>
+                        <div id="bgImagePreview" class="bg-image-preview hidden">
+                            <img id="bgImageThumb" alt="Background preview">
+                        </div>
+                    </div>
                 </div>
             </aside>
 
@@ -270,7 +286,7 @@
                 <header class="header">
                     <div class="header-left">
                         <h1 class="logo">🎴 Autonim-Poker</h1>
-                        <span class="version" id="pluginVersion">v2.0.6.1</span>
+                        <span class="version" id="pluginVersion">v2.0.6.3</span>
                     </div>
                     <div class="header-center">
                         <div class="phase-indicator">
@@ -455,6 +471,29 @@
                                 title="Spin All Grouped Cards">
                                 🌀 Spin All
                             </button>
+                        </div>
+
+                        <!-- Slot Fill Context Menu -->
+                        <div id="slotContextMenu" class="slot-context-menu hidden">
+                            <button id="slotFillAutoBtn" class="ctx-btn">🎲 Auto Fill</button>
+                            <button id="slotFillManualBtn" class="ctx-btn">✏️ Manual Fill</button>
+                        </div>
+
+                        <!-- Manual Fill Input Overlay -->
+                        <div id="manualFillOverlay" class="manual-fill-overlay hidden">
+                            <div class="manual-fill-panel">
+                                <div class="manual-fill-header">
+                                    <span class="manual-fill-title">Fill Slots Manually</span>
+                                    <span id="manualFillSlotCount" class="manual-fill-count"></span>
+                                </div>
+                                <input type="text" id="manualFillInput" class="manual-fill-input"
+                                    placeholder="e.g. As Kh 10d Qc 2s" autocomplete="off" spellcheck="false">
+                                <div id="manualFillError" class="manual-fill-error hidden"></div>
+                                <div class="manual-fill-actions">
+                                    <button id="manualFillConfirm" class="btn btn-sm btn-success">Fill</button>
+                                    <button id="manualFillCancel" class="btn btn-sm btn-danger">Cancel</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

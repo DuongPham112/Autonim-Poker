@@ -89,6 +89,9 @@ const appState = {
     groupUndoStack: [],           // Undo stack for group operations
     pendingGroupOrderOverrides: null, // Pending group reorder for next step commit
 
+    // Slot Fill (multi-select drop zones)
+    selectedDropZones: [],            // Array of placeIds for multi-selected zones
+
     // Grouping Mode
     groupingMode: false,          // Whether grouping mode is enabled
     groupedCards: [],             // Cards selected for grouping
@@ -169,6 +172,10 @@ let autoStepPopup, autoStepYes, autoStepNo;
 // Context Menu Elements
 let cardContextMenu, ctxFlipBtn, ctxFlipAniBtn, ctxSlamBtn, ctxSpinBtn;
 let ctxFlipAllBtn, ctxSlamAllBtn, ctxSpinAllBtn, ctxGroupDivider;
+
+// Slot Fill Elements
+let slotContextMenu, slotFillAutoBtn, slotFillManualBtn;
+let manualFillOverlay, manualFillInput, manualFillError, manualFillConfirm, manualFillCancel, manualFillSlotCount;
 
 // Grouping Mode Elements
 let groupingSection, groupingModeToggle, autoRecordToggle, autoRecordDelay, autoRecordDelayValue;
@@ -464,6 +471,17 @@ function getDOMElements() {
     ctxSpinAllBtn = document.getElementById('ctxSpinAllBtn');
     ctxGroupDivider = document.getElementById('ctxGroupDivider');
 
+    // Slot Fill Elements
+    slotContextMenu = document.getElementById('slotContextMenu');
+    slotFillAutoBtn = document.getElementById('slotFillAutoBtn');
+    slotFillManualBtn = document.getElementById('slotFillManualBtn');
+    manualFillOverlay = document.getElementById('manualFillOverlay');
+    manualFillInput = document.getElementById('manualFillInput');
+    manualFillError = document.getElementById('manualFillError');
+    manualFillConfirm = document.getElementById('manualFillConfirm');
+    manualFillCancel = document.getElementById('manualFillCancel');
+    manualFillSlotCount = document.getElementById('manualFillSlotCount');
+
     // Status
     statusMessage = document.getElementById('statusMessage');
 
@@ -720,6 +738,43 @@ function bindEvents() {
         }
     });
 
+    // Slot Fill Events
+    if (slotFillAutoBtn) slotFillAutoBtn.addEventListener('click', fillSlotsAuto);
+    if (slotFillManualBtn) slotFillManualBtn.addEventListener('click', showManualFillOverlay);
+    if (manualFillConfirm) manualFillConfirm.addEventListener('click', executeManualFill);
+    if (manualFillCancel) manualFillCancel.addEventListener('click', hideManualFillOverlay);
+    if (manualFillInput) {
+        manualFillInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); executeManualFill(); }
+            if (e.key === 'Escape') { e.preventDefault(); hideManualFillOverlay(); }
+        });
+    }
+    // Click outside slot context menu to close it
+    document.addEventListener('click', (e) => {
+        if (slotContextMenu && !slotContextMenu.classList.contains('hidden')) {
+            if (!slotContextMenu.contains(e.target)) {
+                hideSlotContextMenu();
+            }
+        }
+    });
+    // Click on overlay background to close manual fill
+    if (manualFillOverlay) {
+        manualFillOverlay.addEventListener('click', (e) => {
+            if (e.target === manualFillOverlay) hideManualFillOverlay();
+        });
+    }
+    // Escape key to close all slot fill UI
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            if (manualFillOverlay && !manualFillOverlay.classList.contains('hidden')) {
+                hideManualFillOverlay();
+            } else if (slotContextMenu && !slotContextMenu.classList.contains('hidden')) {
+                hideSlotContextMenu();
+                clearDropZoneSelection();
+            }
+        }
+    });
+
     // Debug Overlay
     if (toggleDebugBtn) toggleDebugBtn.addEventListener('click', () => {
         debugOverlay.classList.toggle('hidden');
@@ -793,6 +848,9 @@ function setPhase(phase) {
     document.body.classList.remove('phase-board-setting');
     document.body.classList.remove('phase-setup');
     clearCardDropZones(); // Clear drop zones when switching phases
+    clearDropZoneSelection();
+    hideSlotContextMenu();
+    hideManualFillOverlay();
 
     // Toggle card tray disabled state
     var cardTrayPanel = document.getElementById('cardTrayPanel');
@@ -1657,7 +1715,7 @@ function rerenderZoneCards(zoneName, zoneElement) {
 
 function placeCardInZone(card, zoneName, rotation, zoneElement) {
     // Take snapshot BEFORE placing card (for auto-step feature)
-    const snapshotBeforePlace = (appState.phase === 'record' && !appState.isEditingStep) ? takeSnapshot() : null;
+    const snapshotBeforePlace = (appState.phase === 'record' && !appState.isEditingStep && !appState._bulkApplying) ? takeSnapshot() : null;
 
     // Mark as not in tray
     card.inTray = false;
@@ -3974,12 +4032,14 @@ function showCardContextMenu(card) {
     // Update button states
     updateContextMenuState(card);
 
-    // Show/hide group action buttons based on grouping mode
+    // Show/hide group action buttons — show if grouping with 2+ grouped, OR if 2+ cards are on the table
+    const tableCardsOnBoard = appState.tableCards.filter(c => c.zone && !c.inTray);
     const hasGroupedCards = appState.groupingMode && appState.groupedCards.length > 1;
-    if (ctxGroupDivider) ctxGroupDivider.classList.toggle('hidden', !hasGroupedCards);
-    if (ctxFlipAllBtn) ctxFlipAllBtn.classList.toggle('hidden', !hasGroupedCards);
-    if (ctxSlamAllBtn) ctxSlamAllBtn.classList.toggle('hidden', !hasGroupedCards);
-    if (ctxSpinAllBtn) ctxSpinAllBtn.classList.toggle('hidden', !hasGroupedCards);
+    const showAllBtns = hasGroupedCards || tableCardsOnBoard.length >= 2;
+    if (ctxGroupDivider) ctxGroupDivider.classList.toggle('hidden', !showAllBtns);
+    if (ctxFlipAllBtn) ctxFlipAllBtn.classList.toggle('hidden', !showAllBtns);
+    if (ctxSlamAllBtn) ctxSlamAllBtn.classList.toggle('hidden', !showAllBtns);
+    if (ctxSpinAllBtn) ctxSpinAllBtn.classList.toggle('hidden', !showAllBtns);
 
     cardContextMenu.classList.remove('hidden');
 }
@@ -4092,20 +4152,24 @@ function toggleCtxSlam() {
  * Toggle flip action on ALL grouped cards
  */
 function toggleCtxFlipAll() {
-    if (appState.groupedCards.length === 0) return;
+    // Use grouped cards if in grouping mode, otherwise all table cards on board
+    const targetCards = (appState.groupingMode && appState.groupedCards.length > 0)
+        ? appState.groupedCards
+        : appState.tableCards.filter(c => c.zone && !c.inTray);
+    if (targetCards.length === 0) return;
 
     // Determine new state: toggle based on majority
-    const enabledCount = appState.groupedCards.filter(c => c.flipAction).length;
-    const newState = enabledCount < appState.groupedCards.length / 2;
+    const enabledCount = targetCards.filter(c => c.flipAction).length;
+    const newState = enabledCount < targetCards.length / 2;
 
-    appState.groupedCards.forEach(card => {
+    targetCards.forEach(card => {
         card.flipAction = newState;
         // Flip visually if state changed
         flipCard(card);
     });
 
     // Update properties panel if selected card is in group
-    if (appState.selectedCard && appState.groupedCards.some(c => c.id === appState.selectedCard.id)) {
+    if (appState.selectedCard && targetCards.some(c => c.id === appState.selectedCard.id)) {
         flipCardCheck.checked = appState.selectedCard.flipAction;
         if (ctxFlipBtn) {
             ctxFlipBtn.classList.toggle('active', appState.selectedCard.flipAction);
@@ -4113,8 +4177,8 @@ function toggleCtxFlipAll() {
     }
 
     setStatus(newState
-        ? `Flip animation enabled for ${appState.groupedCards.length} cards`
-        : `Flip animation disabled for ${appState.groupedCards.length} cards`
+        ? `Flip animation enabled for ${targetCards.length} cards`
+        : `Flip animation disabled for ${targetCards.length} cards`
     );
 
     // Auto-hide menu after selection
@@ -4127,18 +4191,22 @@ function toggleCtxFlipAll() {
  * Toggle slam effect on ALL grouped cards
  */
 function toggleCtxSlamAll() {
-    if (appState.groupedCards.length === 0) return;
+    // Use grouped cards if in grouping mode, otherwise all table cards on board
+    const targetCards = (appState.groupingMode && appState.groupedCards.length > 0)
+        ? appState.groupedCards
+        : appState.tableCards.filter(c => c.zone && !c.inTray);
+    if (targetCards.length === 0) return;
 
     // Determine new state: toggle based on majority
-    const enabledCount = appState.groupedCards.filter(c => c.slamEffect).length;
-    const newState = enabledCount < appState.groupedCards.length / 2;
+    const enabledCount = targetCards.filter(c => c.slamEffect).length;
+    const newState = enabledCount < targetCards.length / 2;
 
-    appState.groupedCards.forEach(card => {
+    targetCards.forEach(card => {
         card.slamEffect = newState;
     });
 
     // Update properties panel if selected card is in group
-    if (appState.selectedCard && appState.groupedCards.some(c => c.id === appState.selectedCard.id)) {
+    if (appState.selectedCard && targetCards.some(c => c.id === appState.selectedCard.id)) {
         slamEffectCheck.checked = appState.selectedCard.slamEffect;
         if (ctxSlamBtn) {
             ctxSlamBtn.classList.toggle('active', appState.selectedCard.slamEffect);
@@ -4146,8 +4214,8 @@ function toggleCtxSlamAll() {
     }
 
     setStatus(newState
-        ? `Slam effect enabled for ${appState.groupedCards.length} cards`
-        : `Slam effect disabled for ${appState.groupedCards.length} cards`
+        ? `Slam effect enabled for ${targetCards.length} cards`
+        : `Slam effect disabled for ${targetCards.length} cards`
     );
 
     // Auto-hide menu after selection
@@ -4184,18 +4252,22 @@ function toggleCtxSpin() {
  * Toggle spin effect on ALL grouped cards
  */
 function toggleCtxSpinAll() {
-    if (appState.groupedCards.length === 0) return;
+    // Use grouped cards if in grouping mode, otherwise all table cards on board
+    const targetCards = (appState.groupingMode && appState.groupedCards.length > 0)
+        ? appState.groupedCards
+        : appState.tableCards.filter(c => c.zone && !c.inTray);
+    if (targetCards.length === 0) return;
 
     // Determine new state: toggle based on majority
-    const enabledCount = appState.groupedCards.filter(c => c.spinEffect).length;
-    const newState = enabledCount < appState.groupedCards.length / 2;
+    const enabledCount = targetCards.filter(c => c.spinEffect).length;
+    const newState = enabledCount < targetCards.length / 2;
 
-    appState.groupedCards.forEach(card => {
+    targetCards.forEach(card => {
         card.spinEffect = newState;
     });
 
     // Update properties panel if selected card is in group
-    if (appState.selectedCard && appState.groupedCards.some(c => c.id === appState.selectedCard.id)) {
+    if (appState.selectedCard && targetCards.some(c => c.id === appState.selectedCard.id)) {
         spinEffectCheck.checked = appState.selectedCard.spinEffect;
         if (ctxSpinBtn) {
             ctxSpinBtn.classList.toggle('active', appState.selectedCard.spinEffect);
@@ -4203,8 +4275,8 @@ function toggleCtxSpinAll() {
     }
 
     setStatus(newState
-        ? `Spin effect enabled for ${appState.groupedCards.length} cards`
-        : `Spin effect disabled for ${appState.groupedCards.length} cards`
+        ? `Spin effect enabled for ${targetCards.length} cards`
+        : `Spin effect disabled for ${targetCards.length} cards`
     );
 
     // Auto-hide menu after selection
@@ -5618,7 +5690,41 @@ function renderCardDropZones() {
 
         zone.addEventListener('drop', (e) => handleZoneDrop(e, zone));
 
+        // Shift+Click to multi-select drop zones
+        zone.addEventListener('click', (e) => {
+            if (!e.shiftKey) return;
+            e.stopPropagation();
+            const placeId = place.id;
+            const idx = appState.selectedDropZones.indexOf(placeId);
+            if (idx >= 0) {
+                appState.selectedDropZones.splice(idx, 1);
+                zone.classList.remove('zone-multi-selected');
+            } else {
+                appState.selectedDropZones.push(placeId);
+                zone.classList.add('zone-multi-selected');
+            }
+        });
+
+        // Right-click to show slot fill context menu
+        zone.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const placeId = place.id;
+            // If zone not already selected, single-select it
+            if (!appState.selectedDropZones.includes(placeId)) {
+                clearDropZoneSelection();
+                appState.selectedDropZones.push(placeId);
+                zone.classList.add('zone-multi-selected');
+            }
+            showSlotContextMenu(e);
+        });
+
         gameContainer.appendChild(zone);
+
+        // Restore multi-selected state after render
+        if (appState.selectedDropZones.includes(place.id)) {
+            zone.classList.add('zone-multi-selected');
+        }
     });
 
     // Restore existing cards in grid zones
@@ -5645,6 +5751,258 @@ function restoreGridCards() {
 function clearCardDropZones() {
     const zones = document.querySelectorAll('.card-drop-zone');
     zones.forEach(z => z.remove());
+}
+
+// ============================================
+// SLOT FILL FEATURE (Auto / Manual)
+// ============================================
+
+/**
+ * Clear multi-select state for drop zones
+ */
+function clearDropZoneSelection() {
+    appState.selectedDropZones = [];
+    document.querySelectorAll('.card-drop-zone.zone-multi-selected').forEach(z => {
+        z.classList.remove('zone-multi-selected');
+    });
+}
+
+/**
+ * Get selected empty slots (no card placed yet), sorted by cardPlaces index
+ */
+function getSelectedEmptySlots() {
+    const selected = appState.selectedDropZones;
+    if (!selected.length) return [];
+
+    // Get the ordered list of cardPlaces, filtered to selected + empty
+    return appState.boardLayout.cardPlaces.filter(place => {
+        if (!selected.includes(place.id)) return false;
+        // Check if zone already has a card
+        const zoneName = 'grid-' + place.id;
+        return !appState.tableCards.some(c => c.zone === zoneName);
+    });
+}
+
+/**
+ * Show the slot fill context menu at mouse position
+ */
+function showSlotContextMenu(e) {
+    if (!slotContextMenu || !gameContainer) return;
+    hideSlotContextMenu();
+
+    const containerRect = gameContainer.getBoundingClientRect();
+    let x = e.clientX - containerRect.left;
+    let y = e.clientY - containerRect.top;
+
+    // Clamp to container bounds
+    const menuW = 140;
+    const menuH = 80;
+    if (x + menuW > containerRect.width) x = containerRect.width - menuW;
+    if (y + menuH > containerRect.height) y = containerRect.height - menuH;
+
+    slotContextMenu.style.left = x + 'px';
+    slotContextMenu.style.top = y + 'px';
+    slotContextMenu.classList.remove('hidden');
+}
+
+/**
+ * Hide the slot fill context menu
+ */
+function hideSlotContextMenu() {
+    if (slotContextMenu) slotContextMenu.classList.add('hidden');
+}
+
+/**
+ * Auto fill selected empty slots with random cards from tray
+ */
+function fillSlotsAuto() {
+    hideSlotContextMenu();
+
+    const emptySlots = getSelectedEmptySlots();
+    if (emptySlots.length === 0) {
+        setStatus('No empty slots selected', 'warning');
+        clearDropZoneSelection();
+        return;
+    }
+
+    // Get available tray cards
+    const available = appState.trayCards.filter(c => c.inTray);
+    if (available.length === 0) {
+        setStatus('No cards available in tray', 'warning');
+        return;
+    }
+
+    // Shuffle available cards (Fisher-Yates)
+    const shuffled = [...available];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    // Take min(emptySlots, available) cards
+    const count = Math.min(emptySlots.length, shuffled.length);
+    const cardsToPlace = shuffled.slice(0, count);
+
+    // Bulk place
+    appState._bulkApplying = true;
+    for (let i = 0; i < count; i++) {
+        const place = emptySlots[i];
+        const card = cardsToPlace[i];
+        const zoneName = 'grid-' + place.id;
+        const rotation = place.rotation || 0;
+        const zoneElement = document.querySelector(`.card-drop-zone[data-zone="${zoneName}"]`);
+        if (zoneElement) {
+            placeCardInZone(card, zoneName, rotation, zoneElement);
+        }
+    }
+    appState._bulkApplying = false;
+
+    renderCardTray();
+    hideInstructions();
+    updateUI();
+    clearDropZoneSelection();
+
+    const msg = count < emptySlots.length
+        ? `Auto filled ${count}/${emptySlots.length} slots (tray ran out)`
+        : `Auto filled ${count} slots`;
+    setStatus(msg, 'success');
+}
+
+/**
+ * Show manual fill overlay
+ */
+function showManualFillOverlay() {
+    hideSlotContextMenu();
+    if (!manualFillOverlay) return;
+
+    const emptySlots = getSelectedEmptySlots();
+    if (emptySlots.length === 0) {
+        setStatus('No empty slots selected', 'warning');
+        clearDropZoneSelection();
+        return;
+    }
+
+    // Update slot count display
+    if (manualFillSlotCount) {
+        manualFillSlotCount.textContent = `${emptySlots.length} slot${emptySlots.length > 1 ? 's' : ''}`;
+    }
+
+    // Reset input and error
+    if (manualFillInput) manualFillInput.value = '';
+    if (manualFillError) {
+        manualFillError.textContent = '';
+        manualFillError.classList.add('hidden');
+    }
+
+    manualFillOverlay.classList.remove('hidden');
+    setTimeout(() => { if (manualFillInput) manualFillInput.focus(); }, 50);
+}
+
+/**
+ * Hide manual fill overlay
+ */
+function hideManualFillOverlay() {
+    if (manualFillOverlay) manualFillOverlay.classList.add('hidden');
+}
+
+/**
+ * Execute manual fill — parse input, validate, then bulk place
+ * All-or-nothing: if any card is invalid, nothing gets placed
+ */
+function executeManualFill() {
+    if (!manualFillInput) return;
+
+    const raw = manualFillInput.value.trim();
+    if (!raw) {
+        showManualFillError('Please enter card codes');
+        return;
+    }
+
+    // Parse input: split by space, comma, or semicolon
+    const codes = raw.split(/[\s,;]+/).filter(s => s.length > 0);
+    if (codes.length === 0) {
+        showManualFillError('Please enter card codes');
+        return;
+    }
+
+    const emptySlots = getSelectedEmptySlots();
+    if (emptySlots.length === 0) {
+        showManualFillError('No empty slots available');
+        return;
+    }
+
+    // Check count mismatch
+    if (codes.length > emptySlots.length) {
+        showManualFillError(`Too many cards: ${codes.length} entered, but only ${emptySlots.length} empty slot${emptySlots.length > 1 ? 's' : ''} selected`);
+        return;
+    }
+
+    // Get available tray cards
+    const trayAvailable = appState.trayCards.filter(c => c.inTray);
+
+    // Resolve all card codes (all-or-nothing validation)
+    const resolvedCards = [];
+    const errors = [];
+    const usedBaseNames = new Set();
+
+    for (let i = 0; i < codes.length; i++) {
+        const code = codes[i];
+        const card = typeof resolveCardName === 'function'
+            ? resolveCardName(code, trayAvailable)
+            : trayAvailable.find(c => c.name === code || c.baseName === code);
+
+        if (!card) {
+            errors.push(`"${code}" — card not found`);
+            continue;
+        }
+
+        // Check duplicate in this batch
+        if (usedBaseNames.has(card.baseName)) {
+            errors.push(`"${code}" — duplicate card`);
+            continue;
+        }
+
+        usedBaseNames.add(card.baseName);
+        resolvedCards.push(card);
+    }
+
+    // If any errors, show them all and abort
+    if (errors.length > 0) {
+        showManualFillError(errors.join('\n'));
+        return;
+    }
+
+    // All valid — bulk place
+    hideManualFillOverlay();
+
+    appState._bulkApplying = true;
+    for (let i = 0; i < resolvedCards.length; i++) {
+        const place = emptySlots[i];
+        const card = resolvedCards[i];
+        const zoneName = 'grid-' + place.id;
+        const rotation = place.rotation || 0;
+        const zoneElement = document.querySelector(`.card-drop-zone[data-zone="${zoneName}"]`);
+        if (zoneElement) {
+            placeCardInZone(card, zoneName, rotation, zoneElement);
+        }
+    }
+    appState._bulkApplying = false;
+
+    renderCardTray();
+    hideInstructions();
+    updateUI();
+    clearDropZoneSelection();
+    setStatus(`Manually filled ${resolvedCards.length} slot${resolvedCards.length > 1 ? 's' : ''}`, 'success');
+}
+
+/**
+ * Show error message in manual fill overlay
+ */
+function showManualFillError(msg) {
+    if (manualFillError) {
+        manualFillError.textContent = msg;
+        manualFillError.classList.remove('hidden');
+    }
 }
 
 /**
@@ -5710,6 +6068,9 @@ function selectCardPlace(place, markerElement) {
     } else if (czPanel) {
         czPanel.classList.add('hidden');
     }
+
+    // Enable cloner button when a slot is selected
+    updateClonerBtnState();
 }
 
 /**
@@ -5722,6 +6083,20 @@ function deselectCardPlace() {
     appState.selectedCardPlaces = [];
     const czPanel = document.getElementById('czSettingsPanel');
     if (czPanel) czPanel.classList.add('hidden');
+
+    // Disable cloner button when nothing selected
+    updateClonerBtnState();
+}
+
+/**
+ * Update the cloner button enabled/disabled state
+ * Cloner requires exactly one slot to be selected as source
+ */
+function updateClonerBtnState() {
+    var clonerBtn = document.getElementById('clonerBtn');
+    if (clonerBtn) {
+        clonerBtn.disabled = !appState.selectedCardPlace;
+    }
 }
 
 /**
@@ -6319,13 +6694,30 @@ function renderGroupPanel() {
         var actions = document.createElement('div');
         actions.className = 'group-actions';
 
+        // Edit button for cloner groups
+        if (group.clonerConfig) {
+            var editBtn = document.createElement('button');
+            editBtn.className = 'edit-group';
+            editBtn.textContent = '✏️';
+            editBtn.title = 'Edit cloner settings';
+            editBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                editCloner(group.id);
+            });
+            actions.appendChild(editBtn);
+        }
+
         var deleteBtn = document.createElement('button');
         deleteBtn.className = 'delete-group';
         deleteBtn.textContent = '✕';
-        deleteBtn.title = 'Delete group';
+        deleteBtn.title = group.clonerConfig ? 'Delete cloner group & all slots' : 'Delete group';
         deleteBtn.addEventListener('click', function (e) {
             e.stopPropagation();
-            deleteSlotGroup(group.id);
+            if (group.clonerConfig) {
+                deleteClonerGroup(group.id);
+            } else {
+                deleteSlotGroup(group.id);
+            }
             renderGroupPanel();
             renderCardPlaceMarkers();
         });

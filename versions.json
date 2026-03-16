@@ -1,6 +1,6 @@
-﻿{
-    "clientVersion":  "2.0.6.1",
+{
+    "clientVersion":  "2.0.6.3",
     "scriptVersion":  "1.0.0",
     "assetVersion":  "1.0.0",
-    "changelog":  "v2.0.6.1: switch version check to GitHub Raw URL (no auth needed), fix arc/pusoy card z-order, fix dealing animation player grouping, fix update status after successful update"
+    "changelog":  "v2.0.6.3: fill slots feature (auto/manual fill), custom image background, cloner button guard (require slot selection), cloner re-edit (C4D-style non-destructive), cloner rotation slider, fix Flip All/Slam All/Spin All for all cards, fix context menu z-index, mouse cursor null for all layout modes"
 }

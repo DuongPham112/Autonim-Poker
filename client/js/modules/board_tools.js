@@ -250,6 +250,7 @@ const clonerState = {
     sourceY: 360,
     count: 5,
     spacing: 80,
+    rotation: 0,          // Rotation for all cloned slots (degrees)
     arcRadius: 200,
     arcSpread: 90,
     previewPlaces: []      // Ghost preview markers
@@ -289,8 +290,17 @@ function editCloner(groupId) {
     clonerState.sourceY = group.clonerConfig.sourceY;
     clonerState.count = group.clonerConfig.count;
     clonerState.spacing = group.clonerConfig.spacing;
+    clonerState.rotation = group.clonerConfig.rotation || 0;
     clonerState.arcRadius = group.clonerConfig.arcRadius || 200;
     clonerState.arcSpread = group.clonerConfig.arcSpread || 90;
+
+    // Restore sourcePlace reference from the first slot (seed) in the group
+    if (group.slotIds && group.slotIds.length > 0) {
+        const seedId = group.slotIds[0];
+        clonerState.sourcePlace = appState.boardLayout.cardPlaces.find(p => p.id === seedId) || null;
+    } else {
+        clonerState.sourcePlace = null;
+    }
 
     // Update UI controls
     const panel = document.getElementById('clonerPanel');
@@ -298,18 +308,34 @@ function editCloner(groupId) {
         const modeSelect = document.getElementById('clonerMode');
         if (modeSelect) modeSelect.value = clonerState.mode;
         const countSlider = document.getElementById('clonerCount');
-        if (countSlider) countSlider.value = clonerState.count;
+        if (countSlider) { countSlider.value = clonerState.count; }
+        const countValue = document.getElementById('clonerCountValue');
+        if (countValue) countValue.textContent = clonerState.count;
         const spacingSlider = document.getElementById('clonerSpacing');
-        if (spacingSlider) spacingSlider.value = clonerState.spacing;
+        if (spacingSlider) { spacingSlider.value = clonerState.spacing; }
+        const spacingValue = document.getElementById('clonerSpacingValue');
+        if (spacingValue) spacingValue.textContent = clonerState.spacing;
+        const rotationSlider = document.getElementById('clonerRotation');
+        if (rotationSlider) { rotationSlider.value = clonerState.rotation; }
+        const rotationValue = document.getElementById('clonerRotationValue');
+        if (rotationValue) rotationValue.textContent = clonerState.rotation + '°';
         const radiusSlider = document.getElementById('clonerArcRadius');
-        if (radiusSlider) radiusSlider.value = clonerState.arcRadius;
+        if (radiusSlider) { radiusSlider.value = clonerState.arcRadius; }
+        const radiusValue = document.getElementById('clonerArcRadiusValue');
+        if (radiusValue) radiusValue.textContent = clonerState.arcRadius;
         const spreadSlider = document.getElementById('clonerArcSpread');
-        if (spreadSlider) spreadSlider.value = clonerState.arcSpread;
+        if (spreadSlider) { spreadSlider.value = clonerState.arcSpread; }
+        const spreadValue = document.getElementById('clonerArcSpreadValue');
+        if (spreadValue) spreadValue.textContent = clonerState.arcSpread + '°';
+        // Show/hide arc controls based on mode
+        const arcControls = document.getElementById('clonerArcControls');
+        if (arcControls) arcControls.classList.toggle('hidden', clonerState.mode !== 'arc');
     }
 
     updateClonerPreview();
     showClonerPanel();
-    debugLog(`[Cloner] Editing group ${groupId}`);
+    debugLog(`[Cloner] Editing group ${groupId}, seed=${clonerState.sourcePlace ? clonerState.sourcePlace.id : 'none'}`);
+    setStatus(`Editing cloner: ${group.name}`);
 }
 
 /**
@@ -321,20 +347,20 @@ function generateClonerPositions() {
     // Use live position from sourcePlace reference if available
     const sourceX = clonerState.sourcePlace ? clonerState.sourcePlace.x : clonerState.sourceX;
     const sourceY = clonerState.sourcePlace ? clonerState.sourcePlace.y : clonerState.sourceY;
-    const { count, spacing, mode, arcRadius, arcSpread } = clonerState;
+    const { count, spacing, mode, rotation, arcRadius, arcSpread } = clonerState;
 
     for (let i = 0; i < count; i++) {
         if (mode === 'linear-h') {
             positions.push({
                 x: Math.round(sourceX + i * spacing),
                 y: sourceY,
-                rotation: 0
+                rotation: rotation
             });
         } else if (mode === 'linear-v') {
             positions.push({
                 x: sourceX,
                 y: Math.round(sourceY + i * spacing),
-                rotation: 0
+                rotation: rotation
             });
         } else if (mode === 'arc') {
             const spreadRad = (arcSpread * Math.PI) / 180;
@@ -345,7 +371,7 @@ function generateClonerPositions() {
             positions.push({
                 x: Math.round(sourceX + arcRadius * Math.sin(angle)),
                 y: Math.round(sourceY - arcRadius * Math.cos(angle)),
-                rotation: Math.round((angle * 180) / Math.PI)
+                rotation: Math.round((angle * 180) / Math.PI) + rotation
             });
         }
     }
@@ -426,6 +452,10 @@ function applyCloner() {
         sourcePlace.zOrder = baseZOrder;
         sourcePlace.clonerId = clonerId;
         allSlotIds.push(sourcePlace.id);
+        // Re-add sourcePlace to cardPlaces if it was removed during re-edit
+        if (!appState.boardLayout.cardPlaces.includes(sourcePlace)) {
+            appState.boardLayout.cardPlaces.push(sourcePlace);
+        }
     }
 
     // Create new slots for positions[1..N-1] (or all if no source)
@@ -459,6 +489,7 @@ function applyCloner() {
             sourceY: positions[0].y,
             count: clonerState.count,
             spacing: clonerState.spacing,
+            rotation: clonerState.rotation,
             arcRadius: clonerState.arcRadius,
             arcSpread: clonerState.arcSpread
         }
@@ -601,6 +632,10 @@ function initBoardTools() {
     if (clonerBtn) {
         clonerBtn.addEventListener('click', () => {
             const source = appState.selectedCardPlace || null;
+            if (!source) {
+                setStatus('Select a slot first to use Cloner', 'warning');
+                return;
+            }
             startCloner(source);
         });
     }
@@ -628,8 +663,8 @@ function initBoardTools() {
     }
 
     // Cloner sliders
-    const clonerSliders = ['clonerCount', 'clonerSpacing', 'clonerArcRadius', 'clonerArcSpread'];
-    const clonerStateKeys = ['count', 'spacing', 'arcRadius', 'arcSpread'];
+    const clonerSliders = ['clonerCount', 'clonerSpacing', 'clonerRotation', 'clonerArcRadius', 'clonerArcSpread'];
+    const clonerStateKeys = ['count', 'spacing', 'rotation', 'arcRadius', 'arcSpread'];
     clonerSliders.forEach((id, idx) => {
         const slider = document.getElementById(id);
         if (slider) {
@@ -637,7 +672,7 @@ function initBoardTools() {
                 clonerState[clonerStateKeys[idx]] = parseInt(e.target.value);
                 // Update value display
                 const valueEl = document.getElementById(id + 'Value');
-                if (valueEl) valueEl.textContent = e.target.value + (id.includes('Spread') ? '°' : '');
+                if (valueEl) valueEl.textContent = e.target.value + (id.includes('Spread') || id.includes('Rotation') ? '°' : '');
                 updateClonerPreview();
             });
         }
@@ -645,29 +680,104 @@ function initBoardTools() {
 
     // Background type selector
     const bgTypeSelect = document.getElementById('bgTypeSelect');
+    const bgImageControls = document.getElementById('bgImageControls');
+    const bgImageBrowseBtn = document.getElementById('bgImageBrowseBtn');
+    const bgImageRemoveBtn = document.getElementById('bgImageRemoveBtn');
+    const bgImageFileInput = document.getElementById('bgImageFileInput');
+    const bgImagePreview = document.getElementById('bgImagePreview');
+    const bgImageThumb = document.getElementById('bgImageThumb');
+
     if (bgTypeSelect) {
         bgTypeSelect.addEventListener('change', (e) => {
             const pokerTable = document.getElementById('pokerTable');
             if (!pokerTable) return;
 
             const type = e.target.value;
+            // Show/hide image controls
+            if (bgImageControls) {
+                bgImageControls.classList.toggle('hidden', type !== 'image');
+            }
+
             switch (type) {
                 case 'poker':
                     pokerTable.style.display = '';
                     gameContainer.style.background = '';
+                    gameContainer.style.backgroundImage = '';
                     break;
                 case 'solid':
                     pokerTable.style.display = 'none';
                     gameContainer.style.background = '#1a1a2e';
+                    gameContainer.style.backgroundImage = '';
                     break;
                 case 'image':
                     pokerTable.style.display = 'none';
-                    gameContainer.style.background = '#1a1a2e';
-                    // TODO: Add custom image picker
-                    setStatus('Custom image background — coming soon');
+                    // Restore existing image if available
+                    if (appState.boardLayout.backgroundImage) {
+                        applyBgImage(appState.boardLayout.backgroundImage);
+                    } else {
+                        gameContainer.style.background = '#1a1a2e';
+                    }
                     break;
             }
             debugLog(`[Board] Background changed to: ${type}`);
         });
+    }
+
+    // Browse button → trigger file input
+    if (bgImageBrowseBtn && bgImageFileInput) {
+        bgImageBrowseBtn.addEventListener('click', () => {
+            bgImageFileInput.click();
+        });
+    }
+
+    // File input → read image as data URL
+    if (bgImageFileInput) {
+        bgImageFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const dataUrl = ev.target.result;
+                // Save to state
+                appState.boardLayout.backgroundImage = dataUrl;
+                // Apply
+                applyBgImage(dataUrl);
+                // Show preview + remove button
+                if (bgImageThumb) bgImageThumb.src = dataUrl;
+                if (bgImagePreview) bgImagePreview.classList.remove('hidden');
+                if (bgImageRemoveBtn) bgImageRemoveBtn.classList.remove('hidden');
+                setStatus('Background image applied');
+                debugLog('[Board] Custom background image set');
+            };
+            reader.readAsDataURL(file);
+            // Reset file input so same file can be re-selected
+            bgImageFileInput.value = '';
+        });
+    }
+
+    // Remove button → clear background image
+    if (bgImageRemoveBtn) {
+        bgImageRemoveBtn.addEventListener('click', () => {
+            appState.boardLayout.backgroundImage = null;
+            gameContainer.style.background = '#1a1a2e';
+            gameContainer.style.backgroundImage = '';
+            if (bgImagePreview) bgImagePreview.classList.add('hidden');
+            if (bgImageThumb) bgImageThumb.src = '';
+            bgImageRemoveBtn.classList.add('hidden');
+            setStatus('Background image removed');
+            debugLog('[Board] Custom background image removed');
+        });
+    }
+
+    /**
+     * Apply a data URL as the game container background
+     */
+    function applyBgImage(dataUrl) {
+        gameContainer.style.background = `url("${dataUrl}") center/cover no-repeat`;
+        // Show preview + remove if controls exist
+        if (bgImageThumb) bgImageThumb.src = dataUrl;
+        if (bgImagePreview) bgImagePreview.classList.remove('hidden');
+        if (bgImageRemoveBtn) bgImageRemoveBtn.classList.remove('hidden');
     }
 }
