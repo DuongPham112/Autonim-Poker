@@ -1,6 +1,6 @@
 {
-    "clientVersion":  "2.0.6.3",
-    "scriptVersion":  "1.0.0",
-    "assetVersion":  "1.0.0",
-    "changelog":  "v2.0.6.3: fill slots feature (auto/manual fill), custom image background, cloner button guard (require slot selection), cloner re-edit (C4D-style non-destructive), cloner rotation slider, fix Flip All/Slam All/Spin All for all cards, fix context menu z-index, mouse cursor null for all layout modes"
+    "clientVersion": "2.0.6.5",
+    "scriptVersion": "1.0.0",
+    "assetVersion": "1.0.0",
+    "changelog": "v2.0.6.5: fix context menu only shows after card movement, fix All buttons based on actual moved cards, fix handleResetTable missing undo/autosave integration, fix missing applyBezierEasing in dealing/shiftZone/group-z animations"
 }
