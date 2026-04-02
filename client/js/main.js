@@ -6179,11 +6179,13 @@ function initCZSettingsPanel() {
         let isLassoing = false;
 
         gameContainer.addEventListener('mousedown', (e) => {
-            if (appState.phase !== 'board-setting') return;
+            if (appState.phase !== 'board-setting' && appState.phase !== 'setup') return;
             if (e.button !== 0) return;
-            // Only start lasso if clicking on table/felt (not on markers, buttons, etc.)
+            // Only start lasso if clicking on table/felt (not on markers, buttons, cards, etc.)
             const target = e.target;
             if (target.closest('.card-place-marker') || target.closest('.dealing-card-slot') || target.closest('button')) return;
+            // In setup phase: don't start lasso if clicking on a card or filled zone
+            if (appState.phase === 'setup' && (target.closest('.zone-card') || target.closest('.card'))) return;
 
             const containerRect = gameContainer.getBoundingClientRect();
             lassoStartX = e.clientX - containerRect.left;
@@ -6228,31 +6230,59 @@ function initCZSettingsPanel() {
             // Minimum size threshold to avoid accidental clicks
             if (rectBounds.width < 5 && rectBounds.height < 5) return;
 
-            // Find all markers that intersect the lasso rectangle
-            const markers = document.querySelectorAll('.card-place-marker');
-            appState.selectedCardPlaces = [];
-            markers.forEach(marker => {
-                const markerBounds = marker.getBoundingClientRect();
-                // Check intersection
-                if (markerBounds.left < rectBounds.right &&
-                    markerBounds.right > rectBounds.left &&
-                    markerBounds.top < rectBounds.bottom &&
-                    markerBounds.bottom > rectBounds.top) {
-                    const placeId = marker.dataset.placeId;
-                    const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
-                    if (place) {
-                        appState.selectedCardPlaces.push(place);
-                        marker.classList.add('multi-selected');
+            if (appState.phase === 'setup') {
+                // Setup phase: select empty drop zones and show fill context menu
+                clearDropZoneSelection();
+                const dropZones = document.querySelectorAll('.card-drop-zone');
+                dropZones.forEach(zone => {
+                    const zoneBounds = zone.getBoundingClientRect();
+                    if (zoneBounds.left < rectBounds.right &&
+                        zoneBounds.right > rectBounds.left &&
+                        zoneBounds.top < rectBounds.bottom &&
+                        zoneBounds.bottom > rectBounds.top) {
+                        const zoneName = zone.dataset.zone;
+                        if (!zoneName) return;
+                        const placeId = zoneName.replace('grid-', '');
+                        // Only select EMPTY slots (no card in this zone)
+                        const hasCard = appState.tableCards.some(c => c.zone === zoneName);
+                        if (!hasCard) {
+                            appState.selectedDropZones.push(placeId);
+                            zone.classList.add('zone-multi-selected');
+                        }
                     }
-                } else {
-                    marker.classList.remove('multi-selected');
-                }
-            });
+                });
 
-            if (appState.selectedCardPlaces.length > 0) {
-                debugLog(`[LassoSelect] Selected ${appState.selectedCardPlaces.length} markers`);
+                if (appState.selectedDropZones.length > 0) {
+                    debugLog(`[LassoSelect] Selected ${appState.selectedDropZones.length} empty slots`);
+                    // Show fill context menu at mouse position
+                    showSlotContextMenu(e);
+                }
+            } else {
+                // Board-setting phase: select markers
+                const markers = document.querySelectorAll('.card-place-marker');
+                appState.selectedCardPlaces = [];
+                markers.forEach(marker => {
+                    const markerBounds = marker.getBoundingClientRect();
+                    if (markerBounds.left < rectBounds.right &&
+                        markerBounds.right > rectBounds.left &&
+                        markerBounds.top < rectBounds.bottom &&
+                        markerBounds.bottom > rectBounds.top) {
+                        const placeId = marker.dataset.placeId;
+                        const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
+                        if (place) {
+                            appState.selectedCardPlaces.push(place);
+                            marker.classList.add('multi-selected');
+                        }
+                    } else {
+                        marker.classList.remove('multi-selected');
+                    }
+                });
+
+                if (appState.selectedCardPlaces.length > 0) {
+                    debugLog(`[LassoSelect] Selected ${appState.selectedCardPlaces.length} markers`);
+                }
+                updateCreateGroupBtnState();
             }
-            updateCreateGroupBtnState();
         });
     }
 
