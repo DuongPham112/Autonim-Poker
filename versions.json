@@ -1,6 +1,6 @@
 ﻿{
-    "clientVersion":  "2.0.7.1",
+    "clientVersion":  "2.0.7.2",
     "scriptVersion":  "1.0.0",
     "assetVersion":  "1.0.0",
-    "changelog":  "v2.0.7.1: AI Generate with ref images + video frames (multimodal Gemini)"
+    "changelog":  "v2.0.7.2: AI understands Pusoy 4-player layout, multimodal ref images/video, Claude Bridge server"
 }
