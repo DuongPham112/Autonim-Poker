@@ -2,5 +2,5 @@
     "clientVersion":  "2.0.6.7",
     "scriptVersion":  "1.0.0",
     "assetVersion":  "1.0.0",
-    "changelog":  "v2.0.6.7: fix manual fill card resolver, Vietnamese card input shortcuts"
+    "changelog":  "v2.0.6.7: fix manual fill card resolver + duplicate detection, Vietnamese card input shortcuts"
 }
