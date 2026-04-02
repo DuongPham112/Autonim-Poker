@@ -1,6 +1,6 @@
-{
-    "clientVersion": "2.0.6.6",
-    "scriptVersion": "1.0.0",
-    "assetVersion": "1.0.0",
-    "changelog": "v2.0.6.6: fix Pusoy cards reversed in AE — Z Rotation expression now compensates for face-down mirroring, fix Z Rotation not toggling when card flips, fix export row/col using wrong zone for swapped cards"
+﻿{
+    "clientVersion":  "2.0.6.6",
+    "scriptVersion":  "1.0.0",
+    "assetVersion":  "1.0.0",
+    "changelog":  "v2.0.6.6: fix Pusoy cards reversed in AE, add lasso drag-select for slot fill in setup phase"
 }
