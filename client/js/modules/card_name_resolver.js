@@ -65,19 +65,19 @@ function resolveCardName(input, deckCards) {
     };
     const jokerName = JOKER_MAP[normalized.replace(/[\s\-_]+/g, '')];
     if (jokerName) {
-        const match = deckCards.find(c => c.baseName === jokerName || (c.name && c.name.toLowerCase().replace(/[\s\-_]+/g, '') === jokerName.replace(/_/g, '')));
+        const match = deckCards.find(c => c.name === jokerName || (c.name && c.name.toLowerCase().replace(/[\s\-_]+/g, '') === jokerName.replace(/_/g, '')));
         if (match) return match;
     }
 
     // 1. Direct match by baseName (snake_case) — fastest path
-    let match = deckCards.find(c => c.baseName === normalized || c.baseName === input);
+    let match = deckCards.find(c => c.name === normalized || c.name === input);
     if (match) return match;
 
     // 2. Try parsing the input into rank + suit
     const parsed = parseCardInput(normalized);
     if (parsed) {
         const targetBaseName = parsed.rank + '_' + parsed.suit;
-        match = deckCards.find(c => c.baseName === targetBaseName);
+        match = deckCards.find(c => c.name === targetBaseName);
         if (match) return match;
     }
 
@@ -90,7 +90,7 @@ function resolveCardName(input, deckCards) {
     // 4. Partial match — contains rank AND suit
     if (parsed) {
         match = deckCards.find(c => {
-            const bn = c.baseName || '';
+            const bn = c.name || '';
             return bn.includes(parsed.rank) && bn.includes(parsed.suit);
         });
         if (match) return match;
