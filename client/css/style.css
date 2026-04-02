@@ -4423,6 +4423,18 @@ body.grouping-mode-active .zone-card:hover:not(.grouped) {
     font-family: inherit;
 }
 
+.manual-fill-hint {
+    font-size: 10px;
+    color: var(--text-muted);
+    padding: 3px 2px;
+    line-height: 1.4;
+    opacity: 0.85;
+}
+
+.manual-fill-hint b {
+    color: var(--text-secondary, #ccc);
+}
+
 .manual-fill-error {
     padding: 6px 10px;
     background: rgba(241, 76, 76, 0.1);

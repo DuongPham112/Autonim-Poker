@@ -1,13 +1,21 @@
 /**
  * Card Name Resolver - Fuzzy matching for card names
  * Handles multiple input formats and resolves to actual card objects
- * 
+ *
  * Supported formats:
  *   - Full: "Ace of Spades", "King of Hearts"
- *   - Short: "As", "Ks", "10h", "Qd"
+ *   - Short EN: "As", "Ks", "10h", "Qd"
+ *   - Short VN: "Ab", "Kb", "10c", "Qr" (r=rô, c=cơ, b=bích, t/n=tép)
  *   - Symbol: "A♠", "K♥", "10♦", "Q♣"
  *   - Snake: "ace_spades", "king_hearts" (passthrough)
  *   - Compact: "AceSpades", "KingHearts"
+ *
+ * Vietnamese suit shortcuts:
+ *   r (rô) = diamonds, c (cơ) = hearts, b (bích) = spades, t/n (tép/nhép) = clubs
+ * English suit shortcuts:
+ *   d = diamonds, h = hearts, s = spades, cl = clubs
+ * Note: 'c' maps to hearts (cơ), not clubs. Use 'cl', 't' or 'n' for clubs.
+ * Jokers: Job = Joker Black, Jor = Joker Red
  */
 
 // Rank aliases → canonical rank name
@@ -15,18 +23,28 @@ const RANK_MAP = {
     'a': 'ace', 'ace': 'ace', '1': 'ace',
     '2': '2', '3': '3', '4': '4', '5': '5',
     '6': '6', '7': '7', '8': '8', '9': '9',
-    '10': '10', 't': '10', '0': '10',
+    '10': '10', '0': '10',
     'j': 'jack', 'jack': 'jack',
     'q': 'queen', 'queen': 'queen',
     'k': 'king', 'king': 'king'
 };
 
 // Suit aliases → canonical suit name
+// Vietnamese: r=rô(diamonds), c=cơ(hearts), b=bích(spades), t/n=tép/nhép(clubs)
+// English: d=diamonds, h=hearts, s=spades
 const SUIT_MAP = {
-    's': 'spades', 'spades': 'spades', '♠': 'spades', 'spade': 'spades',
-    'h': 'hearts', 'hearts': 'hearts', '♥': 'hearts', 'heart': 'hearts',
-    'd': 'diamonds', 'diamonds': 'diamonds', '♦': 'diamonds', 'diamond': 'diamonds',
-    'c': 'clubs', 'clubs': 'clubs', '♣': 'clubs', 'club': 'clubs'
+    // English
+    's': 'spades', 'spades': 'spades', 'spade': 'spades',
+    'h': 'hearts', 'hearts': 'hearts', 'heart': 'hearts',
+    'd': 'diamonds', 'diamonds': 'diamonds', 'diamond': 'diamonds',
+    'cl': 'clubs', 'clubs': 'clubs', 'club': 'clubs',
+    // Vietnamese
+    'b': 'spades', 'bích': 'spades', 'bich': 'spades',
+    'c': 'hearts', 'cơ': 'hearts', 'co': 'hearts',
+    'r': 'diamonds', 'rô': 'diamonds', 'ro': 'diamonds',
+    't': 'clubs', 'n': 'clubs', 'tép': 'clubs', 'tep': 'clubs', 'nhép': 'clubs', 'nhep': 'clubs',
+    // Symbols
+    '♠': 'spades', '♥': 'hearts', '♦': 'diamonds', '♣': 'clubs'
 };
 
 /**
@@ -39,6 +57,17 @@ function resolveCardName(input, deckCards) {
     if (!input || !deckCards || deckCards.length === 0) return null;
 
     const normalized = input.trim().toLowerCase();
+
+    // 0. Joker aliases: job=Joker Black, jor=Joker Red
+    const JOKER_MAP = {
+        'job': 'joker_black', 'jokerblack': 'joker_black', 'joker_black': 'joker_black', 'blackjoker': 'joker_black',
+        'jor': 'joker_red', 'jokerred': 'joker_red', 'joker_red': 'joker_red', 'redjoker': 'joker_red'
+    };
+    const jokerName = JOKER_MAP[normalized.replace(/[\s\-_]+/g, '')];
+    if (jokerName) {
+        const match = deckCards.find(c => c.baseName === jokerName || (c.name && c.name.toLowerCase().replace(/[\s\-_]+/g, '') === jokerName.replace(/_/g, '')));
+        if (match) return match;
+    }
 
     // 1. Direct match by baseName (snake_case) — fastest path
     let match = deckCards.find(c => c.baseName === normalized || c.baseName === input);
@@ -94,17 +123,24 @@ function parseCardInput(input) {
         }
     }
 
-    // Try short code: "As", "Ks", "10h", "Qd", "2c"
-    // Pattern: (rank chars)(suit char)
-    const shortMatch = clean.match(/^(\d{1,2}|[ajqkt])([shdc])$/i);
+    // Try short code with multi-char suit: "10cl", "Acl" (cl = clubs)
+    const multiSuitMatch = clean.match(/^(\d{1,2}|[ajqk])(cl)$/i);
+    if (multiSuitMatch) {
+        const rank = RANK_MAP[multiSuitMatch[1].toLowerCase()];
+        if (rank) return { rank, suit: 'clubs' };
+    }
+
+    // Try short code: "As", "Kb", "10c", "Qr", "2t"
+    // Suit letters: s,h,d (EN) + r,c,b,t,n (VN)
+    const shortMatch = clean.match(/^(\d{1,2}|[ajqk])([shdrcbtn])$/i);
     if (shortMatch) {
         const rank = RANK_MAP[shortMatch[1].toLowerCase()];
         const suit = SUIT_MAP[shortMatch[2].toLowerCase()];
         if (rank && suit) return { rank, suit };
     }
 
-    // Try CamelCase: "AceSpades", "KingHearts"
-    const camelMatch = clean.match(/^(ace|king|queen|jack|\d{1,2})(spades?|hearts?|diamonds?|clubs?)$/i);
+    // Try CamelCase: "AceSpades", "KingHearts", "AceBích", "KingCơ"
+    const camelMatch = clean.match(/^(ace|king|queen|jack|\d{1,2})(spades?|hearts?|diamonds?|clubs?|bích|bich|cơ|co|rô|ro|tép|tep|nhép|nhep)$/i);
     if (camelMatch) {
         const rank = RANK_MAP[camelMatch[1].toLowerCase()];
         const suit = SUIT_MAP[camelMatch[2].toLowerCase()];
