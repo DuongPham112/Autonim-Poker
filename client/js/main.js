@@ -331,6 +331,11 @@ async function bootApp() {
 
         // Initialize the main app
         init();
+
+        // Start Claude Bridge server (local HTTP for skill communication)
+        if (typeof startBridgeServer === 'function') {
+            startBridgeServer();
+        }
     } catch (error) {
         console.error('[Boot] Failed to boot app:', error);
     }

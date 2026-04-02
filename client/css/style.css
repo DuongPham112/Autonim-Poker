@@ -1363,6 +1363,39 @@ body {
 .status-bar {
     font-size: 12px;
     color: var(--text-secondary);
+    flex: 1;
+}
+
+.bridge-indicator {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--text-muted);
+    opacity: 0.6;
+    cursor: default;
+    user-select: none;
+}
+
+.bridge-indicator.active {
+    opacity: 1;
+}
+
+.bridge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #666;
+    transition: background 0.3s;
+}
+
+.bridge-indicator.active .bridge-dot {
+    background: #2ecc71;
+    box-shadow: 0 0 4px rgba(46, 204, 113, 0.5);
+}
+
+.bridge-label {
+    color: inherit;
 }
 
 /* ============================================

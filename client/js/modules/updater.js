@@ -7,7 +7,7 @@
  */
 
 // Current client version (matches versions.json in Autonim-Poker repo root)
-const CLIENT_VERSION = '2.0.6.7';
+const CLIENT_VERSION = '2.0.7.0';
 const UPDATE_CHECK_INTERVAL = 3600000; // 1 hour
 const JUST_UPDATED_KEY = 'poker_just_updated_version';
 
