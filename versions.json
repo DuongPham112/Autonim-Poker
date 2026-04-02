@@ -1,6 +1,6 @@
 ﻿{
-    "clientVersion":  "2.0.6.7",
+    "clientVersion":  "2.0.7.0",
     "scriptVersion":  "1.0.0",
     "assetVersion":  "1.0.0",
-    "changelog":  "v2.0.6.7: fix manual fill card resolver + duplicate detection, Vietnamese card input shortcuts"
+    "changelog":  "v2.0.7.0: Claude Bridge server for brief-to-animation automation (localhost:3847)"
 }
