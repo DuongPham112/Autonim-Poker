@@ -698,6 +698,21 @@
                             <textarea id="aiBriefInput" class="ai-brief-input" rows="3"
                                 placeholder="E.g. Texas Hold'em, 4 players, deal 2 cards each face down, 5 community cards face up"></textarea>
                         </div>
+                        <!-- Reference attachments -->
+                        <div class="ai-attachments">
+                            <div class="ai-attach-buttons">
+                                <label class="ai-attach-btn" title="Attach reference image(s)">
+                                    📷 Ref Image
+                                    <input type="file" id="aiRefImageInput" accept="image/*" multiple
+                                        style="display:none">
+                                </label>
+                                <label class="ai-attach-btn" title="Attach reference video">
+                                    🎬 Ref Video
+                                    <input type="file" id="aiRefVideoInput" accept="video/*" style="display:none">
+                                </label>
+                            </div>
+                            <div id="aiAttachPreview" class="ai-attach-preview hidden"></div>
+                        </div>
                         <div class="ai-preset-group">
                             <label for="aiPresetSelect">Target Layout:</label>
                             <select id="aiPresetSelect" class="ai-preset-select">

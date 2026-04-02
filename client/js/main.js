@@ -199,6 +199,10 @@ let pendingChangeCard = null;
 
 // AI Layout Generator Elements
 let aiPhaseBtn, aiSection, aiBriefInput, aiPresetSelect, aiGenerateBtn, aiStatus, aiError;
+let aiRefImageInput, aiRefVideoInput, aiAttachPreview;
+let aiRefImages = [];   // [{data: base64, mimeType: 'image/jpeg', name: 'ref.jpg'}, ...]
+let aiVideoFrames = []; // [{data: base64, mimeType: 'image/jpeg'}, ...]
+let aiVideoFile = null; // File reference for video
 
 // Debug logging system
 let debugLogs = [];
@@ -538,11 +542,20 @@ function bindEvents() {
     aiGenerateBtn = document.getElementById('aiGenerateBtn');
     aiStatus = document.getElementById('aiStatus');
     aiError = document.getElementById('aiError');
+    aiRefImageInput = document.getElementById('aiRefImageInput');
+    aiRefVideoInput = document.getElementById('aiRefVideoInput');
+    aiAttachPreview = document.getElementById('aiAttachPreview');
     if (aiPhaseBtn) {
         aiPhaseBtn.addEventListener('click', () => toggleAIPanel());
     }
     if (aiGenerateBtn) {
         aiGenerateBtn.addEventListener('click', () => handleAIGenerate());
+    }
+    if (aiRefImageInput) {
+        aiRefImageInput.addEventListener('change', handleRefImageAttach);
+    }
+    if (aiRefVideoInput) {
+        aiRefVideoInput.addEventListener('change', handleRefVideoAttach);
     }
     // AI Example buttons
     document.querySelectorAll('.ai-example-btn').forEach(btn => {
@@ -7699,6 +7712,168 @@ function toggleAIPanel() {
     }
 }
 
+// ============================================
+// AI REFERENCE ATTACHMENTS
+// ============================================
+
+/**
+ * Handle ref image file selection
+ */
+function handleRefImageAttach(e) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    // Limit to 3 images
+    const maxImages = 3;
+    const remaining = maxImages - aiRefImages.length;
+    const toAdd = files.slice(0, remaining);
+
+    for (const file of toAdd) {
+        const reader = new FileReader();
+        reader.onload = function (evt) {
+            const base64 = evt.target.result.split(',')[1]; // Remove data:image/...;base64, prefix
+            const mimeType = file.type || 'image/jpeg';
+            aiRefImages.push({ data: base64, mimeType: mimeType, name: file.name });
+            renderAttachPreview();
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // Reset input so same file can be re-selected
+    e.target.value = '';
+}
+
+/**
+ * Handle ref video file selection
+ */
+function handleRefVideoAttach(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    aiVideoFile = file;
+    aiVideoFrames = [];
+    renderAttachPreview();
+
+    // Extract frames from video
+    extractVideoFrames(file).then(function (frames) {
+        aiVideoFrames = frames;
+        renderAttachPreview();
+        debugLog('[AI] Extracted ' + frames.length + ' frames from video: ' + file.name);
+    }).catch(function (err) {
+        console.error('[AI] Video frame extraction failed:', err);
+        debugLog('[AI] Video frame extraction failed: ' + err.message);
+    });
+
+    e.target.value = '';
+}
+
+/**
+ * Extract frames from a video file using HTML5 canvas
+ */
+function extractVideoFrames(file, maxFrames) {
+    maxFrames = maxFrames || 10;
+    return new Promise(function (resolve, reject) {
+        const url = URL.createObjectURL(file);
+        const video = document.createElement('video');
+        video.muted = true;
+        video.preload = 'auto';
+
+        video.onloadedmetadata = function () {
+            const duration = video.duration;
+            if (!duration || duration <= 0) {
+                URL.revokeObjectURL(url);
+                return reject(new Error('Invalid video duration'));
+            }
+
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            // Scale down for smaller payload (max 640px wide)
+            const scale = Math.min(1, 640 / video.videoWidth);
+            canvas.width = Math.round(video.videoWidth * scale);
+            canvas.height = Math.round(video.videoHeight * scale);
+
+            const frameCount = Math.min(maxFrames, Math.floor(duration));
+            const interval = duration / (frameCount + 1);
+            const frames = [];
+            let currentFrame = 0;
+
+            function captureFrame() {
+                if (currentFrame >= frameCount) {
+                    URL.revokeObjectURL(url);
+                    resolve(frames);
+                    return;
+                }
+
+                const seekTime = interval * (currentFrame + 1);
+                video.currentTime = seekTime;
+            }
+
+            video.onseeked = function () {
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                const base64 = dataUrl.split(',')[1];
+                frames.push({ data: base64, mimeType: 'image/jpeg' });
+                currentFrame++;
+                captureFrame();
+            };
+
+            captureFrame();
+        };
+
+        video.onerror = function () {
+            URL.revokeObjectURL(url);
+            reject(new Error('Failed to load video'));
+        };
+
+        video.src = url;
+    });
+}
+
+/**
+ * Render attachment preview area
+ */
+function renderAttachPreview() {
+    if (!aiAttachPreview) return;
+
+    var html = '';
+
+    for (var i = 0; i < aiRefImages.length; i++) {
+        var img = aiRefImages[i];
+        html += '<div class="ai-attach-item">' +
+            '<img src="data:' + img.mimeType + ';base64,' + img.data + '" alt="ref">' +
+            '<span>' + (img.name || 'Image ' + (i + 1)) + '</span>' +
+            '<button class="ai-attach-remove" data-type="image" data-index="' + i + '" title="Remove">×</button>' +
+            '</div>';
+    }
+
+    if (aiVideoFile) {
+        var frameInfo = aiVideoFrames.length > 0 ? ' (' + aiVideoFrames.length + ' frames)' : ' (extracting...)';
+        html += '<div class="ai-attach-item">' +
+            '<span>🎬 ' + aiVideoFile.name + frameInfo + '</span>' +
+            '<button class="ai-attach-remove" data-type="video" data-index="0" title="Remove">×</button>' +
+            '</div>';
+    }
+
+    if (html) {
+        aiAttachPreview.innerHTML = html;
+        aiAttachPreview.classList.remove('hidden');
+
+        aiAttachPreview.querySelectorAll('.ai-attach-remove').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var type = this.getAttribute('data-type');
+                var idx = parseInt(this.getAttribute('data-index'));
+                if (type === 'image') aiRefImages.splice(idx, 1);
+                else { aiVideoFile = null; aiVideoFrames = []; }
+                renderAttachPreview();
+            });
+        });
+    } else {
+        aiAttachPreview.innerHTML = '';
+        aiAttachPreview.classList.add('hidden');
+    }
+}
+
 /**
  * Get the API base URL from config
  */
@@ -7757,7 +7932,10 @@ async function handleAIGenerate() {
         aiGenerateBtn.disabled = true;
         aiGenerateBtn.classList.add('loading');
     }
-    showAIStatus(isScenarioMode ? '🎬 Generating scenario with AI...' : '🤖 Generating layout with AI...');
+    var attachInfo = '';
+    if (aiRefImages.length > 0) attachInfo += ' + ' + aiRefImages.length + ' ref image(s)';
+    if (aiVideoFrames.length > 0) attachInfo += ' + ' + aiVideoFrames.length + ' video frames';
+    showAIStatus(isScenarioMode ? '🎬 Generating scenario with AI...' + attachInfo : '🤖 Generating layout with AI...' + attachInfo);
     hideAIError();
 
     try {
@@ -7775,7 +7953,9 @@ async function handleAIGenerate() {
                 brief: brief,
                 availableCards: availableCardNames,
                 availableSlotIds: availableSlotIds,
-                targetPreset: targetPreset
+                targetPreset: targetPreset,
+                refImages: aiRefImages.length > 0 ? aiRefImages : undefined,
+                videoFrames: aiVideoFrames.length > 0 ? aiVideoFrames : undefined
             })
         });
 

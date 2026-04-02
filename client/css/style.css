@@ -4210,6 +4210,88 @@ body.grouping-mode-active .zone-card:hover:not(.grouped) {
     cursor: pointer;
 }
 
+/* Attachments */
+.ai-attachments {
+    margin-top: 6px;
+}
+
+.ai-attach-buttons {
+    display: flex;
+    gap: 6px;
+}
+
+.ai-attach-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    font-size: 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.ai-attach-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-green);
+    color: var(--text-primary);
+}
+
+.ai-attach-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+    padding: 6px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+.ai-attach-preview.hidden {
+    display: none;
+}
+
+.ai-attach-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    background: var(--bg-tertiary);
+    border-radius: 3px;
+    font-size: 10px;
+    color: var(--text-secondary);
+}
+
+.ai-attach-item img {
+    width: 32px;
+    height: 32px;
+    object-fit: cover;
+    border-radius: 2px;
+}
+
+.ai-attach-remove {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 14px;
+    height: 14px;
+    background: var(--accent-red);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    font-size: 8px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
 /* Generate Button */
 .ai-generate-btn {
     margin-top: 6px;
