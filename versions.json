@@ -1,6 +1,6 @@
 ﻿{
-    "clientVersion":  "2.0.6.6",
+    "clientVersion":  "2.0.6.7",
     "scriptVersion":  "1.0.0",
     "assetVersion":  "1.0.0",
-    "changelog":  "v2.0.6.6: fix Pusoy cards reversed in AE, add lasso drag-select for slot fill in setup phase"
+    "changelog":  "v2.0.6.7: Vietnamese card input (r=rô c=cơ b=bích t/n=tép), EN clubs=cl, Joker Job/Jor, manual fill hint guide"
 }
