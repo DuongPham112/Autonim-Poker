@@ -1,6 +1,6 @@
 ﻿{
-    "clientVersion":  "2.0.7.0",
+    "clientVersion":  "2.0.7.1",
     "scriptVersion":  "1.0.0",
     "assetVersion":  "1.0.0",
-    "changelog":  "v2.0.7.0: Claude Bridge server for brief-to-animation automation (localhost:3847)"
+    "changelog":  "v2.0.7.1: AI Generate with ref images + video frames (multimodal Gemini)"
 }
