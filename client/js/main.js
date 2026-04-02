@@ -5951,7 +5951,7 @@ function executeManualFill() {
         const code = codes[i];
         const card = typeof resolveCardName === 'function'
             ? resolveCardName(code, trayAvailable)
-            : trayAvailable.find(c => c.name === code || c.baseName === code);
+            : trayAvailable.find(c => c.name === code);
 
         if (!card) {
             errors.push(`"${code}" — card not found`);
@@ -5959,12 +5959,12 @@ function executeManualFill() {
         }
 
         // Check duplicate in this batch
-        if (usedBaseNames.has(card.baseName)) {
+        if (usedBaseNames.has(card.name)) {
             errors.push(`"${code}" — duplicate card`);
             continue;
         }
 
-        usedBaseNames.add(card.baseName);
+        usedBaseNames.add(card.name);
         resolvedCards.push(card);
     }
 
@@ -7739,7 +7739,7 @@ async function handleAIGenerate() {
         return;
     }
 
-    var availableCardNames = availableCards.map(function (c) { return c.name || c.baseName; });
+    var availableCardNames = availableCards.map(function (c) { return c.name; });
     var availableSlotIds = slots.map(function (s) { return s.id; });
     debugLog('[AI] Target preset: ' + targetPreset + ', slot IDs: ' + availableSlotIds.join(', '));
 
@@ -7871,7 +7871,7 @@ async function applyAILayout(result) {
         }
         if (!card) {
             card = appState.trayCards.find(function (c) {
-                return c.inTray !== false && (c.name === cardName || c.baseName === cardName);
+                return c.inTray !== false && c.name === cardName;
             });
         }
         if (!card) {
@@ -7917,7 +7917,7 @@ function findTrayCardByName(cardName) {
     }
     if (!card) {
         card = appState.trayCards.find(function (c) {
-            return c.inTray !== false && (c.name === cardName || c.baseName === cardName);
+            return c.inTray !== false && c.name === cardName;
         });
     }
     return card;
@@ -7928,7 +7928,7 @@ function findTrayCardByName(cardName) {
  */
 function findTableCardByName(cardName) {
     return appState.tableCards.find(function (c) {
-        return c.name === cardName || c.baseName === cardName;
+        return c.name === cardName;
     });
 }
 
