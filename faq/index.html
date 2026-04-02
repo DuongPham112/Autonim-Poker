@@ -79,6 +79,7 @@
                             <a href="#s1-installation" class="toc-link">1.2 Cài đặt plugin</a>
                             <a href="#s1-login" class="toc-link">1.3 Đăng nhập</a>
                             <a href="#s1-interface" class="toc-link">1.4 Giao diện chính</a>
+                            <a href="#s1-whats-new" class="toc-link">1.5 What's New</a>
                         </div>
                     </div>
 
@@ -90,7 +91,8 @@
                             <a href="#s2-layouts" class="toc-link">2.1 Các loại layout</a>
                             <a href="#s2-tools" class="toc-link">2.2 Board Tools</a>
                             <a href="#s2-zones" class="toc-link">2.3 Card Zones</a>
-                            <a href="#s2-save-load" class="toc-link">2.4 Lưu & Tải Layout</a>
+                            <a href="#s2-cz-settings" class="toc-link">2.4 Community Zone Settings</a>
+                            <a href="#s2-save-load" class="toc-link">2.5 Lưu & Tải Layout</a>
                         </div>
                     </div>
 
@@ -102,6 +104,7 @@
                             <a href="#s3-tray" class="toc-link">3.1 Card Tray</a>
                             <a href="#s3-placing" class="toc-link">3.2 Đặt bài vào Zone</a>
                             <a href="#s3-properties" class="toc-link">3.3 Thuộc tính Card</a>
+                            <a href="#s3-slot-fill" class="toc-link">3.4 Slot Fill (Auto/Manual)</a>
                         </div>
                     </div>
 
@@ -115,6 +118,7 @@
                             <a href="#s4-auto-record" class="toc-link">4.3 Auto-Record</a>
                             <a href="#s4-card-actions" class="toc-link">4.4 Card Actions</a>
                             <a href="#s4-dealing" class="toc-link">4.5 Dealing Card</a>
+                            <a href="#s4-save-load" class="toc-link">4.6 Save/Load Project</a>
                         </div>
                     </div>
 
@@ -158,7 +162,7 @@
 
                 </nav>
 
-                <div class="sidebar__version">v2.0.6.0</div>
+                <div class="sidebar__version">v2.0.6.5</div>
             </div>
         </aside>
 
@@ -171,7 +175,7 @@
             <!-- Hero -->
             <section class="hero">
                 <div class="container">
-                    <div class="hero__badge">v2.0.6.0</div>
+                    <div class="hero__badge">v2.0.6.5</div>
                     <h2 class="hero__title">Poker Animation<br><span class="gradient-text">Director Tool</span></h2>
                     <p class="hero__desc">Transform After Effects into a powerful poker animation studio.<br>Arrange
                         cards, record poses, export keyframes — zero coding required.</p>
@@ -317,12 +321,7 @@
                             </ol>
 
                             <figure class="screenshot">
-                                <div class="screenshot__placeholder screenshot__placeholder--tall">
-                                    <span class="screenshot__badge">Screenshot Placeholder</span>
-                                    <span class="screenshot__icon">📷</span>
-                                    <span class="screenshot__label">Màn hình đăng nhập — email, password, nút
-                                        Login</span>
-                                </div>
+                                <img src="img/login_screen.png" alt="Màn hình đăng nhập Autonim-Poker" style="width:100%;border-radius:8px;">
                                 <figcaption>Fig 1.3 — Màn hình đăng nhập Autonim-Poker</figcaption>
                             </figure>
 
@@ -365,14 +364,59 @@
                             </div>
 
                             <figure class="screenshot">
-                                <div class="screenshot__placeholder screenshot__placeholder--wide">
-                                    <span class="screenshot__badge">Screenshot Placeholder</span>
-                                    <span class="screenshot__icon">📷</span>
-                                    <span class="screenshot__label">Giao diện tổng quan: (A) Thanh phase, (B) Board
-                                        canvas, (C) Card tray, (D) Director Panel / AE Settings</span>
-                                </div>
+                                <img src="img/overview_ui.png" alt="Giao diện tổng quan Autonim-Poker" style="width:100%;border-radius:8px;">
                                 <figcaption>Fig 1.4 — Giao diện tổng quan Autonim-Poker với 4 khu vực chính</figcaption>
                             </figure>
+                        </div>
+
+                        <!-- 1.5 -->
+                        <div class="subsection" id="s1-whats-new">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">1.5</span>What's New in v2.0.6.5
+                            </h3>
+                            <p>Tổng hợp các tính năng và sửa lỗi từ <strong>v2.0.6.1</strong> đến <strong>v2.0.6.5</strong>:</p>
+
+                            <div class="changelog-list" style="margin-top: 12px;">
+                                <div class="callout callout--tip">
+                                    <span class="callout__icon">🆕</span>
+                                    <div>
+                                        <p><strong>v2.0.6.5</strong> — Stability & Bug Fixes</p>
+                                        <ul style="margin-top:6px; padding-left:18px;">
+                                            <li>Fix context menu chỉ hiện sau khi card đã di chuyển</li>
+                                            <li>Fix nút "All" (Flip All, Slam All, Spin All) dựa trên actual moved cards</li>
+                                            <li>Fix <code>handleResetTable</code> tích hợp Undo/Autosave</li>
+                                            <li>Fix thiếu <code>applyBezierEasing</code> trong dealing, shiftZone, group-z animations</li>
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                <div class="callout callout--info">
+                                    <span class="callout__icon">🔧</span>
+                                    <div>
+                                        <p><strong>v2.0.6.3</strong> — Deal Speed & Arrange Tools</p>
+                                        <ul style="margin-top:6px; padding-left:18px;">
+                                            <li><strong>Deal Speed slider</strong> — điều chỉnh tốc độ chia bài (1-5 frames/card)</li>
+                                            <li><strong>Arrange Row/Column</strong> — sắp xếp multi-selected slots thành hàng/cột</li>
+                                            <li><strong>🌀 Spin Effect</strong> — hiệu ứng xoay bài (X-rotation)</li>
+                                            <li><strong>Slot Fill</strong> — Auto Fill random hoặc Manual Fill shorthand</li>
+                                            <li><strong>Community Zone Settings</strong> — Row/Pile/Stack modes</li>
+                                            <li><strong>Save/Load Project</strong> — xuất/nhập toàn bộ project ra file JSON</li>
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                <div class="callout callout--info">
+                                    <span class="callout__icon">🔄</span>
+                                    <div>
+                                        <p><strong>v2.0.6.1</strong> — OTA Stability</p>
+                                        <ul style="margin-top:6px; padding-left:18px;">
+                                            <li>Silent auto-check cho OTA updates</li>
+                                            <li>Tránh "Update Failed" report sai khi vừa update xong</li>
+                                            <li>Persist trạng thái "just updated" success</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </section>
 
@@ -453,16 +497,18 @@
                                             và <em>radius</em>.</li>
                                     </ul>
                                 </dd>
-                                <dt>Align</dt>
-                                <dd>Chọn nhiều card places (Ctrl+click) → căn chỉnh theo: Left, Center H, Right, Top,
-                                    Middle V, Bottom.</dd>
-                                <dt>Distribute</dt>
-                                <dd>Phân bố đều khoảng cách ngang hoặc dọc giữa các card places đã chọn.</dd>
+                                <dt>Arrange Row / Column</dt>
+                                <dd>
+                                    Chọn nhiều card places (Ctrl+click) → nhấn <strong>↔ Row</strong> hoặc <strong>↕ Column</strong> để sắp xếp thành hàng ngang/dọc với spacing đều. Điều chỉnh khoảng cách bằng slider.
+                                </dd>
+                                <dt>Stack</dt>
+                                <dd>Xếp chồng các slot đã chọn với overlap — dùng để tạo hiệu ứng stack bài.</dd>
+                                <dt>Dealing Slot</dt>
+                                <dd>Nhấn <strong>🃏 Add Deal</strong> để thêm vị trí chia bài (tối đa 1). Kéo để đặt lại vị trí. Được dùng khi bật Dealing Card trong AE Settings.</dd>
                                 <dt>Delete Multi</dt>
                                 <dd>Chọn nhiều card places + nhấn <kbd>Delete</kbd> để xóa cùng lúc.</dd>
                                 <dt>Background</dt>
-                                <dd>Chọn màu nền hoặc ảnh nền cho board canvas (preview only, không ảnh hưởng AE
-                                    export).</dd>
+                                <dd>Chọn màu nền (Solid Color), ảnh nền (Custom Image) hoặc Poker Table cho board canvas. Preview only — không ảnh hưởng AE export.</dd>
                             </dl>
 
                             <figure class="screenshot">
@@ -509,9 +555,32 @@
                         </div>
 
                         <!-- 2.4 -->
+                        <div class="subsection" id="s2-cz-settings">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">2.4</span>Community Zone Settings
+                            </h3>
+                            <p>Khi chọn một <strong>Community Zone (CZ)</strong> marker trên board, panel bên phải hiện ra các tùy chỉnh:</p>
+                            <dl class="tool-list">
+                                <dt>Mode: Row</dt>
+                                <dd>Các card xếp thành hàng ngang trong zone, phân bố đều theo chiều rộng. Phù hợp cho Community cards trong Poker (Flop, Turn, River).</dd>
+                                <dt>Mode: Pile</dt>
+                                <dd>Các card xếp chồng ngẫu nhiên với random rotation nhẹ. Tạo hiệu ứng stack bài tự nhiên.</dd>
+                                <dt>Mode: Stack</dt>
+                                <dd>Các card xếp chồng chính xác, offset nhẹ. Gọn gàng hơn Pile, phù hợp cho draw/discard pile.</dd>
+                                <dt>Width / Height</dt>
+                                <dd>Điều chỉnh kích thước vùng zone bằng slider. Width: 100-800, Height: 60-500.</dd>
+                            </dl>
+
+                            <div class="callout callout--tip">
+                                <span class="callout__icon">💡</span>
+                                <p>Trong Board phase, click vào marker CZ để mở panel settings. Thay đổi áp dụng ngay lập tức.</p>
+                            </div>
+                        </div>
+
+                        <!-- 2.5 -->
                         <div class="subsection" id="s2-save-load">
                             <h3 class="subsection__title">
-                                <span class="subsection__num">2.4</span>Lưu & Tải Layout
+                                <span class="subsection__num">2.5</span>Lưu & Tải Layout
                             </h3>
 
                             <div class="two-col">
@@ -639,6 +708,39 @@
                                 </div>
                                 <figcaption>Fig 3.3 — Context menu khi right-click card trong Setup mode</figcaption>
                             </figure>
+                        </div>
+
+                        <!-- 3.4 -->
+                        <div class="subsection" id="s3-slot-fill">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">3.4</span>Slot Fill (Auto / Manual)
+                            </h3>
+                            <p>Khi layout đã có nhiều slot trống, bạn có thể fill nhanh bằng context menu:</p>
+
+                            <div class="two-col">
+                                <div>
+                                    <p class="col-heading">🎲 Auto Fill</p>
+                                    <ol class="step-list">
+                                        <li>Chọn slot trống (hoặc multi-select với <kbd>Ctrl</kbd>+Click)</li>
+                                        <li>Right-click → <strong>🎲 Auto Fill</strong></li>
+                                        <li>Plugin tự fill random card từ tray vào các slot đã chọn</li>
+                                    </ol>
+                                </div>
+                                <div>
+                                    <p class="col-heading">✏️ Manual Fill</p>
+                                    <ol class="step-list">
+                                        <li>Chọn slot trống → right-click → <strong>✏️ Manual Fill</strong></li>
+                                        <li>Nhập shorthand card names:<br><code>As Kh 10d Qc 2s</code></li>
+                                        <li>A=Ace, K=King, Q=Queen, J=Jack, 2-10=Rank<br>s=♠, h=♥, d=♦, c=♣</li>
+                                        <li>Nhấn <strong>Fill</strong> hoặc <kbd>Enter</kbd> để xác nhận</li>
+                                    </ol>
+                                </div>
+                            </div>
+
+                            <div class="callout callout--tip">
+                                <span class="callout__icon">💡</span>
+                                <p>Manual Fill sẽ kiểm tra card đã tồn tại trên board — nếu đã used sẽ báo lỗi. Nhấn <kbd>Escape</kbd> để đóng overlay.</p>
+                            </div>
                         </div>
                     </section>
 
@@ -777,6 +879,8 @@
                                 <dt>Slam</dt>
                                 <dd>Hiệu ứng đập bài — scale bounce. Thường dùng khi reveal bài quan trọng hoặc muốn
                                     nhấn mạnh.</dd>
+                                <dt>🌀 Spin <span style="background:#7c3aed;color:#fff;font-size:0.7em;padding:1px 6px;border-radius:4px;margin-left:4px;">NEW</span></dt>
+                                <dd>Hiệu ứng xoay bài theo trục X (X-rotation). Card xoay 360° tạo hiệu ứng spin ấn tượng. Trong Grouping Mode, dùng <strong>Spin All</strong> để áp dụng cho toàn bộ nhóm.</dd>
                                 <dt>Face Up / Face Down</dt>
                                 <dd>Set mặc định cho zone: bài mới kéo vào zone sẽ tự động face up hoặc face down.</dd>
                             </dl>
@@ -803,6 +907,13 @@
                                 <li>Trong <strong>AE Settings</strong> panel, bật toggle <strong>Dealing Card</strong>
                                 </li>
                                 <li>Kéo icon dealing slot để đặt vị trí trên board (thường là giữa bàn)</li>
+                                <li>Điều chỉnh <strong>Deal Speed</strong> slider (1-5 frames/card):
+                                    <ul style="margin-top:4px; padding-left:18px;">
+                                        <li><strong>1 f/card</strong> — Rất nhanh (chia bài tốc độ cao)</li>
+                                        <li><strong>3 f/card</strong> — Mặc định (tự nhiên)</li>
+                                        <li><strong>5 f/card</strong> — Chậm (dramatic, cinematic)</li>
+                                    </ul>
+                                </li>
                                 <li>Export sang AE → cards bay từ dealing slot đến từng zone</li>
                             </ol>
 
@@ -814,20 +925,49 @@
 
                             <div class="callout callout--tip">
                                 <span class="callout__icon">💡</span>
-                                <p>Từ <strong>v2.0.6.0+</strong>, dealing dùng <strong>Z-lift arc</strong>: card bay cao
-                                    hơn giữa đường để tránh xuyên qua nhau trong AE 3D.</p>
+                                <p><strong>Deal Speed</strong> slider hiện ước tính tổng thời gian dealing dựa trên số card và tốc độ đã chọn. Dealing dùng <strong>Z-lift arc</strong> + <strong>Bezier easing</strong>: card bay cao giữa đường với easing tự nhiên.</p>
                             </div>
 
                             <figure class="screenshot">
                                 <div class="screenshot__placeholder">
                                     <span class="screenshot__badge">Screenshot Placeholder</span>
                                     <span class="screenshot__icon">📷</span>
-                                    <span class="screenshot__label">AE Settings panel — Dealing Card toggle ON, dealing
-                                        slot trên board</span>
+                                    <span class="screenshot__label">AE Settings panel — Dealing Card toggle ON, Deal Speed slider, dealing slot trên board</span>
                                 </div>
-                                <figcaption>Fig 4.5 — AE Settings với Dealing Card bật và dealing slot được đặt trên
-                                    board</figcaption>
+                                <figcaption>Fig 4.5 — AE Settings với Dealing Card, Deal Speed slider (3 f/card)</figcaption>
                             </figure>
+                        </div>
+
+                        <!-- 4.6 -->
+                        <div class="subsection" id="s4-save-load">
+                            <h3 class="subsection__title">
+                                <span class="subsection__num">4.6</span>Save / Load Project
+                            </h3>
+                            <p>Lưu và tải toàn bộ trạng thái project (board layout + cards + recorded steps) dưới dạng file JSON.</p>
+
+                            <div class="two-col">
+                                <div>
+                                    <p class="col-heading">💾 Save Project</p>
+                                    <ol class="step-list">
+                                        <li>Nhấn <strong>💾 Save</strong> trong AE Settings panel</li>
+                                        <li>File <code>.json</code> được download tự động</li>
+                                        <li>Chứa: board layout, card positions, face states, recorded steps, AE settings</li>
+                                    </ol>
+                                </div>
+                                <div>
+                                    <p class="col-heading">📂 Load Project</p>
+                                    <ol class="step-list">
+                                        <li>Nhấn <strong>📂 Load</strong> trong AE Settings panel</li>
+                                        <li>Chọn file <code>.json</code> đã lưu trước đó</li>
+                                        <li>Plugin khôi phục toàn bộ trạng thái — sẵn sàng tiếp tục hoặc export</li>
+                                    </ol>
+                                </div>
+                            </div>
+
+                            <div class="callout callout--warning">
+                                <span class="callout__icon">⚠️</span>
+                                <p>Load project sẽ <strong>ghi đè toàn bộ</strong> trạng thái hiện tại. Hãy save project hiện tại trước khi load file khác.</p>
+                            </div>
                         </div>
                     </section>
 
@@ -1046,11 +1186,15 @@
                             </div>
                             <div class="shortcut">
                                 <kbd>Ctrl</kbd> + <kbd>Z</kbd>
-                                <span>Undo thao tác gần nhất</span>
+                                <span>Undo thao tác gần nhất (Board + Record mode)</span>
+                            </div>
+                            <div class="shortcut">
+                                <kbd>Escape</kbd>
+                                <span>Đóng overlay, context menu, hoặc Manual Fill panel</span>
                             </div>
                             <div class="shortcut">
                                 <kbd>Right-click</kbd>
-                                <span>Context menu — Flip / Flip.Ani / Slam / Remove</span>
+                                <span>Context menu — Flip / Flip.Ani / Slam / Spin / Remove</span>
                             </div>
                             <div class="shortcut">
                                 <kbd>Drag</kbd>
@@ -1058,11 +1202,15 @@
                             </div>
                             <div class="shortcut">
                                 <kbd>Ctrl</kbd> + <kbd>Click</kbd>
-                                <span>Multi-select card places (Board mode)</span>
+                                <span>Multi-select card places / slots (Board mode)</span>
                             </div>
                             <div class="shortcut">
                                 <kbd>Click</kbd>
                                 <span>Chọn card vào group (Grouping Mode)</span>
+                            </div>
+                            <div class="shortcut">
+                                <kbd>Enter</kbd>
+                                <span>Xác nhận Manual Fill input</span>
                             </div>
                         </div>
                     </section>
@@ -1339,6 +1487,22 @@
                                 <dt>Step Blending / Overlap</dt>
                                 <dd>Tham số quyết định step tiếp theo bắt đầu khi nào. 0% = tuần tự hoàn toàn, 50% =
                                     step sau bắt đầu khi step trước đi nửa đường.</dd>
+                            </div>
+                            <div class="glossary-item">
+                                <dt>Spin Effect</dt>
+                                <dd>Hiệu ứng xoay card theo trục X (X-rotation 360°). Tạo keyframes X-rotation trong AE. Có thể áp dụng riêng lẻ hoặc cho toàn group với Spin All.</dd>
+                            </div>
+                            <div class="glossary-item">
+                                <dt>Deal Speed</dt>
+                                <dd>Số frames giữa mỗi lá bài khi chia (stagger). 1 f/card = nhanh, 5 f/card = chậm. Điều chỉnh bằng slider trong AE Settings khi Dealing Card bật.</dd>
+                            </div>
+                            <div class="glossary-item">
+                                <dt>Slot Fill</dt>
+                                <dd>Tính năng fill nhanh card vào các slot trống. Auto Fill = random, Manual Fill = nhập shorthand (ví dụ: As Kh 10d).</dd>
+                            </div>
+                            <div class="glossary-item">
+                                <dt>Bezier Easing</dt>
+                                <dd>Hàm easing tùy chỉnh dùng đường cong Bezier để tạo chuyển động mượt mà. Plugin dùng cho dealing, shiftZone và group-z animations.</dd>
                             </div>
                         </dl>
                     </section>

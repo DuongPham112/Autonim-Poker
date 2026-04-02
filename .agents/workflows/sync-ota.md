@@ -20,12 +20,12 @@ This workflow syncs the Autonim-Poker client files to the BannerGeneratorAI back
 
 1. Run the sync script:
 ```powershell
-powershell -ExecutionPolicy Bypass -File "I:\WebAppDev\Autonim-Poker\scripts\sync-ota.ps1" -Changelog "<changelog message>"
+powershell -ExecutionPolicy Bypass -File "I:\WebDev\Autonim-Poker\scripts\sync-ota.ps1" -Changelog "<changelog message>"
 ```
 
 2. Deploy BannerGeneratorAI to Vercel (for bundle download only):
 ```powershell
-cd I:\WebAppDev\BannerGeneratorAI; npx vercel --prod
+cd I:\WebDev\BannerGeneratorAI; npx vercel --prod
 ```
 
 3. Verify the version check from GitHub Raw URL:

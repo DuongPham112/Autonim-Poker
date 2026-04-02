@@ -622,7 +622,7 @@ function setAnchorPointToCenter(layer) {
  * Apply initial transform properties to layer (3D)
  * zOrder (from layout) or zonePosition determines initial Z:
  * - Higher zOrder = more NEGATIVE Z = closer to camera = in FRONT
- * isFaceUp determines initial Y Rotation: true = 180°, false = 0°
+ * isFaceUp determines initial Y Rotation: true = 0° (front visible), false = 180° (back visible)
  */
 function applyInitialTransform(layer, assetInfo, comp) {
     // Get z-order for Z calculation
@@ -861,8 +861,16 @@ function applyPusoyPositionExpression(cardLayer, controlLayerName, cardInfo, pus
         rotExpr += 'var defAngle = 0;\n';
     }
 
+    // IMPORTANT: When Y Rotation = 180° (face-down), Z Rotation is visually mirrored.
+    // The keyframe `value` is already negated for face-down cards (by processDealingAnimation
+    // or applyInitialTransform). The slider offset (newRot - defRot) must ALSO be negated
+    // for face-down cards, otherwise the fan spread direction reverses when adjusting sliders.
+    // We check Y Rotation dynamically so this works even after flip animations.
     rotExpr += 'var defRot = defAngle * 180 / Math.PI;\n' +
-        'value + (newRot - defRot);';
+        'var yRot = transform.yRotation;\n' +
+        'var isFaceDown = (Math.abs(yRot % 360) >= 90 && Math.abs(yRot % 360) <= 270);\n' +
+        'var sign = isFaceDown ? -1 : 1;\n' +
+        'value + sign * (newRot - defRot);';
 
     cardLayer.property("Z Rotation").expression = rotExpr;
 }
@@ -2117,15 +2125,23 @@ function processTransformAction(layer, action, startTime, duration, targetZ, sel
 
 /**
  * Process FLIP effect using Y Rotation (3D)
- * Face down (back) = 0° Y Rotation
- * Face up (front) = 180° Y Rotation
+ * Face down (back) = Y Rotation 180°
+ * Face up (front) = Y Rotation 0°
  * Switch visibility at 90° (perpendicular to view)
- * 
+ *
+ * IMPORTANT: Z Rotation compensation for face-down mirroring.
+ * When Y=180° (face-down), Z Rotation is visually mirrored. The initial setup
+ * (applyInitialTransform / processDealingAnimation) negates Z Rotation to compensate.
+ * When a card flips, we must toggle this compensation:
+ *   face-down → face-up: Z was negated, now un-negate (negate back to original)
+ *   face-up → face-down: Z was original, now negate
+ *
  * TIMING: Flip starts 1 frame before move ends, so card flips as it lands
  * @param holdUntilTime - Time to hold end rotation until (next step start)
  */
 function processFlipEffect(layer, startTime, duration, flipToFaceUp, holdUntilTime) {
     var yRotProp = layer.property("Y Rotation");
+    var zRotProp = layer.property("Z Rotation");
 
     var frameDuration = 1 / FRAME_RATE;
     var flipDuration = FLIP_DURATION_FRAMES * frameDuration;
@@ -2157,6 +2173,21 @@ function processFlipEffect(layer, startTime, duration, flipToFaceUp, holdUntilTi
     }
 
     applyBezierEasing(yRotProp);
+
+    // 2. COMPENSATE Z ROTATION for face-state change
+    // When face state changes, Z Rotation compensation must toggle:
+    // The current Z value was set for the OLD face state. Negate it for the NEW face state.
+    var currentZRot = zRotProp.valueAtTime(flipStartTime, false);
+    var newZRot = -currentZRot; // Toggle compensation: negated ↔ un-negated
+    zRotProp.setValueAtTime(flipStartTime, currentZRot); // Hold old value until flip
+    zRotProp.setValueAtTime(endTime, newZRot);            // Switch to compensated/uncompensated
+
+    // Hold Z rotation until next step
+    if (holdUntilTime !== undefined && holdUntilTime > endTime + frameDuration) {
+        zRotProp.setValueAtTime(holdUntilTime, newZRot);
+    }
+
+    applyBezierEasing(zRotProp);
 
     // 2. TOGGLE VISIBILITY INSIDE PRE-COMP at mid-flip (90°)
     var preComp = layer.source;

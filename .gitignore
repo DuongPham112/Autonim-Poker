@@ -46,3 +46,7 @@ debug.log
 
 # Autosave data (generated at runtime)
 assets/autosave-board.json
+
+# Storyboard (local only)
+storyboard/
+storyboard.zip

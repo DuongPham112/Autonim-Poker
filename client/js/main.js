@@ -2826,8 +2826,10 @@ function saveInitialStateForExport() {
         };
 
         // For Pusoy layout: include per-card row/col and rowCount for AE expression sliders
-        if (appState.boardLayout.boardStyle === 'pusoy' && card.zone && card.zone.startsWith('grid-')) {
-            const placeId = card.zone.replace('grid-', '');
+        // Use INITIAL zone (not current card.zone) to get correct row/col if card was swapped
+        const pusoyZone = wasInInitialSnap ? initialSnap[card.id].zone : card.zone;
+        if (appState.boardLayout.boardStyle === 'pusoy' && pusoyZone && pusoyZone.startsWith('grid-')) {
+            const placeId = pusoyZone.replace('grid-', '');
             const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
             if (place) {
                 const rowConfigs = [{ count: 3 }, { count: 5 }, { count: 5 }]; // Pusoy 3-5-5
