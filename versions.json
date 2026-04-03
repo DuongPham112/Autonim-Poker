@@ -1,6 +1,6 @@
 ﻿{
-    "clientVersion":  "2.0.7.2",
+    "clientVersion":  "2.0.7.3",
     "scriptVersion":  "1.0.0",
     "assetVersion":  "1.0.0",
-    "changelog":  "v2.0.7.2: AI understands Pusoy 4-player layout, multimodal ref images/video, Claude Bridge server"
+    "changelog":  "v2.0.7.3: Fix AI layout mismatch (cards flying off-grid), add Pusoy 2P/4P presets"
 }

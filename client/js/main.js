@@ -4363,6 +4363,10 @@ function handleLoadPreset() {
         loadPokerLayout();
     } else if (presetValue === 'pusoy') {
         loadPusoyLayout();
+    } else if (presetValue === 'pusoy-2p') {
+        loadPusoyMultiLayout(2);
+    } else if (presetValue === 'pusoy-4p') {
+        loadPusoyMultiLayout(4);
     } else if (presetValue === 'card-sorting') {
         loadGridLayout(4, 3);
     } else if (presetValue === 'custom') {
@@ -4639,6 +4643,144 @@ function loadPusoyLayout() {
 }
 
 /**
+ * Generate a single Pusoy 3-5-5 fan hand at a given position/orientation.
+ * Returns an array of card place objects.
+ * @param {string} playerPrefix - ID prefix (e.g. 'p1', 'p2')
+ * @param {number} centerX - Pivot X in UI coords
+ * @param {number} basePivotY - Pivot Y for top row in UI coords
+ * @param {number} orientationDeg - Rotation offset for entire hand (0=bottom, 180=top, 90=left, -90=right)
+ * @param {number} scale - Scale factor (1.0 = full size, 0.6 = 60%)
+ * @param {number} baseZOrder - Starting z-order for this hand
+ * @param {number} baseSpacing - Fan radius from slider
+ * @param {number} curvature - Angle spread from slider
+ * @param {number} layerGap - Gap between rows from slider
+ */
+function generatePusoyHand(playerPrefix, centerX, basePivotY, orientationDeg, scale, baseZOrder, baseSpacing, curvature, layerGap) {
+    const places = [];
+    const orientationRad = (orientationDeg * Math.PI) / 180;
+
+    const rowConfigs = [
+        { row: 0, count: 3, fanRadius: (baseSpacing + 30) * scale, angleSpread: curvature - 20, pivotYOffset: 0 },
+        { row: 1, count: 5, fanRadius: baseSpacing * scale, angleSpread: curvature, pivotYOffset: layerGap * scale },
+        { row: 2, count: 5, fanRadius: (baseSpacing - 30) * scale, angleSpread: curvature + 5, pivotYOffset: (layerGap * 2) * scale }
+    ];
+
+    let placeIndex = 0;
+
+    rowConfigs.forEach(config => {
+        const { row, count, fanRadius, angleSpread, pivotYOffset } = config;
+        const spreadRad = (angleSpread * Math.PI) / 180;
+        const startAngle = -spreadRad / 2;
+        const angleStep = count > 1 ? spreadRad / (count - 1) : 0;
+
+        for (let col = 0; col < count; col++) {
+            const angle = startAngle + (col * angleStep);
+
+            // Local position relative to pivot (before orientation rotation)
+            const localX = fanRadius * Math.sin(angle);
+            const localY = -(fanRadius * Math.cos(angle)) + pivotYOffset;
+
+            // Rotate local position by orientation
+            const rotatedX = localX * Math.cos(orientationRad) - localY * Math.sin(orientationRad);
+            const rotatedY = localX * Math.sin(orientationRad) + localY * Math.cos(orientationRad);
+
+            const x = centerX + rotatedX;
+            const y = basePivotY + rotatedY;
+
+            // Card rotation = fan angle + orientation
+            const cardRotation = Math.round((angle * 180) / Math.PI) + orientationDeg;
+
+            const zOrder = baseZOrder + (row * 10) + col;
+
+            places.push({
+                id: playerPrefix + '-' + placeIndex,
+                x: x,
+                y: y,
+                col: col,
+                row: row,
+                rotation: cardRotation,
+                zOrder: zOrder,
+                label: playerPrefix.toUpperCase() + (placeIndex + 1)
+            });
+            placeIndex++;
+        }
+    });
+
+    return places;
+}
+
+/**
+ * Load multi-player Pusoy layout
+ * @param {number} playerCount - 2 or 4 players
+ */
+function loadPusoyMultiLayout(playerCount) {
+    const spacingSlider = document.getElementById('pusoySpacing');
+    const curvatureSlider = document.getElementById('pusoyCurvature');
+    const layerGapSlider = document.getElementById('pusoyLayerGap');
+
+    const baseSpacing = spacingSlider ? parseInt(spacingSlider.value) : 150;
+    const curvature = curvatureSlider ? parseInt(curvatureSlider.value) : 50;
+    const layerGap = layerGapSlider ? parseInt(layerGapSlider.value) : 30;
+
+    let places = [];
+    const slotGroups = [];
+    const scale = playerCount === 2 ? 0.75 : 0.55;
+
+    // Player positions: each defined by centerX, pivotY, orientation
+    const playerPositions = playerCount === 2
+        ? [
+            { prefix: 'p1', label: 'Player 1 (Bottom)', cx: UI_WIDTH / 2, py: UI_HEIGHT * 0.72, orient: 0 },
+            { prefix: 'p2', label: 'Player 2 (Top)', cx: UI_WIDTH / 2, py: UI_HEIGHT * 0.28, orient: 180 }
+        ]
+        : [
+            { prefix: 'p1', label: 'Player 1 (Bottom)', cx: UI_WIDTH / 2, py: UI_HEIGHT * 0.78, orient: 0 },
+            { prefix: 'p2', label: 'Player 2 (Top)', cx: UI_WIDTH / 2, py: UI_HEIGHT * 0.22, orient: 180 },
+            { prefix: 'p3', label: 'Player 3 (Left)', cx: UI_WIDTH * 0.18, py: UI_HEIGHT / 2, orient: 90 },
+            { prefix: 'p4', label: 'Player 4 (Right)', cx: UI_WIDTH * 0.82, py: UI_HEIGHT / 2, orient: -90 }
+        ];
+
+    playerPositions.forEach((pos, idx) => {
+        const hand = generatePusoyHand(
+            pos.prefix, pos.cx, pos.py, pos.orient, scale,
+            idx * 100, baseSpacing, curvature, layerGap
+        );
+        places = places.concat(hand);
+
+        // Create slot groups: 3 rows per player
+        const topSlots = hand.filter(p => p.row === 0).map(p => p.id);
+        const midSlots = hand.filter(p => p.row === 1).map(p => p.id);
+        const botSlots = hand.filter(p => p.row === 2).map(p => p.id);
+
+        slotGroups.push({
+            id: pos.prefix + '-top', name: pos.label + ' Top',
+            slotIds: topSlots, groupOrder: idx * 3, color: getGroupColor(idx * 3)
+        });
+        slotGroups.push({
+            id: pos.prefix + '-mid', name: pos.label + ' Mid',
+            slotIds: midSlots, groupOrder: idx * 3 + 1, color: getGroupColor(idx * 3 + 1)
+        });
+        slotGroups.push({
+            id: pos.prefix + '-bot', name: pos.label + ' Bot',
+            slotIds: botSlots, groupOrder: idx * 3 + 2, color: getGroupColor(idx * 3 + 2)
+        });
+    });
+
+    const presetName = 'Pusoy ' + playerCount + 'P';
+    appState.boardLayout = {
+        type: 'grid',
+        name: presetName,
+        boardStyle: 'pusoy',
+        gridCols: 5,
+        gridRows: 3 * playerCount,
+        cardPlaces: places,
+        slotGroups: slotGroups
+    };
+
+    gameContainer.classList.add('grid-mode');
+    setStatus('Loaded ' + presetName + ' layout (' + places.length + ' slots)');
+}
+
+/**
  * Setup Pusoy layout slider controls and visibility toggle
  */
 function setupPusoySliderControls() {
@@ -4658,7 +4800,7 @@ function setupPusoySliderControls() {
 
     // Function to toggle Pusoy controls visibility
     const togglePusoyControls = () => {
-        const isPusoy = presetSelect.value === 'pusoy';
+        const isPusoy = presetSelect.value.startsWith('pusoy');
         pusoyControls.classList.toggle('hidden', !isPusoy);
 
         // Add Pusoy Pack: visible for both pusoy and custom presets
@@ -4684,7 +4826,14 @@ function setupPusoySliderControls() {
 
         // Regenerate layout if Pusoy is selected
         if (appState.boardLayout.boardStyle === 'pusoy') {
-            loadPusoyLayout();
+            const currentPreset = presetSelect.value;
+            if (currentPreset === 'pusoy-2p') {
+                loadPusoyMultiLayout(2);
+            } else if (currentPreset === 'pusoy-4p') {
+                loadPusoyMultiLayout(4);
+            } else {
+                loadPusoyLayout();
+            }
             renderCardPlaceMarkers();
             renderCardDropZones();
         }
@@ -8028,15 +8177,10 @@ async function handleAIGenerate() {
  * Apply AI-generated layout to the board
  */
 async function applyAILayout(result) {
-    var targetPreset = result.preset || 'current';
-    if (targetPreset !== 'current') {
-        var psEl = document.getElementById('presetSelect');
-        if (psEl) {
-            psEl.value = targetPreset;
-            handleLoadPreset();
-            setPhase('setup');
-        }
-    }
+    // NOTE: Do NOT re-load preset here. handleAIGenerate() already loaded the
+    // correct preset BEFORE collecting slot IDs and sending them to the API.
+    // Re-loading a different preset (e.g. server returning "pusoy" when user
+    // selected "poker") would cause slot ID mismatch and cards flying off-grid.
 
     handleResetTable();
     await new Promise(function (r) { setTimeout(r, 100); });
@@ -8174,14 +8318,9 @@ async function applyAIScenario(result) {
         appState._bulkApplying = true;
 
         // === STEP 0: Reset and apply initial setup ===
-        var targetPreset = result.preset || 'current';
-        if (targetPreset !== 'current') {
-            var psEl = document.getElementById('presetSelect');
-            if (psEl) {
-                psEl.value = targetPreset;
-                handleLoadPreset();
-            }
-        }
+        // NOTE: Do NOT re-load preset here. handleAIGenerate() already loaded
+        // the correct preset BEFORE collecting slot IDs. Re-loading a different
+        // preset from the server response would cause slot ID mismatch.
 
         handleResetTable();
         await new Promise(function (r) { setTimeout(r, 100); });
