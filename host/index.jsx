@@ -643,15 +643,19 @@ function applyInitialTransform(layer, assetInfo, comp) {
     layer.property("Position").setValueAtTime(0, [posX, posY, zPos]);
 
     // Z Rotation (table rotation) — also as keyframe to hold
-    // IMPORTANT: When Y Rotation = 180° (face-down), AE's 3D rotation order (Rz × Ry)
-    // causes Z Rotation to appear visually MIRRORED to the viewer.
-    // A card with Z Rot = -45° and Y Rot = 180° LOOKS like +45° rotation.
-    // To compensate, we NEGATE Z Rotation for face-down cards.
+    // Keyframe stores the LOGICAL rotation (intuitive value).
+    // An expression handles the Y=180° face-down mirroring compensation dynamically,
+    // so manual editing in AE stays intuitive (what you set = what you see).
     var rotation = assetInfo.rotation !== undefined ? assetInfo.rotation : 0;
-    if (!assetInfo.isFaceUp) {
-        rotation = -rotation; // Compensate for Y=180° mirroring the visual rotation
-    }
     layer.property("Z Rotation").setValueAtTime(0, rotation);
+
+    // Expression: auto-negate Z Rotation when face-down (Y≈180°) to compensate
+    // for AE's 3D rotation order mirroring. This will be overwritten for Pusoy cards
+    // by applyPusoyPositionExpression which includes the same compensation.
+    layer.property("Z Rotation").expression =
+        'var yRot = transform.yRotation;\n' +
+        'var isFaceDown = (Math.abs(yRot % 360) >= 90 && Math.abs(yRot % 360) <= 270);\n' +
+        'isFaceDown ? -value : value;';
 
     // Y Rotation for card face: Face-up = 0°, Face-down = 180°
     // Use setValueAtTime to match Position/Z Rotation pattern
@@ -861,16 +865,14 @@ function applyPusoyPositionExpression(cardLayer, controlLayerName, cardInfo, pus
         rotExpr += 'var defAngle = 0;\n';
     }
 
-    // IMPORTANT: When Y Rotation = 180° (face-down), Z Rotation is visually mirrored.
-    // The keyframe `value` is already negated for face-down cards (by processDealingAnimation
-    // or applyInitialTransform). The slider offset (newRot - defRot) must ALSO be negated
-    // for face-down cards, otherwise the fan spread direction reverses when adjusting sliders.
-    // We check Y Rotation dynamically so this works even after flip animations.
+    // Keyframes store LOGICAL rotation. The expression computes the fan offset,
+    // then negates the ENTIRE result when face-down to compensate for AE's Y=180° mirroring.
+    // This replaces the base expression from applyInitialTransform for Pusoy cards.
     rotExpr += 'var defRot = defAngle * 180 / Math.PI;\n' +
+        'var result = value + (newRot - defRot);\n' +
         'var yRot = transform.yRotation;\n' +
         'var isFaceDown = (Math.abs(yRot % 360) >= 90 && Math.abs(yRot % 360) <= 270);\n' +
-        'var sign = isFaceDown ? -1 : 1;\n' +
-        'value + sign * (newRot - defRot);';
+        'isFaceDown ? -result : result;';
 
     cardLayer.property("Z Rotation").expression = rotExpr;
 }
@@ -1290,29 +1292,27 @@ function processDealingAnimation(comp, layerMap, initialState, dealingCard) {
         posProperty.setValueAtTime(dealEndTime, [targetX, targetY, zPos]);
 
         // --- Z ROTATION keyframes ---
-        // IMPORTANT: Y Rotation = 180° (face-down) mirrors Z Rotation visually.
-        // Cards start face-down during dealing, so initial rotation 0° is fine.
-        // At destination: if card stays face-down, negate targetRot to compensate.
+        // Keyframes store LOGICAL rotation. The Z Rotation expression (set in
+        // applyInitialTransform) handles face-down mirroring compensation dynamically.
         var hasPusoyExpression = (info.row !== undefined && info.col !== undefined);
         var rotProperty = layer.property("Z Rotation");
-        var visualTargetRot = info.isFaceUp ? targetRot : -targetRot; // Negate for face-down cards
 
         if (hasPusoyExpression) {
             // Pusoy fan: keep rotation at targetRot throughout
-            rotProperty.setValueAtTime(0, visualTargetRot);
+            rotProperty.setValueAtTime(0, targetRot);
             if (startTime > 0) {
-                rotProperty.setValueAtTime(startTime, visualTargetRot);
+                rotProperty.setValueAtTime(startTime, targetRot);
             }
-            rotProperty.setValueAtTime(endTime, visualTargetRot);
-            rotProperty.setValueAtTime(dealEndTime, visualTargetRot);
+            rotProperty.setValueAtTime(endTime, targetRot);
+            rotProperty.setValueAtTime(dealEndTime, targetRot);
         } else {
-            // Non-Pusoy: animate from 0° → visualTargetRot
+            // Non-Pusoy: animate from 0° → targetRot
             rotProperty.setValueAtTime(0, 0);
             if (startTime > 0) {
                 rotProperty.setValueAtTime(startTime, 0);
             }
-            rotProperty.setValueAtTime(endTime, visualTargetRot);
-            rotProperty.setValueAtTime(dealEndTime, visualTargetRot);
+            rotProperty.setValueAtTime(endTime, targetRot);
+            rotProperty.setValueAtTime(dealEndTime, targetRot);
         }
 
         // --- Y ROTATION (face state) ---
@@ -1827,7 +1827,7 @@ function processSwapInitiator(layer, action, startTime, moveDuration, targetZ, s
     var rotationProp = layer.property("Z Rotation");
 
     var currentPos = positionProp.valueAtTime(startTime, false);
-    var currentRot = rotationProp.valueAtTime(startTime, false);
+    var currentRot = rotationProp.valueAtTime(startTime, true); // true = pre-expression (logical keyframe value)
 
     var startZ = currentPos[2] !== undefined ? currentPos[2] : 0;
     var startX = currentPos[0];
@@ -1905,7 +1905,7 @@ function processSwapDisplaced(layer, action, startTime, moveDuration, targetZ, s
     var rotationProp = layer.property("Z Rotation");
 
     var currentPos = positionProp.valueAtTime(startTime, false);
-    var currentRot = rotationProp.valueAtTime(startTime, false);
+    var currentRot = rotationProp.valueAtTime(startTime, true); // true = pre-expression (logical keyframe value)
 
     var startZ = currentPos[2] !== undefined ? currentPos[2] : 0;
     var startX = currentPos[0];
@@ -2039,7 +2039,7 @@ function processTransformAction(layer, action, startTime, duration, targetZ, sel
 
     // Get current values (fallback) - 3D position has [X, Y, Z]
     var currentPos = positionProp.valueAtTime(startTime, false);
-    var currentRot = rotationProp.valueAtTime(startTime, false);
+    var currentRot = rotationProp.valueAtTime(startTime, true); // true = pre-expression (logical keyframe value)
 
     // Get current Z position
     var startZ = currentPos[2] !== undefined ? currentPos[2] : 0;
@@ -2129,19 +2129,15 @@ function processTransformAction(layer, action, startTime, duration, targetZ, sel
  * Face up (front) = Y Rotation 0°
  * Switch visibility at 90° (perpendicular to view)
  *
- * IMPORTANT: Z Rotation compensation for face-down mirroring.
- * When Y=180° (face-down), Z Rotation is visually mirrored. The initial setup
- * (applyInitialTransform / processDealingAnimation) negates Z Rotation to compensate.
- * When a card flips, we must toggle this compensation:
- *   face-down → face-up: Z was negated, now un-negate (negate back to original)
- *   face-up → face-down: Z was original, now negate
+ * Z Rotation compensation is handled by the expression on Z Rotation (set in
+ * applyInitialTransform). The expression dynamically checks Y Rotation, so when
+ * the flip changes Y from 0↔180, Z compensation toggles automatically.
  *
  * TIMING: Flip starts 1 frame before move ends, so card flips as it lands
  * @param holdUntilTime - Time to hold end rotation until (next step start)
  */
 function processFlipEffect(layer, startTime, duration, flipToFaceUp, holdUntilTime) {
     var yRotProp = layer.property("Y Rotation");
-    var zRotProp = layer.property("Z Rotation");
 
     var frameDuration = 1 / FRAME_RATE;
     var flipDuration = FLIP_DURATION_FRAMES * frameDuration;
@@ -2174,20 +2170,10 @@ function processFlipEffect(layer, startTime, duration, flipToFaceUp, holdUntilTi
 
     applyBezierEasing(yRotProp);
 
-    // 2. COMPENSATE Z ROTATION for face-state change
-    // When face state changes, Z Rotation compensation must toggle:
-    // The current Z value was set for the OLD face state. Negate it for the NEW face state.
-    var currentZRot = zRotProp.valueAtTime(flipStartTime, false);
-    var newZRot = -currentZRot; // Toggle compensation: negated ↔ un-negated
-    zRotProp.setValueAtTime(flipStartTime, currentZRot); // Hold old value until flip
-    zRotProp.setValueAtTime(endTime, newZRot);            // Switch to compensated/uncompensated
-
-    // Hold Z rotation until next step
-    if (holdUntilTime !== undefined && holdUntilTime > endTime + frameDuration) {
-        zRotProp.setValueAtTime(holdUntilTime, newZRot);
-    }
-
-    applyBezierEasing(zRotProp);
+    // Z Rotation compensation is handled by the expression on Z Rotation property
+    // (set in applyInitialTransform). The expression dynamically checks Y Rotation,
+    // so when the flip changes Y from 0↔180, the Z compensation toggles automatically.
+    // No keyframe manipulation needed here.
 
     // 2. TOGGLE VISIBILITY INSIDE PRE-COMP at mid-flip (90°)
     var preComp = layer.source;

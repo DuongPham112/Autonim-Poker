@@ -172,6 +172,7 @@ let autoStepPopup, autoStepYes, autoStepNo;
 // Context Menu Elements
 let cardContextMenu, ctxFlipBtn, ctxFlipAniBtn, ctxSlamBtn, ctxSpinBtn;
 let ctxFlipAllBtn, ctxSlamAllBtn, ctxSpinAllBtn, ctxGroupDivider;
+let _ctxMenuPinnedPos = null; // {left, top} - saved pinned position (persisted in localStorage)
 
 // Slot Fill Elements
 let slotContextMenu, slotFillAutoBtn, slotFillManualBtn;
@@ -730,6 +731,7 @@ function bindEvents() {
     if (ctxFlipAllBtn) ctxFlipAllBtn.addEventListener('click', toggleCtxFlipAll);
     if (ctxSlamAllBtn) ctxSlamAllBtn.addEventListener('click', toggleCtxSlamAll);
     if (ctxSpinAllBtn) ctxSpinAllBtn.addEventListener('click', toggleCtxSpinAll);
+    setupCtxMenuDrag();
 
     // Context menu popup toggle
     var showCtxToggle = document.getElementById('showContextMenuToggle');
@@ -1561,11 +1563,10 @@ function showSwapStackPopup(movingCard, existingCard, zoneName, rotation, zoneEl
         </div>
     `;
 
-    // Position near the zone
+    // Position near the zone — use fixed coords (popup appended to body)
     const zoneRect = zoneElement.getBoundingClientRect();
-    const containerRect = gameContainer.getBoundingClientRect();
-    popup.style.left = `${zoneRect.left - containerRect.left + zoneRect.width / 2}px`;
-    popup.style.top = `${zoneRect.top - containerRect.top - 50}px`;
+    popup.style.left = `${zoneRect.left + zoneRect.width / 2}px`;
+    popup.style.top = `${zoneRect.top - 50}px`;
 
     // Event handlers
     popup.querySelector('.btn-swap').addEventListener('click', () => {
@@ -1582,7 +1583,7 @@ function showSwapStackPopup(movingCard, existingCard, zoneName, rotation, zoneEl
         popup.remove();
     });
 
-    gameContainer.appendChild(popup);
+    document.body.appendChild(popup);
 }
 
 /**
@@ -4033,21 +4034,17 @@ function showCardContextMenu(card) {
         return;
     }
 
-    // Position menu next to card
-    const cardRect = card.element.getBoundingClientRect();
-    const containerRect = gameContainer.getBoundingClientRect();
-
-    // Position to the right of the card
-    let left = cardRect.right - containerRect.left + 5;
-    let top = cardRect.top - containerRect.top;
-
-    // Keep within bounds
-    if (left + 150 > containerRect.width) {
-        left = cardRect.left - containerRect.left - 155;
+    // Use pinned position (fixed coords) if available, otherwise default to top-right of game area
+    const pinned = _ctxMenuPinnedPos;
+    if (pinned) {
+        cardContextMenu.style.left = pinned.left + 'px';
+        cardContextMenu.style.top = pinned.top + 'px';
+    } else {
+        // Default: top-right corner of game container
+        const containerRect = gameContainer.getBoundingClientRect();
+        cardContextMenu.style.left = (containerRect.right - 320) + 'px';
+        cardContextMenu.style.top = (containerRect.top + 10) + 'px';
     }
-
-    cardContextMenu.style.left = `${left}px`;
-    cardContextMenu.style.top = `${top}px`;
 
     // Update button states
     updateContextMenuState(card);
@@ -4070,6 +4067,101 @@ function showCardContextMenu(card) {
 function hideCardContextMenu() {
     if (!cardContextMenu) return;
     cardContextMenu.classList.add('hidden');
+}
+
+/**
+ * Setup drag-to-pin for cardContextMenu (position: fixed, body-level).
+ * The entire menu bar is draggable (mousedown on menu background or drag handle).
+ * Clicking buttons works normally. Position saved in localStorage.
+ * Double-click handle or click reset → unpin (back to default corner).
+ */
+function setupCtxMenuDrag() {
+    if (!cardContextMenu) return;
+
+    // Load pinned position from localStorage
+    try {
+        var saved = localStorage.getItem('ctxMenuPinnedPos');
+        if (saved) _ctxMenuPinnedPos = JSON.parse(saved);
+    } catch (e) { /* ignore */ }
+
+    var handle = cardContextMenu.querySelector('.ctx-drag-handle');
+    var resetBtn = cardContextMenu.querySelector('.ctx-reset-btn');
+
+    var isDragging = false;
+    var didDrag = false;
+    var dragOffsetX = 0, dragOffsetY = 0;
+
+    // Start drag on mousedown anywhere on the menu (except buttons)
+    cardContextMenu.addEventListener('mousedown', function (e) {
+        // Only start drag from handle, divider, or menu background — not from buttons
+        if (e.target.tagName === 'BUTTON') return;
+        e.preventDefault();
+        isDragging = true;
+        didDrag = false;
+        var menuRect = cardContextMenu.getBoundingClientRect();
+        dragOffsetX = e.clientX - menuRect.left;
+        dragOffsetY = e.clientY - menuRect.top;
+        cardContextMenu.classList.add('ctx-dragging');
+    });
+
+    document.addEventListener('mousemove', function (e) {
+        if (!isDragging) return;
+        didDrag = true;
+        var left = e.clientX - dragOffsetX;
+        var top = e.clientY - dragOffsetY;
+        // Clamp within viewport
+        left = Math.max(0, Math.min(left, window.innerWidth - 50));
+        top = Math.max(0, Math.min(top, window.innerHeight - 30));
+        cardContextMenu.style.left = left + 'px';
+        cardContextMenu.style.top = top + 'px';
+    });
+
+    document.addEventListener('mouseup', function () {
+        if (!isDragging) return;
+        isDragging = false;
+        cardContextMenu.classList.remove('ctx-dragging');
+        if (!didDrag) return; // Only pin if actually dragged
+        // Save pinned position
+        _ctxMenuPinnedPos = {
+            left: parseInt(cardContextMenu.style.left),
+            top: parseInt(cardContextMenu.style.top)
+        };
+        try {
+            localStorage.setItem('ctxMenuPinnedPos', JSON.stringify(_ctxMenuPinnedPos));
+        } catch (e) { /* ignore */ }
+        cardContextMenu.classList.add('ctx-pinned');
+        if (resetBtn) resetBtn.classList.remove('hidden');
+    });
+
+    // Double-click handle or click reset → unpin
+    function unpinMenu() {
+        _ctxMenuPinnedPos = null;
+        try { localStorage.removeItem('ctxMenuPinnedPos'); } catch (e) { /* ignore */ }
+        cardContextMenu.classList.remove('ctx-pinned');
+        if (resetBtn) resetBtn.classList.add('hidden');
+        if (appState.selectedCard) showCardContextMenu(appState.selectedCard);
+    }
+
+    if (handle) {
+        handle.addEventListener('dblclick', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            unpinMenu();
+        });
+    }
+
+    if (resetBtn) {
+        resetBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            unpinMenu();
+        });
+        if (_ctxMenuPinnedPos) resetBtn.classList.remove('hidden');
+    }
+
+    if (_ctxMenuPinnedPos) {
+        cardContextMenu.classList.add('ctx-pinned');
+    }
 }
 
 /**

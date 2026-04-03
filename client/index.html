@@ -445,35 +445,7 @@
                             </div>
                         </div>
 
-                        <!-- Inline Card Context Menu -->
-                        <div id="cardContextMenu" class="card-context-menu hidden">
-                            <button id="ctxFlipBtn" class="ctx-btn" title="Flip Animation (with movement)">
-                                🔄 Flip
-                            </button>
-                            <button id="ctxFlipAniBtn" class="ctx-btn" title="Flip as Step (record flip action)">
-                                🎬 Flip.Ani
-                            </button>
-                            <button id="ctxSlamBtn" class="ctx-btn" title="Slam Effect">
-                                💥 Slam
-                            </button>
-                            <button id="ctxSpinBtn" class="ctx-btn" title="Spin Effect (X rotation)">
-                                🌀 Spin
-                            </button>
-                            <!-- Group Actions (visible when grouping mode is active) -->
-                            <div id="ctxGroupDivider" class="ctx-divider hidden"></div>
-                            <button id="ctxFlipAllBtn" class="ctx-btn ctx-group-btn hidden"
-                                title="Flip All Grouped Cards">
-                                🔄 Flip All
-                            </button>
-                            <button id="ctxSlamAllBtn" class="ctx-btn ctx-group-btn hidden"
-                                title="Slam All Grouped Cards">
-                                💥 Slam All
-                            </button>
-                            <button id="ctxSpinAllBtn" class="ctx-btn ctx-group-btn hidden"
-                                title="Spin All Grouped Cards">
-                                🌀 Spin All
-                            </button>
-                        </div>
+                        <!-- Card Context Menu moved to body level to escape 3D stacking context -->
 
                         <!-- Slot Fill Context Menu -->
                         <div id="slotContextMenu" class="slot-context-menu hidden">
@@ -929,6 +901,38 @@
 
     <!-- Load main application logic -->
     <script src="js/main.js"></script>
+
+    <!-- Card Context Menu — at body level to escape 3D stacking context of game container -->
+    <div id="cardContextMenu" class="card-context-menu hidden">
+        <div class="ctx-drag-handle" title="Drag to move. Double-click to reset position.">⠿</div>
+        <button id="ctxFlipBtn" class="ctx-btn" title="Flip Animation (with movement)">
+            🔄 Flip
+        </button>
+        <button id="ctxFlipAniBtn" class="ctx-btn" title="Flip as Step (record flip action)">
+            🎬 Flip.Ani
+        </button>
+        <button id="ctxSlamBtn" class="ctx-btn" title="Slam Effect">
+            💥 Slam
+        </button>
+        <button id="ctxSpinBtn" class="ctx-btn" title="Spin Effect (X rotation)">
+            🌀 Spin
+        </button>
+        <!-- Group Actions (visible when grouping mode is active) -->
+        <div id="ctxGroupDivider" class="ctx-divider hidden"></div>
+        <button id="ctxFlipAllBtn" class="ctx-btn ctx-group-btn hidden"
+            title="Flip All Grouped Cards">
+            🔄 Flip All
+        </button>
+        <button id="ctxSlamAllBtn" class="ctx-btn ctx-group-btn hidden"
+            title="Slam All Grouped Cards">
+            💥 Slam All
+        </button>
+        <button id="ctxSpinAllBtn" class="ctx-btn ctx-group-btn hidden"
+            title="Spin All Grouped Cards">
+            🌀 Spin All
+        </button>
+        <button class="ctx-reset-btn hidden" title="Reset to auto-position">✕</button>
+    </div>
 </body>
 
 </html>

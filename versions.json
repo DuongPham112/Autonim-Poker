@@ -1,6 +1,6 @@
 ﻿{
-    "clientVersion":  "2.0.7.3",
+    "clientVersion":  "2.0.7.4",
     "scriptVersion":  "1.0.0",
     "assetVersion":  "1.0.0",
-    "changelog":  "v2.0.7.3: Fix AI layout mismatch (cards flying off-grid), add Pusoy 2P/4P presets"
+    "changelog":  "v2.0.7.4: Fix Z Rotation via expression (no more card bending in AE manual edit), draggable Flip/Slam popup + fix swap/stack popup z-index"
 }

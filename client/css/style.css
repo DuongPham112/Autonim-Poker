@@ -1648,16 +1648,66 @@ body {
    INLINE CARD CONTEXT MENU
    ============================================ */
 .card-context-menu {
-    position: absolute;
-    z-index: 99999;
+    position: fixed;
+    z-index: 999999;
     display: flex;
+    align-items: center;
     gap: 4px;
     background: var(--bg-secondary);
     border: 1px solid var(--accent-blue);
     border-radius: 6px;
     padding: 6px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    animation: fadeIn 0.15s ease;
+    user-select: none;
+}
+
+.card-context-menu.ctx-pinned {
+    border-color: var(--accent-green);
+    box-shadow: 0 4px 16px rgba(46, 160, 67, 0.3);
+}
+
+.card-context-menu.ctx-dragging {
+    opacity: 0.85;
+}
+
+.ctx-drag-handle {
+    cursor: grab;
+    color: var(--text-muted);
+    font-size: 16px;
+    line-height: 1;
+    padding: 4px 4px 4px 2px;
+    opacity: 0.6;
+    transition: opacity 0.15s, color 0.15s;
+}
+
+.ctx-drag-handle:hover {
+    opacity: 1;
+    color: var(--accent-blue);
+}
+
+.ctx-dragging .ctx-drag-handle {
+    cursor: grabbing;
+}
+
+.ctx-reset-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px 2px 4px 4px;
+    opacity: 0.5;
+    transition: opacity 0.15s;
+    line-height: 1;
+}
+
+.ctx-reset-btn:hover {
+    opacity: 1;
+    color: var(--accent-red, #f85149);
+}
+
+.ctx-reset-btn.hidden {
+    display: none;
 }
 
 .card-context-menu.hidden {
@@ -2922,8 +2972,8 @@ body.phase-board-setting .card-tray-panel {
    SWAP/STACK POPUP
    ============================================ */
 .swap-stack-popup {
-    position: absolute;
-    z-index: 1000;
+    position: fixed;
+    z-index: 999999;
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: 8px;
