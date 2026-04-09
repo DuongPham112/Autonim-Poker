@@ -4657,3 +4657,270 @@ body.grouping-mode-active .zone-card:hover:not(.grouped) {
     object-fit: cover;
     display: block;
 }
+
+/* Preset Buttons Grid */
+.preset-buttons-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 10px;
+}
+.preset-btn {
+    position: relative;
+    padding: 6px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+}
+.preset-btn:hover {
+    background: #cccccc;
+    border-color: #bbbbbb;
+    color: #1e1e1e;
+    font-weight: bold;
+}
+.preset-btn.active {
+    background: var(--accent-green);
+    border-color: var(--accent-green);
+    color: #1e1e1e;
+    font-weight: bold;
+}
+
+/* Live Preview Opacity */
+body.previewing-preset .card-place-marker {
+    opacity: 0.3 !important;
+    filter: brightness(0.8) sepia(0.5) hue-rotate(180deg);
+}
+body.previewing-preset .card-place-marker::after {
+    content: 'Preview';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 16px;
+    font-weight: bold;
+    color: rgba(255,255,255,0.4);
+    pointer-events: none;
+}
+
+/* Button Pop Animation */
+@keyframes preset-pop-up {
+    0% { transform: scale(1); box-shadow: 0 0 0 rgba(0,0,0,0); }
+    50% { transform: scale(1.15); box-shadow: 0 4px 15px var(--accent-green); z-index: 10; background: var(--accent-green); color: #1e1e1e; font-weight: bold; }
+    100% { transform: scale(1); box-shadow: 0 0 0 rgba(0,0,0,0); }
+}
+.preset-btn.pop-effect {
+    animation: preset-pop-up 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Global Button Monotone (All non-active/non-hovered buttons rest as gray) */
+.btn:not(.active):not(:hover):not(.selected),
+button:not(.active):not(:hover):not(.selected):not(.preset-btn) {
+    background: var(--bg-tertiary) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+}
+
+/* ============================================
+   SVG SPREAD/FAN TRANSFORM INDICATOR
+   ============================================ */
+#transformIndicatorSvg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 9999;
+}
+
+.guide-line {
+    stroke: rgba(255, 255, 255, 0.25);
+    stroke-width: 1.5px;
+    stroke-dasharray: 4 4;
+}
+
+.guide-arc {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.35);
+    stroke-width: 1.5px;
+}
+
+.svg-handle {
+    fill: #1e1e1e;
+    stroke: rgba(255, 255, 255, 0.8);
+    stroke-width: 1.5px;
+    pointer-events: auto;
+    cursor: grab;
+    transition: all 0.2s ease;
+}
+
+.svg-handle:hover {
+    fill: var(--accent-blue);
+    stroke: #ffffff;
+}
+
+.svg-handle:active {
+    cursor: grabbing;
+}
+
+.handle-rotate {
+    fill: #2d2d30;
+    stroke: rgba(255, 255, 255, 0.6);
+}
+
+.handle-pivot {
+    fill: #1e1e1e;
+    stroke: rgba(255, 255, 255, 0.6);
+}
+
+/* Disable individual marker clicks when indicator is active */
+body.indicator-active .card-place-marker {
+    pointer-events: none !important;
+}
+
+/* Visibility logic for Transform Centroid Handles via Ctrl key */
+#transformIndicatorSvg .handle-pivot,
+#transformIndicatorSvg .handle-rotate,
+#transformIndicatorSvg .centroid-tool {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+}
+
+body.indicator-ctrl #transformIndicatorSvg .handle-pivot,
+body.indicator-ctrl #transformIndicatorSvg .handle-rotate,
+body.indicator-ctrl #transformIndicatorSvg .centroid-tool {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Floating Hand Controls */
+.group-pencil-btn {
+    position: absolute;
+    z-index: 500;
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(30, 30, 30, 0.95);
+    color: #fff;
+    cursor: pointer;
+    font-size: 13px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    backdrop-filter: blur(4px);
+    transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.group-pencil-btn:hover {
+    transform: translate(-50%, -50%) scale(1.08) !important;
+    background: rgba(50, 50, 50, 0.95);
+    border-color: rgba(255,255,255,0.3);
+}
+
+/* Floating Toolbar Expansion */
+.group-tools-float {
+    position: absolute;
+    z-index: 500;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    transform: translate(-50%, -50%);
+}
+
+.group-tools-float .group-pencil-btn {
+    position: relative;
+    transform: none !important;
+    left: auto;
+    top: auto;
+}
+
+.clone-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px dashed rgba(255,255,255,0.3);
+    background: rgba(0,0,0,0.4);
+    color: white;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.clone-btn:hover {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid white;
+    transform: scale(1.1);
+}
+
+#transformIndicatorSvg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1000000 !important;
+}
+
+#indicatorConfirmBtn {
+    position: absolute;
+    z-index: 1000001 !important;
+    padding: 8px 16px;
+    border-radius: 20px;
+    border: none;
+    background: var(--accent-green);
+    color: #1e1e1e;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 14px;
+    box-shadow: 0 4px 15px rgba(40, 200, 64, 0.3);
+    transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.guide-line {
+    display: none !important;
+}
+
+body.indicator-active .ctrl-hint {
+    opacity: 1 !important;
+}
+
+#indicatorConfirmBtn:hover {
+    transform: translate(-50%, -50%) scale(1.08) !important;
+    background: #32d64f;
+    box-shadow: 0 6px 20px rgba(40, 200, 64, 0.4);
+}
+
+/* Table Quadrants Watermark */
+.table-quadrants-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1; /* Below cards */
+}
+
+.quadrant-line {
+    stroke: rgba(255, 255, 255, 0.05); /* very faint */
+    stroke-width: 2px;
+    stroke-dasharray: 10 10;
+}
+
+.quadrant-watermark {
+    fill: rgba(255, 255, 255, 0.05); /* faint watermark */
+    font-size: 180px;
+    font-weight: 900;
+    font-family: inherit;
+    text-anchor: middle;
+    dominant-baseline: central;
+}
+

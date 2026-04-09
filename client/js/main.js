@@ -349,6 +349,7 @@ async function bootApp() {
 function init() {
     getDOMElements();
     bindEvents();
+    initBriefModal();
 
     // Restore saved board layout or load default poker layout
     if (!autoRestoreBoardLayout()) {
@@ -371,6 +372,28 @@ function init() {
     console.log(`Autonim-Poker v2.0 initialized (user: ${user ? user.username : 'unknown'})`);
 }
 
+function initBriefModal() {
+    if (quangBriefBtn) quangBriefBtn.addEventListener('click', () => {
+        if (briefModal) briefModal.classList.remove('hidden');
+    });
+
+    const closeDialog = () => {
+        if (briefModal) briefModal.classList.add('hidden');
+    };
+
+    if (closeBriefModalBtn) closeBriefModalBtn.addEventListener('click', closeDialog);
+    if (cancelBriefBtn) cancelBriefBtn.addEventListener('click', closeDialog);
+    if (closeBriefOverlay) closeBriefOverlay.addEventListener('click', closeDialog);
+    
+    if (applyBriefBtn) applyBriefBtn.addEventListener('click', () => {
+        console.log("Applying Brief...", briefInput ? briefInput.value : "");
+        // Logic will go here
+        closeDialog();
+    });
+}
+
+var quangBriefBtn, briefModal, closeBriefOverlay, closeBriefModalBtn, cancelBriefBtn, applyBriefBtn, briefInput, briefOutputPreview;
+
 function getDOMElements() {
     // Tray Panel
     cardTrayList = document.getElementById('cardTrayList');
@@ -391,7 +414,17 @@ function getDOMElements() {
     modeBadge = document.getElementById('modeBadge');
     flipAllBtn = document.getElementById('flipAllBtn');
     resetTableBtn = document.getElementById('resetTableBtn');
+    quangBriefBtn = document.getElementById('quangBriefBtn');
     tableCardCount = document.getElementById('tableCardCount');
+
+    // Brief Modal
+    briefModal = document.getElementById('briefModal');
+    closeBriefOverlay = document.getElementById('closeBriefOverlay');
+    closeBriefModalBtn = document.getElementById('closeBriefModalBtn');
+    cancelBriefBtn = document.getElementById('cancelBriefBtn');
+    applyBriefBtn = document.getElementById('applyBriefBtn');
+    briefInput = document.getElementById('briefInput');
+    briefOutputPreview = document.getElementById('briefOutputPreview');
     stepCount = document.getElementById('stepCount');
     overlapSlider = document.getElementById('overlapSlider');
     overlapValue = document.getElementById('overlapValue');
@@ -568,6 +601,89 @@ function bindEvents() {
 
     // Board Setting Controls
     if (loadPresetBtn) loadPresetBtn.addEventListener('click', handleLoadPreset);
+    
+    // Live Preview using Actual Board
+    let hoverBackupState = null;
+    let hoverBackupVal = null;
+    let confirmPresetClick = false;
+
+    const presetGrid = document.querySelector('.preset-buttons-grid');
+    if (presetGrid) {
+        presetGrid.addEventListener('mouseenter', () => {
+            if (!confirmPresetClick) {
+                hoverBackupState = JSON.stringify(appState.boardLayout);
+                hoverBackupVal = presetSelect ? presetSelect.value : null;
+            }
+            confirmPresetClick = false;
+        });
+
+        presetGrid.addEventListener('mouseleave', () => {
+            document.body.classList.remove('previewing-preset');
+            if (!confirmPresetClick && hoverBackupState) {
+                appState.boardLayout = JSON.parse(hoverBackupState);
+                if (presetSelect && hoverBackupVal) {
+                    presetSelect.value = hoverBackupVal;
+                    presetSelect.dispatchEvent(new Event('change'));
+                }
+                if (typeof clearCardPlaceMarkers === 'function') clearCardPlaceMarkers();
+                if (typeof clearCardDropZones === 'function') clearCardDropZones();
+                if (typeof renderCardPlaceMarkers === 'function') renderCardPlaceMarkers();
+                if (typeof renderCardDropZones === 'function') renderCardDropZones();
+                if (typeof updateCardPlacesList === 'function') updateCardPlacesList();
+                if (typeof autoSaveBoardLayout === 'function') autoSaveBoardLayout();
+                
+                hoverBackupState = null;
+                hoverBackupVal = null;
+            }
+        });
+    }
+
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.addEventListener('mouseenter', () => {
+            document.body.classList.add('previewing-preset');
+            if (!hoverBackupState) {
+                hoverBackupState = JSON.stringify(appState.boardLayout);
+                hoverBackupVal = presetSelect ? presetSelect.value : null;
+                confirmPresetClick = false;
+            }
+            const preset = btn.getAttribute('data-preset');
+            if (preset && presetSelect && preset !== presetSelect.value) {
+                presetSelect.value = preset;
+                presetSelect.dispatchEvent(new Event('change'));
+                if (loadPresetBtn) loadPresetBtn.click();
+            }
+        });
+
+        btn.addEventListener('click', () => {
+            // Trigger visual feedback
+            btn.classList.add('pop-effect');
+            setTimeout(() => btn.classList.remove('pop-effect'), 300);
+
+            document.body.classList.remove('previewing-preset');
+            confirmPresetClick = true;
+            hoverBackupState = null;
+            hoverBackupVal = null;
+            
+            const preset = btn.getAttribute('data-preset');
+            if (preset && presetSelect) {
+                presetSelect.value = preset;
+                presetSelect.dispatchEvent(new Event('change'));
+                if (loadPresetBtn) loadPresetBtn.click();
+            }
+        });
+    });
+
+    // Sync button active state with dropdown change
+    if (presetSelect) {
+        presetSelect.addEventListener('change', () => {
+            if (!document.body.classList.contains('previewing-preset')) {
+                const val = presetSelect.value;
+                document.querySelectorAll('.preset-btn').forEach(b => {
+                    b.classList.toggle('active', b.getAttribute('data-preset') === val);
+                });
+            }
+        });
+    }
     if (applyGridBtn) applyGridBtn.addEventListener('click', handleApplyGrid);
     if (addCardPlaceBtn) addCardPlaceBtn.addEventListener('click', handleAddCardPlace);
     var addCommunityZoneBtn = document.getElementById('addCommunityZoneBtn');
@@ -4523,7 +4639,273 @@ function handleLoadPreset() {
     updateCardPlacesList();
     renderCardPlaceMarkers();
     updateGroupPanelVisibility();
+    // Auto-trigger Transform Indicator on new layout if it has card places
+    if (!document.body.classList.contains('previewing-preset')) {
+        if (presetValue !== 'custom' && appState.boardLayout && appState.boardLayout.cardPlaces.length > 0) {
+            appState.selectedCardPlaces = [...appState.boardLayout.cardPlaces];
+            setTimeout(() => {
+                if (typeof syncTransformIndicator === 'function') syncTransformIndicator();
+            }, 100);
+        }
+    }
 }
+
+function renderGroupPencils() {
+    // Clear old pencils
+    document.querySelectorAll('.group-pencil-btn, .clone-btn, .group-tools-float, .quadrant-number-watermark').forEach(b => b.remove());
+
+    const svgOverlay = document.getElementById('tableQuadrantsOverlay');
+    if (svgOverlay) {
+        svgOverlay.querySelectorAll('text').forEach(t => t.remove());
+    }
+
+    if (!appState.boardLayout || !appState.boardLayout.cardPlaces || appState.boardLayout.cardPlaces.length === 0) return;
+    
+    const gameContainer = document.getElementById('gameContainer');
+    const pokerTable = document.getElementById('pokerTable');
+    if (!gameContainer) return;
+    
+    let scaleX = 1, scaleY = 1, offsetX = 0, offsetY = 0;
+    if (pokerTable) {
+        const tableRect = pokerTable.getBoundingClientRect();
+        const containerRect = gameContainer.getBoundingClientRect();
+        scaleX = pokerTable.offsetWidth / UI_WIDTH;
+        scaleY = pokerTable.offsetHeight / UI_HEIGHT;
+        offsetX = tableRect.left - containerRect.left;
+        offsetY = tableRect.top - containerRect.top;
+    }
+
+    const Q_CENTERS = {
+        1: { x: 640, y: 720 * 0.78, rot: 0 },
+        2: { x: 1280 * 0.20, y: 360, rot: 90 },
+        3: { x: 640, y: 720 * 0.22, rot: 180 },
+        4: { x: 1280 * 0.80, y: 360, rot: -90 }
+    };
+
+    let baseQuadrant = -1; 
+    let quadrantCreationOrder = 1;
+
+    // Map quadrant via slotGroup macros to prevent visual spillover generating multiple pencils/clones
+    const quadrantCards = { 1: [], 2: [], 3: [], 4: [] };
+    const quadrantOrder = []; 
+    
+    appState.boardLayout.slotGroups.forEach(g => {
+        if (!g.slotIds || g.slotIds.length === 0) return;
+        const groupPlaces = appState.boardLayout.cardPlaces.filter(p => g.slotIds.includes(p.id));
+        if (groupPlaces.length === 0) return;
+        
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        groupPlaces.forEach(p => {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+        });
+        const cx = minX + (maxX - minX) / 2;
+        const cy = minY + (maxY - minY) / 2;
+
+        const dx = cx - 640;
+        const dy = cy - 360;
+        let q = 1;
+        if (Math.abs(dy) / 360 > Math.abs(dx) / 640) q = (dy > 0) ? 1 : 3;
+        else q = (dx > 0) ? 4 : 2;
+
+        quadrantCards[q].push(...groupPlaces);
+        if (!quadrantOrder.includes(q)) {
+            quadrantOrder.push(q);
+        }
+    });
+
+    [1, 2, 3, 4].forEach(q => {
+        const places = quadrantCards[q];
+
+        if (places.length > 0) {
+            if (baseQuadrant === -1) baseQuadrant = q;
+
+            // Draw Dynamic Watermark Number using a DOM DIV to float above cards
+            const WatermarkCenters = {
+                1: { x: 640, y: 580 },
+                2: { x: 230, y: 380 },
+                3: { x: 640, y: 180 },
+                4: { x: 1050, y: 380 }
+            };
+
+            const watermark = document.createElement('div');
+            watermark.className = 'quadrant-number-watermark';
+            
+            // The number is the chronological order this quadrant was discovered
+            const orderIndex = quadrantOrder.indexOf(q) + 1;
+            watermark.textContent = String(orderIndex);
+            
+            watermark.style.position = 'absolute';
+            watermark.style.left = `${WatermarkCenters[q].x * scaleX + offsetX}px`;
+            watermark.style.top = `${WatermarkCenters[q].y * scaleY + offsetY}px`;
+            watermark.style.transform = 'translate(-50%, -50%)';
+            watermark.style.fontSize = `${150 * scaleY}px`;
+            watermark.style.fontWeight = '900';
+            watermark.style.color = '#fff';
+            watermark.style.opacity = '0.3';
+            watermark.style.zIndex = '900000'; // High enough to sit on top of cards
+            watermark.style.pointerEvents = 'none';
+            watermark.style.fontFamily = 'monospace';
+            watermark.style.textShadow = '0 10px 30px rgba(0,0,0,0.8)';
+            gameContainer.appendChild(watermark);
+
+            const allSelected = places.every(p => appState.selectedCardPlaces && appState.selectedCardPlaces.includes(p));
+            if (allSelected && document.body.classList.contains('indicator-active')) return; 
+
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            places.forEach(p => {
+                if (p.x < minX) minX = p.x;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.y > maxY) maxY = p.y;
+            });
+            const cx = minX + (maxX - minX)/2;
+
+            const editDomX = cx * scaleX + offsetX;
+            const editDomY = (maxY * scaleY + offsetY) + 60;  
+
+            const pencilBtn = document.createElement('button');
+            pencilBtn.className = 'group-pencil-btn';
+            pencilBtn.innerHTML = '✏️ Edit Hand';
+            pencilBtn.title = `Edit Hand`;
+            pencilBtn.style.left = `${editDomX}px`;
+            pencilBtn.style.top = `${editDomY}px`;
+            pencilBtn.style.transform = 'translate(-50%, -50%)';
+            pencilBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                appState.selectedCardPlaces = [...places];
+                renderCardPlaceMarkers();
+                if (typeof syncTransformIndicator === 'function') syncTransformIndicator();
+                renderGroupPencils();
+            });
+            gameContainer.appendChild(pencilBtn);
+        }
+    });
+
+    if (baseQuadrant !== -1) {
+        [1, 2, 3, 4].forEach(q => {
+            const places = quadrantCards[q];
+
+            if (places.length === 0) {
+                const domX = Q_CENTERS[q].x * scaleX + offsetX;
+                const domY = Q_CENTERS[q].y * scaleY + offsetY;
+
+                const cloneBtn = document.createElement('button');
+                cloneBtn.className = 'clone-btn';
+                cloneBtn.innerHTML = '➕';
+                cloneBtn.title = `Clone layout to this area`;
+                cloneBtn.style.position = 'absolute';
+                cloneBtn.style.left = `${domX}px`;
+                cloneBtn.style.top = `${domY}px`;
+                cloneBtn.style.transform = 'translate(-50%, -50%) scale(1.6)';
+                cloneBtn.style.opacity = '0.7';
+                cloneBtn.style.zIndex = '1000001';
+                
+                cloneBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    cloneHandToTargetQuadrant(baseQuadrant, q);
+                });
+                gameContainer.appendChild(cloneBtn);
+            }
+        });
+    }
+}
+
+function cloneHandToTargetQuadrant(sourceQuad, targetQuad) {
+    const Q_CENTERS = {
+        1: { x: 640, y: 720 * 0.78, rot: 0 },
+        2: { x: 1280 * 0.20, y: 360, rot: 90 },
+        3: { x: 640, y: 720 * 0.22, rot: 180 },
+        4: { x: 1280 * 0.80, y: 360, rot: -90 }
+    };
+
+    const sourceQuadDef = Q_CENTERS[sourceQuad];
+    const targetQuadDef = Q_CENTERS[targetQuad];
+
+    const angleDiff = targetQuadDef.rot - sourceQuadDef.rot;
+    const angleRad = angleDiff * Math.PI / 180;
+    const cosA = Math.cos(angleRad);
+    const sinA = Math.sin(angleRad);
+
+    // Identify all source groups purely inside sourceQuad
+    const sourceGroupsToClone = appState.boardLayout.slotGroups.filter(g => {
+        if (!g.slotIds || g.slotIds.length === 0) return false;
+        // Check if the FIRST place is in the sourceQuad
+        const p1 = appState.boardLayout.cardPlaces.find(p => p.id === g.slotIds[0]);
+        if (!p1) return false;
+        const dx = p1.x - 640;
+        const dy = p1.y - 360;
+        let placeQ = 1;
+        if (Math.abs(dy) / 360 > Math.abs(dx) / 640) placeQ = (dy > 0) ? 1 : 3;
+        else placeQ = (dx > 0) ? 4 : 2;
+        return placeQ === sourceQuad;
+    });
+
+    if (sourceGroupsToClone.length === 0) return;
+
+    // Determine the centroid of all cards in the source quadrant to spin around mathematically
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    sourceGroupsToClone.forEach(g => {
+        const places = appState.boardLayout.cardPlaces.filter(p => g.slotIds.includes(p.id));
+        places.forEach(p => {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+        });
+    });
+    const srcCx = minX + (maxX - minX)/2;
+    const srcCy = minY + (maxY - minY)/2;
+
+    sourceGroupsToClone.forEach(g => {
+        const places = appState.boardLayout.cardPlaces.filter(p => g.slotIds.includes(p.id));
+        const clonedPlaces = [];
+        const newSlotIds = [];
+        let placeCounter = appState.boardLayout.cardPlaces.length + Math.floor(Math.random() * 1000);
+
+        places.forEach(p => {
+            // Spin around the mathematical center of the entire hand
+            let localX = p.x - srcCx;
+            let localY = p.y - srcCy;
+            
+            // Apply orbit spin
+            let rotX = localX * cosA - localY * sinA;
+            let rotY = localX * sinA + localY * cosA;
+
+            let newId = `place-${Date.now()}-${placeCounter++}`;
+            newSlotIds.push(newId);
+
+            let newRot = (p.rotation || 0) + angleDiff;
+            // Normalize
+            while (newRot >= 360) newRot -= 360;
+            while (newRot < 0) newRot += 360;
+
+            clonedPlaces.push({
+                ...p,
+                id: newId,
+                x: targetQuadDef.x + rotX,
+                y: targetQuadDef.y + rotY,
+                rotation: newRot,
+            });
+        });
+
+        appState.boardLayout.cardPlaces.push(...clonedPlaces);
+
+        // Remove old 'Clone' texts from name if cloning multiple times, then append targetQuad
+        let cleanName = g.name.replace(/ Quadrant \d+/g, '').replace(/ Clone/g, '');
+        createSlotGroup(cleanName + ` Quadrant ${targetQuad}`, newSlotIds);
+    });
+
+    // Reorder groups based on Quadrants if they want:
+    // But keeping it as is ensures rendering in order of generation.
+
+    renderCardPlaceMarkers();
+    updateGroupPanelVisibility();
+    setStatus(`Cloned hand to quadrant ${targetQuad}`);
+}
+
 
 /**
  * Load default poker layout with fixed card slots
@@ -4711,11 +5093,7 @@ function loadPusoyLayout() {
         }
     });
 
-    // Auto-create slot groups by row
-    var topRowSlots = places.filter(function (p) { return p.row === 0; }).map(function (p) { return p.id; });
-    var midRowSlots = places.filter(function (p) { return p.row === 1; }).map(function (p) { return p.id; });
-    var bottomRowSlots = places.filter(function (p) { return p.row === 2; }).map(function (p) { return p.id; });
-
+    // Create a single unified slotGroup for the ENTIRE HAND to enable full-hand dragging/editing
     appState.boardLayout = {
         type: 'grid',
         name: 'Pusoy (3-5-5)',
@@ -4724,9 +5102,7 @@ function loadPusoyLayout() {
         gridRows: 3,
         cardPlaces: places,
         slotGroups: [
-            { id: 'pusoy-top', name: 'Top Row', slotIds: topRowSlots, groupOrder: 0, color: getGroupColor(0) },
-            { id: 'pusoy-mid', name: 'Middle Row', slotIds: midRowSlots, groupOrder: 1, color: getGroupColor(1) },
-            { id: 'pusoy-bottom', name: 'Bottom Row', slotIds: bottomRowSlots, groupOrder: 2, color: getGroupColor(2) }
+            { id: 'pusoy-hand', name: 'Pusoy Hand', slotIds: places.map(p => p.id), groupOrder: 0, color: getGroupColor(0) }
         ]
     };
 
@@ -4819,17 +5195,24 @@ function loadPusoyMultiLayout(playerCount) {
     const scale = playerCount === 2 ? 0.75 : 0.55;
 
     // Player positions: each defined by centerX, pivotY, orientation
-    const playerPositions = playerCount === 2
-        ? [
+    let playerPositions = [];
+    if (playerCount === 1) {
+        playerPositions = [
+            { prefix: 'p1', label: 'Player 1 (Bottom)', cx: UI_WIDTH / 2, py: UI_HEIGHT * 0.78, orient: 0 }
+        ];
+    } else if (playerCount === 2) {
+        playerPositions = [
             { prefix: 'p1', label: 'Player 1 (Bottom)', cx: UI_WIDTH / 2, py: UI_HEIGHT * 0.72, orient: 0 },
             { prefix: 'p2', label: 'Player 2 (Top)', cx: UI_WIDTH / 2, py: UI_HEIGHT * 0.28, orient: 180 }
-        ]
-        : [
+        ];
+    } else {
+        playerPositions = [
             { prefix: 'p1', label: 'Player 1 (Bottom)', cx: UI_WIDTH / 2, py: UI_HEIGHT * 0.78, orient: 0 },
             { prefix: 'p2', label: 'Player 2 (Top)', cx: UI_WIDTH / 2, py: UI_HEIGHT * 0.22, orient: 180 },
             { prefix: 'p3', label: 'Player 3 (Left)', cx: UI_WIDTH * 0.18, py: UI_HEIGHT / 2, orient: 90 },
             { prefix: 'p4', label: 'Player 4 (Right)', cx: UI_WIDTH * 0.82, py: UI_HEIGHT / 2, orient: -90 }
         ];
+    }
 
     playerPositions.forEach((pos, idx) => {
         const hand = generatePusoyHand(
@@ -4838,22 +5221,10 @@ function loadPusoyMultiLayout(playerCount) {
         );
         places = places.concat(hand);
 
-        // Create slot groups: 3 rows per player
-        const topSlots = hand.filter(p => p.row === 0).map(p => p.id);
-        const midSlots = hand.filter(p => p.row === 1).map(p => p.id);
-        const botSlots = hand.filter(p => p.row === 2).map(p => p.id);
-
+        // Create a single unified slotGroup for the ENTIRE player hand
         slotGroups.push({
-            id: pos.prefix + '-top', name: pos.label + ' Top',
-            slotIds: topSlots, groupOrder: idx * 3, color: getGroupColor(idx * 3)
-        });
-        slotGroups.push({
-            id: pos.prefix + '-mid', name: pos.label + ' Mid',
-            slotIds: midSlots, groupOrder: idx * 3 + 1, color: getGroupColor(idx * 3 + 1)
-        });
-        slotGroups.push({
-            id: pos.prefix + '-bot', name: pos.label + ' Bot',
-            slotIds: botSlots, groupOrder: idx * 3 + 2, color: getGroupColor(idx * 3 + 2)
+            id: pos.prefix + '-hand', name: pos.label,
+            slotIds: hand.map(p => p.id), groupOrder: idx, color: getGroupColor(idx)
         });
     });
 
@@ -5828,6 +6199,7 @@ function renderCardPlaceMarkers() {
                 // Also select for CZ panel
                 selectCardPlace(place, marker);
                 updateCreateGroupBtnState();
+                if (typeof syncTransformIndicator === 'function') syncTransformIndicator();
                 debugLog(`[MultiSelect] ${appState.selectedCardPlaces.length} slots selected`);
             } else {
                 // Normal click: single select, clear multi-select
@@ -5835,6 +6207,7 @@ function renderCardPlaceMarkers() {
                 document.querySelectorAll('.card-place-marker.multi-selected').forEach(m => m.classList.remove('multi-selected'));
                 selectCardPlace(place, marker);
                 updateCreateGroupBtnState();
+                if (typeof syncTransformIndicator === 'function') syncTransformIndicator();
             }
         });
 
@@ -5845,6 +6218,8 @@ function renderCardPlaceMarkers() {
 
         gameContainer.appendChild(marker);
     });
+    
+    if (typeof renderGroupPencils === 'function') renderGroupPencils();
 }
 
 /**
@@ -6347,6 +6722,8 @@ function deselectCardPlace() {
 
     // Disable cloner button when nothing selected
     updateClonerBtnState();
+
+    if (typeof syncTransformIndicator === 'function') syncTransformIndicator();
 }
 
 /**
@@ -6463,6 +6840,16 @@ function initCZSettingsPanel() {
 
         document.addEventListener('mousemove', (e) => {
             if (!isLassoing || !lassoRect) return;
+            
+            // Fix for stuck drag: if left mouse button is no longer pressed (e.g. released outside window)
+            if (e.buttons !== 1) {
+                // Abort lasso
+                isLassoing = false;
+                if (lassoRect) lassoRect.remove();
+                lassoRect = null;
+                return;
+            }
+
             const containerRect = gameContainer.getBoundingClientRect();
             const currentX = e.clientX - containerRect.left;
             const currentY = e.clientY - containerRect.top;
@@ -6541,6 +6928,7 @@ function initCZSettingsPanel() {
                     debugLog(`[LassoSelect] Selected ${appState.selectedCardPlaces.length} markers`);
                 }
                 updateCreateGroupBtnState();
+                if (typeof syncTransformIndicator === 'function') syncTransformIndicator();
             }
         });
     }

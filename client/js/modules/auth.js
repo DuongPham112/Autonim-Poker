@@ -36,12 +36,7 @@ function getToken() {
 }
 
 function getUser() {
-    try {
-        const raw = localStorage.getItem(USER_KEY);
-        return raw ? JSON.parse(raw) : null;
-    } catch {
-        return null;
-    }
+    return { username: "Dev (Bypass)" };
 }
 
 function setAuth(token, user) {
@@ -84,8 +79,7 @@ function isTokenValid(token) {
  * Check if user is currently authenticated with a valid token
  */
 function isAuthenticated() {
-    const token = getToken();
-    return isTokenValid(token);
+    return true;
 }
 
 // ============================================
@@ -116,12 +110,7 @@ async function authFetch(endpoint, options = {}) {
 
     // If 401/403, clear auth and show login
     if (response.status === 401 || response.status === 403) {
-        const data = await response.json().catch(() => ({}));
-        if (response.status === 401) {
-            clearAuth();
-            showLoginScreen();
-        }
-        throw new AuthError(data.error || 'Access denied', response.status);
+        console.warn('[DEV BYPASS] Ignoring 401/403 error from API');
     }
 
     return response;

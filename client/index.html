@@ -97,8 +97,8 @@
 
                 <!-- Preset Selection -->
                 <div class="board-tools-section">
-                    <label for="presetSelect">Preset:</label>
-                    <div class="preset-selector">
+                    <label for="presetSelect" style="display: none;">Preset:</label>
+                    <div class="preset-selector" style="display: none;">
                         <select id="presetSelect">
                             <option value="poker">Poker (4 Players)</option>
                             <option value="pusoy">Pusoy 1P (3-5-5)</option>
@@ -110,6 +110,28 @@
                         <button id="loadPresetBtn" class="btn btn-sm btn-primary">Load</button>
                         <button id="deletePresetBtn" class="btn btn-sm btn-danger hidden"
                             title="Delete saved layout">🗑️</button>
+                    </div>
+
+                    <!-- 3x2 Preset Buttons Grid -->
+                    <div class="preset-buttons-grid">
+                        <button class="preset-btn active" data-preset="poker">
+                            Poker (4P)
+                        </button>
+                        <button class="preset-btn" data-preset="pusoy">
+                            Sinh ra Hand 1
+                        </button>
+                        <button class="preset-btn" data-preset="pusoy-2p" style="display: none;">
+                            Pusoy (2P)
+                        </button>
+                        <button class="preset-btn" data-preset="pusoy-4p" style="display: none;">
+                            Pusoy (4P)
+                        </button>
+                        <button class="preset-btn" data-preset="card-sorting">
+                            Grid (4x3)
+                        </button>
+                        <button class="preset-btn" data-preset="custom">
+                            Custom
+                        </button>
                     </div>
                 </div>
 
@@ -322,6 +344,9 @@
                         <button id="resetTableBtn" class="btn btn-danger" title="Return all cards to tray">
                             ↩️ Reset Table
                         </button>
+                        <button id="quangBriefBtn" class="btn btn-primary" title="Quăng Brief Zô" style="margin-left: 8px;">
+                            📋 Quăng Brief Zô
+                        </button>
                     </div>
                     <div class="controls-center">
                         <div class="info-panel">
@@ -398,6 +423,14 @@
                         <!-- Poker Table (Center) -->
                         <div id="pokerTable" class="poker-table">
                             <div class="table-felt"></div>
+
+
+                            <!-- Quadrants Overlay Watermark -->
+                            <svg id="tableQuadrantsOverlay" class="table-quadrants-svg" viewBox="0 0 1280 720">
+                                <line class="quadrant-line" x1="0" y1="0" x2="1280" y2="720" />
+                                <line class="quadrant-line" x1="0" y1="720" x2="1280" y2="0" />
+                            </svg>
+                            
                             <div class="table-border-ring"></div>
 
                             <!-- Community Cards Area (center of table) -->
@@ -785,6 +818,32 @@
         </div>
     </div>
 
+    <!-- Brief Input Modal -->
+    <div id="briefModal" class="modal hidden">
+        <div class="modal-overlay" id="closeBriefOverlay"></div>
+        <div class="modal-content" style="width: 500px; max-width: 90vw;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">📋 Quăng Brief Zô</h3>
+                <button id="closeBriefModalBtn" style="background:none; border:none; color:var(--text-secondary); cursor:pointer; font-size:16px; padding: 0;">✖</button>
+            </div>
+            
+            <p style="margin-top: 0; font-size: 13px; color: var(--text-secondary);">Dán nội dung Brief vào đây:</p>
+            <textarea id="briefInput" placeholder="VD: \nPlayer 1: 3 Bích, 5 Cơ...\nPlayer 2: Át Rô..." 
+                style="width: 100%; height: 120px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; font-family: inherit; resize: vertical; margin-bottom: 15px;"></textarea>
+            
+            <p style="margin-top: 0; font-size: 13px; color: var(--text-secondary);">Thứ tự bài (Output dự kiến):</p>
+            <div id="briefOutputPreview" 
+                style="width: 100%; height: 80px; background: var(--bg-primary); border: 1px dashed var(--border-light); border-radius: 4px; padding: 8px; overflow-y: auto; font-size: 12px; color: var(--accent-green); margin-bottom: 15px;">
+                (Chưa có dữ liệu)
+            </div>
+
+            <div class="modal-actions" style="justify-content: flex-end;">
+                <button id="cancelBriefBtn" class="btn btn-secondary">Đóng</button>
+                <button id="applyBriefBtn" class="btn btn-primary">Xếp Bài Lên Bàn (Apply)</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Warning Modal -->
     <div id="warningModal" class="modal hidden">
         <div class="modal-overlay"></div>
@@ -896,6 +955,8 @@
     <script src="js/modules/updater.js"></script>
     <!-- Load Board Tools Module -->
     <script src="js/modules/board_tools.js"></script>
+    <!-- Transform Indicator -->
+    <script src="js/modules/transform_indicator.js"></script>
     <!-- Claude Bridge Server -->
     <script src="js/modules/bridge-server.js"></script>
 
