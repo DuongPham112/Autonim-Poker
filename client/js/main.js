@@ -1,9123 +1,9247 @@
-/**
- * Autonim-Poker - Director Tool v2.0
- * Card Tray, Player Zones, Face States, Flip Animation
- */
-
-// ============================================
-// GLOBAL VARIABLES
-// ============================================
-
-// CSInterface for AE communication
-let csInterface;
-try {
-    csInterface = new CSInterface();
-} catch (e) {
-    console.warn('CSInterface not available - running outside CEP');
-    csInterface = null;
-}
-
-// Node.js modules (available in CEP with Node.js enabled)
-let fs, nodePath;
-try {
-    fs = require('fs');
-    nodePath = require('path');
-} catch (e) {
-    console.warn('Node.js modules not available');
-    fs = null;
-    nodePath = null;
-}
-
-// Project Constants
-const PROJECT_INFO = {
-    width: 1920,
-    height: 1080,
-    fps: 30
-};
-
-// Coordinate System: UI (1280x720) → AE (1920x1080)
-const UI_WIDTH = 1280;
-const UI_HEIGHT = 720;
-const AE_WIDTH = 1920;
-const AE_HEIGHT = 1080;
-const COORD_SCALE = AE_WIDTH / UI_WIDTH; // 1.5x scale factor
-
-// Card dimensions (in UI pixels)
-const CARD_WIDTH = 60;
-const CARD_HEIGHT = 84;
-const CARD_SPACING_UI = 68; // Spacing between cards in zones (slightly more than card width)
-
-
-// Standard 52-card deck
-const RANKS = ['ace', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'jack', 'queen', 'king'];
-const SUITS = ['spades', 'hearts', 'diamonds', 'clubs'];
-
-// Application State
-const appState = {
-    phase: 'board-setting',       // 'board-setting', 'setup' or 'record'
-    deckPath: null,               // Path to deck folder
-    assetsRootPath: null,         // Assets folder for AE
-    backImagePath: null,          // Path to back.png
-
-    // Card Tray
-    trayCards: [],                // Cards in tray (not yet on table)
-
-    // Table Cards
-    tableCards: [],               // Cards placed on table
-    selectedCard: null,           // Currently selected card
-
-    // Recording
-    isEditingStep: false,
-    currentStepIndex: -1,
-
-    // Settings
-    cardOverlap: 25,              // Overlap in pixels
-    stepBlending: 0,              // Step blending % for AE export (0-50)
-    dealSpeed: 3,                  // Deal stagger frames per card (1=fast, 5=slow)
-
-    // Board Layout
-    boardLayout: {
-        type: 'poker',            // 'poker' or 'grid'
-        name: 'Poker (4 Players)',
-        gridCols: 4,
-        gridRows: 3,
-        cardPlaces: [],           // For grid mode: [{id, x, y, label}, ...]
-        slotGroups: []            // Layer groups for z-order management
-    },
-    selectedCardPlace: null,      // Currently selected card place marker (for CZ panel)
-    selectedCardPlaces: [],       // Multi-selected card place markers
-    markerUndoStack: [],          // Undo stack for marker positions (Ctrl+Z)
-    groupUndoStack: [],           // Undo stack for group operations
-    pendingGroupOrderOverrides: null, // Pending group reorder for next step commit
-
-    // Slot Fill (multi-select drop zones)
-    selectedDropZones: [],            // Array of placeIds for multi-selected zones
-
-    // Grouping Mode
-    groupingMode: false,          // Whether grouping mode is enabled
-    groupedCards: [],             // Cards selected for grouping
-    autoRecord: false,            // Auto-record after countdown
-    autoRecordDelay: 3,           // Countdown seconds (1-10)
-    countdownTimer: null,         // Interval timer ID
-    countdownValue: 0,            // Current countdown value
-
-    // Dealing Card
-    dealingCard: {
-        enabled: false,
-        x: 640,                   // UI coordinate (center)
-        y: 360                    // UI coordinate (center)
-    }
-};
-
-// Scenario Data (for export)
-const scenarioData = {
-    projectInfo: PROJECT_INFO,
-    initialState: {},
-    scenario: []
-};
-
-// Recording state
-let currentStep = null;
-let startSnapshot = null;
-
-// ============================================
-// DOM ELEMENTS
-// ============================================
-
-// Tray Panel
-let cardTrayList, trayCardCount, deckSelect, loadDeckBtn, cardSearch;
-let suitFilterBtns;
-
-// Main Content
-let gameContainer, cardArea, tableInstructions;
-let boardSettingBtn, setupPhaseBtn, recordPhaseBtn, recordingIndicator, modeBadge;
-let flipAllBtn, resetTableBtn, tableCardCount, stepCount;
-
-// Board Setting Controls
-let boardSettingSection, presetSelect, loadPresetBtn;
-let gridCols, gridRows, applyGridBtn;
-let addCardPlaceBtn, clearBoardBtn;
-let presetName, savePresetBtn, cardPlacesList;
-
-// Board Layout Info (for setup/record phases)
-let boardLayoutInfo, currentLayoutName, editLayoutBtn;
-
-// Flip Controls
-let pokerFlipControls, gridFlipControls;
-let flipAllFaceUp, flipAllFaceDown, gridDefaultFaceUp;
-let overlapSlider, overlapValue;
-
-// Player Zones
-let zoneTop, zoneBottom, zoneLeft, zoneRight, communityZone;
-let playerZones = [];
-
-// Director Panel
-let directorPanel, stepControlsSection;
-let selectAssetsFolderBtn, assetsPathDisplay;
-let addStepBtn, finishStepBtn, stepDuration;
-let currentStepNum, totalSteps, timelinePreview;
-let noCardSelected, cardProperties, selectedCardName, cardFaceState;
-let flipCardCheck, slamEffectCheck, spinEffectCheck;
-let cardPosX, cardPosY, cardRot;
-let exportJsonBtn, exportToAEBtn;
-
-// Replay Elements
-let replayBtn, replayControls, replayProgress, stopReplayBtn;
-
-// Modal Elements
-let warningModal, warningMessage, confirmWarningBtn, cancelWarningBtn;
-
-// Auto-Step Popup Elements
-let autoStepPopup, autoStepYes, autoStepNo;
-
-// Context Menu Elements
-let cardContextMenu, ctxFlipBtn, ctxFlipAniBtn, ctxSlamBtn, ctxSpinBtn;
-let ctxFlipAllBtn, ctxSlamAllBtn, ctxSpinAllBtn, ctxGroupDivider;
-let _ctxMenuPinnedPos = null; // {left, top} - saved pinned position (persisted in localStorage)
-
-// Slot Fill Elements
-let slotContextMenu, slotFillAutoBtn, slotFillManualBtn;
-let manualFillOverlay, manualFillInput, manualFillError, manualFillConfirm, manualFillCancel, manualFillSlotCount;
-
-// Grouping Mode Elements
-let groupingSection, groupingModeToggle, autoRecordToggle, autoRecordDelay, autoRecordDelayValue;
-let countdownDisplay, countdownTimer, countdownBarFill, cancelCountdownBtn, groupCount;
-
-// Dealing Card Elements
-let dealingCardToggle;
-
-// Status
-let statusMessage;
-
-// Help Modal Elements
-let helpModal, closeHelpBtn, helpModalOverlay;
-
-// Step snapshots for replay and restore
-let stepSnapshots = [];
-
-// Pending change for auto-step (stores snapshot before change)
-let pendingChangeSnapshot = null;
-let pendingChangeCard = null;
-
-// AI Layout Generator Elements
-let aiPhaseBtn, aiSection, aiBriefInput, aiPresetSelect, aiGenerateBtn, aiStatus, aiError;
-let aiRefImageInput, aiRefVideoInput, aiAttachPreview;
-let aiRefImages = [];   // [{data: base64, mimeType: 'image/jpeg', name: 'ref.jpg'}, ...]
-let aiVideoFrames = []; // [{data: base64, mimeType: 'image/jpeg'}, ...]
-let aiVideoFile = null; // File reference for video
-
-// Debug logging system
-let debugLogs = [];
-let debugOverlay, debugContent, toggleDebugBtn, copyDebugBtn, clearDebugBtn, closeDebugBtn;
-
-// Custom debug log function
-function debugLog(...args) {
-    const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ');
-    const timestamp = new Date().toLocaleTimeString();
-    debugLogs.push(`[${timestamp}] ${msg}`);
-    if (debugContent) {
-        debugContent.textContent = debugLogs.join('\n');
-        debugContent.scrollTop = debugContent.scrollHeight;
-    }
-    console.log(...args);
-}
-
-function debugWarn(...args) {
-    const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ');
-    const timestamp = new Date().toLocaleTimeString();
-    debugLogs.push(`[${timestamp}] ⚠️ ${msg}`);
-    if (debugContent) {
-        debugContent.textContent = debugLogs.join('\n');
-        debugContent.scrollTop = debugContent.scrollHeight;
-    }
-    console.warn(...args);
-}
-
-// Fallback copy function for CEP environment
-function fallbackCopyText(text) {
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.style.position = 'fixed';
-    textarea.style.top = '0';
-    textarea.style.left = '0';
-    textarea.style.width = '2em';
-    textarea.style.height = '2em';
-    textarea.style.padding = '0';
-    textarea.style.border = 'none';
-    textarea.style.outline = 'none';
-    textarea.style.boxShadow = 'none';
-    textarea.style.background = 'transparent';
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-    try {
-        const successful = document.execCommand('copy');
-        if (successful) {
-            setStatus('Debug log copied to clipboard!', 'success');
-        } else {
-            setStatus('Copy failed - please select text manually', 'error');
-        }
-    } catch (err) {
-        setStatus('Copy failed - please select text manually', 'error');
-    }
-    document.body.removeChild(textarea);
-}
-
-
-
-// ============================================
-// INITIALIZATION
-// ============================================
-
-document.addEventListener('DOMContentLoaded', authBoot);
-
-/**
- * Auth-aware boot: checks authentication before initializing app
- */
-async function authBoot() {
-    // Load API config
-    await loadAuthConfig();
-
-    // Initialize login UI handlers
-    initLoginUI();
-
-    // Check if already authenticated
-    if (isAuthenticated()) {
-        hideLoginScreen();
-        await bootApp();
-    } else {
-        showLoginScreen();
-    }
-}
-
-/**
- * Boot the application (called after successful auth)
- */
-async function bootApp() {
-    try {
-        // Update user display
-        updateUserDisplay();
-
-        // Load core ExtendScript from backend (OTA) — skip if local JSX already loaded via ScriptPath
-        const localScriptLoaded = csInterface && await new Promise(resolve => {
-            csInterface.evalScript('typeof generateSequence', result => resolve(result === 'function'));
-        }).catch(() => false);
-
-        if (localScriptLoaded) {
-            console.log('[Boot] Local ExtendScript already loaded via ScriptPath, skipping OTA');
-        } else {
-            try {
-                const scriptResult = await loadCoreScript();
-                console.log('[Boot] Core script loaded via OTA:', scriptResult);
-            } catch (scriptErr) {
-                if (scriptErr.name === 'AuthError') {
-                    showLoginScreen();
-                    return;
-                }
-                console.warn('[Boot] Core script load failed, continuing anyway:', scriptErr.message);
-            }
-        }
-
-        // Check for asset updates (non-blocking)
-        checkAssetUpdates().catch(err => {
-            if (err.name === 'AuthError') {
-                showLoginScreen();
-                return;
-            }
-            console.warn('[Boot] Asset update check failed:', err.message);
-        });
-
-        // Initialize updater UI and auto-check for updates (non-blocking)
-        if (typeof initUpdaterUI === 'function') {
-            initUpdaterUI();
-            autoCheckUpdate().catch(err => {
-                console.warn('[Boot] Auto update check failed:', err.message);
-            });
-        }
-
-        // Initialize the main app
-        init();
-
-        // Start Claude Bridge server (local HTTP for skill communication)
-        if (typeof startBridgeServer === 'function') {
-            startBridgeServer();
-        }
-    } catch (error) {
-        console.error('[Boot] Failed to boot app:', error);
-    }
-}
-
-function init() {
-    getDOMElements();
-    bindEvents();
-    initBriefModal();
-
-    // Restore saved board layout or load default poker layout
-    if (!autoRestoreBoardLayout()) {
-        loadPokerLayout();
-    }
-
-    // Start in Board Setting mode with poker layout visible
-    setPhase('board-setting');
-
-    // Scan and populate deck dropdown, then auto-load first deck
-    scanAndPopulateDecks();
-
-    // Initialize Timeline Modules (Phase 1)
-    initTimelineModulesIntegration();
-
-    updateUI();
-    setStatus('Ready - Load a deck and setup your cards');
-
-    const user = getUser();
-    console.log(`Autonim-Poker v2.0 initialized (user: ${user ? user.username : 'unknown'})`);
-}
-
-function initBriefModal() {
-    if (quangBriefBtn) quangBriefBtn.addEventListener('click', () => {
-        if (briefModal) briefModal.classList.remove('hidden');
-    });
-
-    const closeDialog = () => {
-        if (briefModal) briefModal.classList.add('hidden');
-    };
-
-    if (closeBriefModalBtn) closeBriefModalBtn.addEventListener('click', closeDialog);
-    if (cancelBriefBtn) cancelBriefBtn.addEventListener('click', closeDialog);
-    if (closeBriefOverlay) closeBriefOverlay.addEventListener('click', closeDialog);
-    
-    if (applyBriefBtn) applyBriefBtn.addEventListener('click', () => {
-        console.log("Applying Brief...", briefInput ? briefInput.value : "");
-        // Logic will go here
-        closeDialog();
-    });
-}
-
-var quangBriefBtn, briefModal, closeBriefOverlay, closeBriefModalBtn, cancelBriefBtn, applyBriefBtn, briefInput, briefOutputPreview;
-
-function getDOMElements() {
-    // Tray Panel
-    cardTrayList = document.getElementById('cardTrayList');
-    trayCardCount = document.getElementById('trayCardCount');
-    deckSelect = document.getElementById('deckSelect');
-    loadDeckBtn = document.getElementById('loadDeckBtn');
-    cardSearch = document.getElementById('cardSearch');
-    suitFilterBtns = document.querySelectorAll('.suit-btn');
-
-    // Main Content
-    gameContainer = document.getElementById('gameContainer');
-    cardArea = document.getElementById('cardArea');
-    tableInstructions = document.getElementById('tableInstructions');
-    boardSettingBtn = document.getElementById('boardSettingBtn');
-    setupPhaseBtn = document.getElementById('setupPhaseBtn');
-    recordPhaseBtn = document.getElementById('recordPhaseBtn');
-    recordingIndicator = document.getElementById('recordingIndicator');
-    modeBadge = document.getElementById('modeBadge');
-    flipAllBtn = document.getElementById('flipAllBtn');
-    resetTableBtn = document.getElementById('resetTableBtn');
-    quangBriefBtn = document.getElementById('quangBriefBtn');
-    tableCardCount = document.getElementById('tableCardCount');
-
-    // Brief Modal
-    briefModal = document.getElementById('briefModal');
-    closeBriefOverlay = document.getElementById('closeBriefOverlay');
-    closeBriefModalBtn = document.getElementById('closeBriefModalBtn');
-    cancelBriefBtn = document.getElementById('cancelBriefBtn');
-    applyBriefBtn = document.getElementById('applyBriefBtn');
-    briefInput = document.getElementById('briefInput');
-    briefOutputPreview = document.getElementById('briefOutputPreview');
-    stepCount = document.getElementById('stepCount');
-    overlapSlider = document.getElementById('overlapSlider');
-    overlapValue = document.getElementById('overlapValue');
-
-    // Board Setting Controls
-    boardSettingSection = document.getElementById('boardSettingSection');
-    presetSelect = document.getElementById('presetSelect');
-    loadPresetBtn = document.getElementById('loadPresetBtn');
-    gridCols = document.getElementById('gridCols');
-    gridRows = document.getElementById('gridRows');
-    applyGridBtn = document.getElementById('applyGridBtn');
-    addCardPlaceBtn = document.getElementById('addCardPlaceBtn');
-    clearBoardBtn = document.getElementById('clearBoardBtn');
-    presetName = document.getElementById('presetName');
-    savePresetBtn = document.getElementById('savePresetBtn');
-    cardPlacesList = document.getElementById('cardPlacesList');
-
-    // Board Layout Info
-    boardLayoutInfo = document.getElementById('boardLayoutInfo');
-    currentLayoutName = document.getElementById('currentLayoutName');
-    editLayoutBtn = document.getElementById('editLayoutBtn');
-
-    // Flip Controls
-    pokerFlipControls = document.getElementById('pokerFlipControls');
-    gridFlipControls = document.getElementById('gridFlipControls');
-    flipAllFaceUp = document.getElementById('flipAllFaceUp');
-    flipAllFaceDown = document.getElementById('flipAllFaceDown');
-    gridDefaultFaceUp = document.getElementById('gridDefaultFaceUp');
-
-    // Player Zones
-    zoneTop = document.getElementById('zoneTop');
-    zoneBottom = document.getElementById('zoneBottom');
-    zoneLeft = document.getElementById('zoneLeft');
-    zoneRight = document.getElementById('zoneRight');
-    communityZone = document.getElementById('communityZone');
-    playerZones = [zoneTop, zoneBottom, zoneLeft, zoneRight, communityZone];
-
-    // Director Panel
-    directorPanel = document.getElementById('directorPanel');
-    stepControlsSection = document.getElementById('stepControlsSection');
-    selectAssetsFolderBtn = document.getElementById('selectAssetsFolderBtn');
-    assetsPathDisplay = document.getElementById('assetsPathDisplay');
-    addStepBtn = document.getElementById('addStepBtn');
-    finishStepBtn = document.getElementById('finishStepBtn');
-    stepDuration = document.getElementById('stepDuration');
-    currentStepNum = document.getElementById('currentStepNum');
-    totalSteps = document.getElementById('totalSteps');
-    timelinePreview = document.getElementById('timelinePreview');
-    noCardSelected = document.getElementById('noCardSelected');
-    cardProperties = document.getElementById('cardProperties');
-    selectedCardName = document.getElementById('selectedCardName');
-    cardFaceState = document.getElementById('cardFaceState');
-    flipCardCheck = document.getElementById('flipCardCheck');
-    slamEffectCheck = document.getElementById('slamEffectCheck');
-    spinEffectCheck = document.getElementById('spinEffectCheck');
-    cardPosX = document.getElementById('cardPosX');
-    cardPosY = document.getElementById('cardPosY');
-    cardRot = document.getElementById('cardRot');
-    exportJsonBtn = document.getElementById('exportJsonBtn');
-    exportToAEBtn = document.getElementById('exportToAEBtn');
-
-    // Replay Elements
-    replayBtn = document.getElementById('replayBtn');
-    replayControls = document.getElementById('replayControls');
-    replayProgress = document.getElementById('replayProgress');
-    stopReplayBtn = document.getElementById('stopReplayBtn');
-
-    // Modal Elements
-    warningModal = document.getElementById('warningModal');
-    warningMessage = document.getElementById('warningMessage');
-    confirmWarningBtn = document.getElementById('confirmWarningBtn');
-    cancelWarningBtn = document.getElementById('cancelWarningBtn');
-
-    // Auto-Step Popup Elements
-    autoStepPopup = document.getElementById('autoStepPopup');
-    autoStepYes = document.getElementById('autoStepYes');
-    autoStepNo = document.getElementById('autoStepNo');
-
-    // Context Menu Elements
-    cardContextMenu = document.getElementById('cardContextMenu');
-    ctxFlipBtn = document.getElementById('ctxFlipBtn');
-    ctxFlipAniBtn = document.getElementById('ctxFlipAniBtn');
-    ctxSlamBtn = document.getElementById('ctxSlamBtn');
-    ctxSpinBtn = document.getElementById('ctxSpinBtn');
-    ctxFlipAllBtn = document.getElementById('ctxFlipAllBtn');
-    ctxSlamAllBtn = document.getElementById('ctxSlamAllBtn');
-    ctxSpinAllBtn = document.getElementById('ctxSpinAllBtn');
-    ctxGroupDivider = document.getElementById('ctxGroupDivider');
-
-    // Slot Fill Elements
-    slotContextMenu = document.getElementById('slotContextMenu');
-    slotFillAutoBtn = document.getElementById('slotFillAutoBtn');
-    slotFillManualBtn = document.getElementById('slotFillManualBtn');
-    manualFillOverlay = document.getElementById('manualFillOverlay');
-    manualFillInput = document.getElementById('manualFillInput');
-    manualFillError = document.getElementById('manualFillError');
-    manualFillConfirm = document.getElementById('manualFillConfirm');
-    manualFillCancel = document.getElementById('manualFillCancel');
-    manualFillSlotCount = document.getElementById('manualFillSlotCount');
-
-    // Status
-    statusMessage = document.getElementById('statusMessage');
-
-    // Debug Overlay Elements
-    debugOverlay = document.getElementById('debugOverlay');
-    debugContent = document.getElementById('debugContent');
-    toggleDebugBtn = document.getElementById('toggleDebugBtn');
-    copyDebugBtn = document.getElementById('copyDebugBtn');
-    clearDebugBtn = document.getElementById('clearDebugBtn');
-    closeDebugBtn = document.getElementById('closeDebugBtn');
-
-    // Grouping Mode Elements
-    groupingSection = document.getElementById('groupingSection');
-    groupingModeToggle = document.getElementById('groupingModeToggle');
-    autoRecordToggle = document.getElementById('autoRecordToggle');
-    autoRecordDelay = document.getElementById('autoRecordDelay');
-    autoRecordDelayValue = document.getElementById('autoRecordDelayValue');
-    countdownDisplay = document.getElementById('countdownDisplay');
-    countdownTimer = document.getElementById('countdownTimer');
-    countdownBarFill = document.getElementById('countdownBarFill');
-    cancelCountdownBtn = document.getElementById('cancelCountdownBtn');
-    groupCount = document.getElementById('groupCount');
-
-    // Dealing Card
-    dealingCardToggle = document.getElementById('dealingCardToggle');
-}
-
-
-function bindEvents() {
-    // Deck loading
-    loadDeckBtn.addEventListener('click', handleLoadDeck);
-    deckSelect.addEventListener('change', handleDeckSelectChange);
-
-    // Search and filter
-    cardSearch.addEventListener('input', filterTrayCards);
-    suitFilterBtns.forEach(btn => {
-        btn.addEventListener('click', () => handleSuitFilter(btn));
-    });
-
-    // Phase switching
-    boardSettingBtn.addEventListener('click', () => setPhase('board-setting'));
-    setupPhaseBtn.addEventListener('click', () => setPhase('setup'));
-
-    // AI Phase Button
-    aiPhaseBtn = document.getElementById('aiPhaseBtn');
-    aiSection = document.getElementById('aiSection');
-    aiBriefInput = document.getElementById('aiBriefInput');
-    aiPresetSelect = document.getElementById('aiPresetSelect');
-    aiGenerateBtn = document.getElementById('aiGenerateBtn');
-    aiStatus = document.getElementById('aiStatus');
-    aiError = document.getElementById('aiError');
-    aiRefImageInput = document.getElementById('aiRefImageInput');
-    aiRefVideoInput = document.getElementById('aiRefVideoInput');
-    aiAttachPreview = document.getElementById('aiAttachPreview');
-    if (aiPhaseBtn) {
-        aiPhaseBtn.addEventListener('click', () => toggleAIPanel());
-    }
-    if (aiGenerateBtn) {
-        aiGenerateBtn.addEventListener('click', () => handleAIGenerate());
-    }
-    if (aiRefImageInput) {
-        aiRefImageInput.addEventListener('change', handleRefImageAttach);
-    }
-    if (aiRefVideoInput) {
-        aiRefVideoInput.addEventListener('change', handleRefVideoAttach);
-    }
-    // AI Example buttons
-    document.querySelectorAll('.ai-example-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            if (aiBriefInput) aiBriefInput.value = btn.dataset.brief;
-        });
-    });
-    recordPhaseBtn.addEventListener('click', () => setPhase('record'));
-
-    // Board Setting Controls
-    if (loadPresetBtn) loadPresetBtn.addEventListener('click', handleLoadPreset);
-    
-    // Live Preview using Actual Board
-    let hoverBackupState = null;
-    let hoverBackupVal = null;
-    let confirmPresetClick = false;
-
-    const presetGrid = document.querySelector('.preset-buttons-grid');
-    if (presetGrid) {
-        presetGrid.addEventListener('mouseenter', () => {
-            if (!confirmPresetClick) {
-                hoverBackupState = JSON.stringify(appState.boardLayout);
-                hoverBackupVal = presetSelect ? presetSelect.value : null;
-            }
-            confirmPresetClick = false;
-        });
-
-        presetGrid.addEventListener('mouseleave', () => {
-            document.body.classList.remove('previewing-preset');
-            if (!confirmPresetClick && hoverBackupState) {
-                appState.boardLayout = JSON.parse(hoverBackupState);
-                if (presetSelect && hoverBackupVal) {
-                    presetSelect.value = hoverBackupVal;
-                    presetSelect.dispatchEvent(new Event('change'));
-                }
-                if (typeof clearCardPlaceMarkers === 'function') clearCardPlaceMarkers();
-                if (typeof clearCardDropZones === 'function') clearCardDropZones();
-                if (typeof renderCardPlaceMarkers === 'function') renderCardPlaceMarkers();
-                if (typeof renderCardDropZones === 'function') renderCardDropZones();
-                if (typeof updateCardPlacesList === 'function') updateCardPlacesList();
-                if (typeof autoSaveBoardLayout === 'function') autoSaveBoardLayout();
-                
-                hoverBackupState = null;
-                hoverBackupVal = null;
-            }
-        });
-    }
-
-    document.querySelectorAll('.preset-btn').forEach(btn => {
-        btn.addEventListener('mouseenter', () => {
-            document.body.classList.add('previewing-preset');
-            if (!hoverBackupState) {
-                hoverBackupState = JSON.stringify(appState.boardLayout);
-                hoverBackupVal = presetSelect ? presetSelect.value : null;
-                confirmPresetClick = false;
-            }
-            const preset = btn.getAttribute('data-preset');
-            if (preset && presetSelect && preset !== presetSelect.value) {
-                presetSelect.value = preset;
-                presetSelect.dispatchEvent(new Event('change'));
-                if (loadPresetBtn) loadPresetBtn.click();
-            }
-        });
-
-        btn.addEventListener('click', () => {
-            // Trigger visual feedback
-            btn.classList.add('pop-effect');
-            setTimeout(() => btn.classList.remove('pop-effect'), 300);
-
-            document.body.classList.remove('previewing-preset');
-            confirmPresetClick = true;
-            hoverBackupState = null;
-            hoverBackupVal = null;
-            
-            const preset = btn.getAttribute('data-preset');
-            if (preset && presetSelect) {
-                presetSelect.value = preset;
-                presetSelect.dispatchEvent(new Event('change'));
-                if (loadPresetBtn) loadPresetBtn.click();
-            }
-        });
-    });
-
-    // Sync button active state with dropdown change
-    if (presetSelect) {
-        presetSelect.addEventListener('change', () => {
-            if (!document.body.classList.contains('previewing-preset')) {
-                const val = presetSelect.value;
-                document.querySelectorAll('.preset-btn').forEach(b => {
-                    b.classList.toggle('active', b.getAttribute('data-preset') === val);
-                });
-            }
-        });
-    }
-    if (applyGridBtn) applyGridBtn.addEventListener('click', handleApplyGrid);
-    if (addCardPlaceBtn) addCardPlaceBtn.addEventListener('click', handleAddCardPlace);
-    var addCommunityZoneBtn = document.getElementById('addCommunityZoneBtn');
-    if (addCommunityZoneBtn) addCommunityZoneBtn.addEventListener('click', handleAddCommunityZone);
-    var addDealingSlotBtn = document.getElementById('addDealingSlotBtn');
-    if (addDealingSlotBtn) addDealingSlotBtn.addEventListener('click', () => {
-        if (appState.dealingCard.enabled) return; // Max 1
-        appState.dealingCard.enabled = true;
-        if (dealingCardToggle) dealingCardToggle.checked = true; // Sync AE toggle
-        renderDealingSlot();
-        updateDealingSlotButton();
-        setStatus('Dealing Card added — drag to reposition');
-    });
-    if (clearBoardBtn) clearBoardBtn.addEventListener('click', handleClearBoard);
-    if (savePresetBtn) savePresetBtn.addEventListener('click', handleSavePreset);
-
-    // Delete saved layout button
-    const deletePresetBtn = document.getElementById('deletePresetBtn');
-    if (deletePresetBtn) {
-        deletePresetBtn.addEventListener('click', () => {
-            const val = presetSelect.value;
-            if (!val.startsWith('saved:')) return;
-            const layoutName = val.substring(6);
-            if (!confirm(`Delete saved layout "${layoutName}"?`)) return;
-            deleteSavedLayout(layoutName);
-            presetSelect.value = 'poker'; // Reset to default
-            deletePresetBtn.classList.add('hidden');
-            refreshSavedLayoutsDropdown();
-            setStatus(`Deleted layout: ${layoutName}`);
-        });
-    }
-
-    // Show/hide delete button based on dropdown selection
-    if (presetSelect) {
-        presetSelect.addEventListener('change', () => {
-            const btn = document.getElementById('deletePresetBtn');
-            if (btn) btn.classList.toggle('hidden', !presetSelect.value.startsWith('saved:'));
-        });
-    }
-
-    // Populate saved layouts dropdown from localStorage on init
-    refreshSavedLayoutsDropdown();
-
-    // Initialize CZ settings panel
-    initCZSettingsPanel();
-
-    // Edit Layout button (in setup/record mode)
-    if (editLayoutBtn) editLayoutBtn.addEventListener('click', () => setPhase('board-setting'));
-
-    // Table controls
-    resetTableBtn.addEventListener('click', handleResetTable);
-    overlapSlider.addEventListener('input', handleOverlapChange);
-
-    // Per-zone flip controls (Poker layout)
-    document.querySelectorAll('#pokerFlipControls input[type="checkbox"]').forEach(checkbox => {
-        checkbox.addEventListener('change', handleZoneFlipChange);
-    });
-
-    // Grid flip controls
-    if (flipAllFaceUp) flipAllFaceUp.addEventListener('click', () => handleFlipAllCards(true));
-    if (flipAllFaceDown) flipAllFaceDown.addEventListener('click', () => handleFlipAllCards(false));
-
-    // Assets folder
-    selectAssetsFolderBtn.addEventListener('click', handleSelectAssetsFolder);
-
-    // Recording controls
-    addStepBtn.addEventListener('click', handleAddStep);
-    if (finishStepBtn) finishStepBtn.addEventListener('click', handleFinishStep);
-
-    // Card properties
-    flipCardCheck.addEventListener('change', handlePropertyChange);
-    slamEffectCheck.addEventListener('change', handlePropertyChange);
-    spinEffectCheck.addEventListener('change', handlePropertyChange);
-
-    // Export
-    if (exportJsonBtn) exportJsonBtn.addEventListener('click', handleExportJSON);
-    exportToAEBtn.addEventListener('click', handleExportToAE);
-
-    // Replay
-    if (replayBtn) replayBtn.addEventListener('click', handleReplay);
-    if (stopReplayBtn) stopReplayBtn.addEventListener('click', stopReplay);
-
-    // Speed slider
-    const stepSpeedSlider = document.getElementById('stepSpeedSlider');
-    const stepSpeedValue = document.getElementById('stepSpeedValue');
-    if (stepSpeedSlider) {
-        stepSpeedSlider.addEventListener('input', () => {
-            replaySpeed = parseFloat(stepSpeedSlider.value);
-            if (stepSpeedValue) stepSpeedValue.textContent = replaySpeed + 'x';
-        });
-    }
-
-    // Blending slider
-    const stepBlendingSlider = document.getElementById('stepBlendingSlider');
-    const stepBlendingValue = document.getElementById('stepBlendingValue');
-    if (stepBlendingSlider) {
-        stepBlendingSlider.addEventListener('input', () => {
-            appState.stepBlending = parseInt(stepBlendingSlider.value);
-            if (stepBlendingValue) stepBlendingValue.textContent = appState.stepBlending + '%';
-        });
-    }
-
-    // Deal Speed slider
-    const dealSpeedSlider = document.getElementById('dealSpeedSlider');
-    const dealSpeedValue = document.getElementById('dealSpeedValue');
-    const dealTimeEstimate = document.getElementById('dealTimeEstimate');
-    if (dealSpeedSlider) {
-        dealSpeedSlider.addEventListener('input', () => {
-            appState.dealSpeed = parseInt(dealSpeedSlider.value);
-            if (dealSpeedValue) dealSpeedValue.textContent = appState.dealSpeed + 'f/card';
-            updateDealTimeEstimate();
-        });
-    }
-
-    // Project Save/Load
-    const saveProjectBtn = document.getElementById('saveProjectBtn');
-    const loadProjectBtn = document.getElementById('loadProjectBtn');
-    const loadProjectInput = document.getElementById('loadProjectInput');
-    if (saveProjectBtn) saveProjectBtn.addEventListener('click', handleSaveProject);
-    if (loadProjectBtn) loadProjectBtn.addEventListener('click', () => loadProjectInput.click());
-    if (loadProjectInput) loadProjectInput.addEventListener('change', handleLoadProject);
-
-    // Create Group Button
-    var createGroupBtn = document.getElementById('createGroupBtn');
-    if (createGroupBtn) {
-        createGroupBtn.addEventListener('click', function () {
-            if (appState.selectedCardPlaces && appState.selectedCardPlaces.length >= 2) {
-                var slotIds = appState.selectedCardPlaces.map(function (p) { return p.id; });
-                var groupNum = (appState.boardLayout.slotGroups || []).length + 1;
-                createSlotGroup('Group ' + groupNum, slotIds);
-                appState.selectedCardPlaces = [];
-                renderCardPlaceMarkers();
-                updateGroupPanelVisibility();
-            }
-        });
-    }
-
-    // Modal
-    if (confirmWarningBtn) confirmWarningBtn.addEventListener('click', confirmWarning);
-    if (cancelWarningBtn) cancelWarningBtn.addEventListener('click', hideWarningModal);
-
-    // Help Modal
-    helpModal = document.getElementById('helpModal');
-    closeHelpBtn = document.getElementById('closeHelpBtn');
-    helpModalOverlay = helpModal ? helpModal.querySelector('.help-modal-overlay') : null;
-    const btnHelp = document.getElementById('btn-help');
-    if (btnHelp) btnHelp.addEventListener('click', showHelpModal);
-    if (closeHelpBtn) closeHelpBtn.addEventListener('click', hideHelpModal);
-    if (helpModalOverlay) helpModalOverlay.addEventListener('click', hideHelpModal);
-    initHelpVideoLinks();
-
-    // Auto-Step Popup
-    if (autoStepYes) autoStepYes.addEventListener('click', handleAutoStepYes);
-    if (autoStepNo) autoStepNo.addEventListener('click', handleAutoStepNo);
-
-    // Context Menu
-    if (ctxFlipBtn) ctxFlipBtn.addEventListener('click', toggleCtxFlip);
-    if (ctxFlipAniBtn) ctxFlipAniBtn.addEventListener('click', handleFlipAni);
-    if (ctxSlamBtn) ctxSlamBtn.addEventListener('click', toggleCtxSlam);
-    if (ctxSpinBtn) ctxSpinBtn.addEventListener('click', toggleCtxSpin);
-    if (ctxFlipAllBtn) ctxFlipAllBtn.addEventListener('click', toggleCtxFlipAll);
-    if (ctxSlamAllBtn) ctxSlamAllBtn.addEventListener('click', toggleCtxSlamAll);
-    if (ctxSpinAllBtn) ctxSpinAllBtn.addEventListener('click', toggleCtxSpinAll);
-    setupCtxMenuDrag();
-
-    // Context menu popup toggle
-    var showCtxToggle = document.getElementById('showContextMenuToggle');
-    if (showCtxToggle) {
-        showCtxToggle.addEventListener('change', function () {
-            if (!this.checked) {
-                hideCardContextMenu();
-            } else if (appState.selectedCard) {
-                showCardContextMenu(appState.selectedCard);
-            }
-        });
-    }
-
-    // Zone drop targets
-    setupZoneDropTargets();
-
-    // Card tray as drop target (for returning cards in Setup phase)
-    setupTrayDropTarget();
-
-    // Click on table to deselect
-    cardArea.addEventListener('click', (e) => {
-        if (e.target === cardArea) {
-            deselectCard();
-        }
-    });
-
-    // Slot Fill Events
-    if (slotFillAutoBtn) slotFillAutoBtn.addEventListener('click', fillSlotsAuto);
-    if (slotFillManualBtn) slotFillManualBtn.addEventListener('click', showManualFillOverlay);
-    if (manualFillConfirm) manualFillConfirm.addEventListener('click', executeManualFill);
-    if (manualFillCancel) manualFillCancel.addEventListener('click', hideManualFillOverlay);
-    if (manualFillInput) {
-        manualFillInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); executeManualFill(); }
-            if (e.key === 'Escape') { e.preventDefault(); hideManualFillOverlay(); }
-        });
-    }
-    // Click outside slot context menu to close it
-    document.addEventListener('click', (e) => {
-        if (slotContextMenu && !slotContextMenu.classList.contains('hidden')) {
-            if (!slotContextMenu.contains(e.target)) {
-                hideSlotContextMenu();
-            }
-        }
-    });
-    // Click on overlay background to close manual fill
-    if (manualFillOverlay) {
-        manualFillOverlay.addEventListener('click', (e) => {
-            if (e.target === manualFillOverlay) hideManualFillOverlay();
-        });
-    }
-    // Escape key to close all slot fill UI
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            if (manualFillOverlay && !manualFillOverlay.classList.contains('hidden')) {
-                hideManualFillOverlay();
-            } else if (slotContextMenu && !slotContextMenu.classList.contains('hidden')) {
-                hideSlotContextMenu();
-                clearDropZoneSelection();
-            }
-        }
-    });
-
-    // Debug Overlay
-    if (toggleDebugBtn) toggleDebugBtn.addEventListener('click', () => {
-        debugOverlay.classList.toggle('hidden');
-    });
-    if (copyDebugBtn) copyDebugBtn.addEventListener('click', () => {
-        const textToCopy = debugLogs.join('\n');
-        // Try modern clipboard API first
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(textToCopy).then(() => {
-                setStatus('Debug log copied to clipboard!', 'success');
-            }).catch(() => {
-                // Fallback: use textarea method
-                fallbackCopyText(textToCopy);
-            });
-        } else {
-            // Fallback for CEP environment
-            fallbackCopyText(textToCopy);
-        }
-    });
-
-    if (clearDebugBtn) clearDebugBtn.addEventListener('click', () => {
-        debugLogs = [];
-        if (debugContent) debugContent.textContent = '';
-    });
-    if (closeDebugBtn) closeDebugBtn.addEventListener('click', () => {
-        debugOverlay.classList.add('hidden');
-    });
-
-    // Grouping Mode Events
-    if (groupingModeToggle) groupingModeToggle.addEventListener('change', handleGroupingModeChange);
-    if (autoRecordToggle) autoRecordToggle.addEventListener('change', handleAutoRecordChange);
-    if (autoRecordDelay) autoRecordDelay.addEventListener('input', handleAutoRecordDelayChange);
-    if (cancelCountdownBtn) cancelCountdownBtn.addEventListener('click', cancelAutoRecordCountdown);
-
-    // Pusoy Layout Slider Controls
-    setupPusoySliderControls();
-
-    // Card Sorting Grid Slider Controls
-    setupCardSortingSliderControls();
-
-    // Dealing Card Controls
-    setupDealingCardControls();
-
-    // Board Tools (Align, Distribute, Cloner, Pusoy Pack)
-    if (typeof initBoardTools === 'function') initBoardTools();
-}
-
-
-// ============================================
-// PHASE MANAGEMENT
-// ============================================
-
-function setPhase(phase) {
-    appState.phase = phase;
-
-    // Reset all phase button states
-    boardSettingBtn.classList.remove('active');
-    setupPhaseBtn.classList.remove('active');
-    recordPhaseBtn.classList.remove('active');
-    modeBadge.classList.remove('recording', 'board-setting');
-
-    // Hide all phase-specific sections
-    if (boardSettingSection) boardSettingSection.classList.remove('visible');
-    if (boardLayoutInfo) boardLayoutInfo.classList.remove('visible');
-    if (stepControlsSection) stepControlsSection.classList.add('hidden');
-    gameContainer.classList.remove('board-setting-mode');
-    // Auto-save board layout when leaving board-setting phase
-    if (document.body.classList.contains('phase-board-setting')) {
-        autoSaveBoardLayout();
-    }
-    document.body.classList.remove('phase-board-setting');
-    document.body.classList.remove('phase-setup');
-    clearCardDropZones(); // Clear drop zones when switching phases
-    clearDropZoneSelection();
-    hideSlotContextMenu();
-    hideManualFillOverlay();
-
-    // Toggle card tray disabled state
-    var cardTrayPanel = document.getElementById('cardTrayPanel');
-    if (cardTrayPanel) {
-        if (phase === 'board-setting') {
-            cardTrayPanel.classList.add('tray-disabled');
-        } else {
-            cardTrayPanel.classList.remove('tray-disabled');
-        }
-    }
-    // Hide recording indicator and border
-    const recIndicator = document.getElementById('recordingIndicator');
-    if (recIndicator) recIndicator.classList.add('hidden');
-    const gameWrapper = document.querySelector('.game-container-wrapper');
-    if (gameWrapper) gameWrapper.classList.remove('recording-mode');
-    // Note: Don't remove grid-mode here - preserve it across phases
-
-    if (phase === 'board-setting') {
-        boardSettingBtn.classList.add('active');
-        modeBadge.textContent = 'BOARD';
-        modeBadge.classList.add('board-setting');
-        if (boardSettingSection) boardSettingSection.classList.add('visible');
-        gameContainer.classList.add('board-setting-mode');
-        document.body.classList.add('phase-board-setting');
-
-        // Add grid-mode if layout type is grid
-        if (appState.boardLayout.type === 'grid') {
-            gameContainer.classList.add('grid-mode');
-        } else {
-            gameContainer.classList.remove('grid-mode');
-        }
-
-        // Render card place markers
-        renderCardPlaceMarkers();
-        updateDealingSlotButton();
-        updateGroupPanelVisibility();
-        setStatus('Board Setting - Customize card positions');
-    } else if (phase === 'setup') {
-        setupPhaseBtn.classList.add('active');
-        modeBadge.textContent = 'SETUP';
-        document.body.classList.add('phase-setup');
-
-        // Show board layout info (remove record-mode to show Edit button)
-        if (boardLayoutInfo) {
-            boardLayoutInfo.classList.add('visible');
-            boardLayoutInfo.classList.remove('record-mode');
-        }
-        updateLayoutInfoDisplay();
-
-        // Clear editable markers, render drop zones instead
-        clearCardPlaceMarkers();
-
-        // Render card drop zones for grid mode
-        if (appState.boardLayout.type === 'grid') {
-            gameContainer.classList.add('grid-mode');
-            renderCardDropZones();
-        }
-
-        setStatus('Setup - Drag cards to the table');
-    } else if (phase === 'record') {
-        recordPhaseBtn.classList.add('active');
-        modeBadge.textContent = 'RECORD';
-        modeBadge.classList.add('recording');
-        if (stepControlsSection) stepControlsSection.classList.remove('hidden');
-
-        // Show board layout info (add record-mode to hide Edit button)
-        if (boardLayoutInfo) {
-            boardLayoutInfo.classList.add('visible');
-            boardLayoutInfo.classList.add('record-mode');
-        }
-        updateLayoutInfoDisplay();
-
-        // Clear card place markers
-        clearCardPlaceMarkers();
-
-        // Render card drop zones for grid mode (same as setup)
-        if (appState.boardLayout.type === 'grid') {
-            gameContainer.classList.add('grid-mode');
-            renderCardDropZones();
-        }
-
-        // Save initial state when entering record phase
-        saveInitialState();
-
-        // Show recording indicator and border
-        const recIndicator = document.getElementById('recordingIndicator');
-        if (recIndicator) recIndicator.classList.remove('hidden');
-        const gameWrapper = document.querySelector('.game-container-wrapper');
-        if (gameWrapper) gameWrapper.classList.add('recording-mode');
-
-        setStatus('Record - Create animation steps');
-        updateGroupOrderSectionVisibility();
-    }
-
-    // Update grouping section visibility
-    updateGroupingSectionVisibility();
-
-    updateUI();
-}
-
-/**
- * Update the layout info display in setup/record modes
- */
-function updateLayoutInfoDisplay() {
-    if (currentLayoutName) {
-        currentLayoutName.textContent = appState.boardLayout.name || 'Poker (4 Players)';
-    }
-
-    // Toggle flip controls visibility based on layout type
-    updateFlipControlsVisibility();
-}
-
-/**
- * Update flip controls visibility based on board layout type
- */
-function updateFlipControlsVisibility() {
-    if (appState.boardLayout.type === 'grid' && appState.boardLayout.boardStyle !== 'poker') {
-        // Non-poker grid (Pusoy, card-sorting): show grid controls, hide poker controls
-        if (pokerFlipControls) pokerFlipControls.classList.add('hidden');
-        if (gridFlipControls) gridFlipControls.classList.remove('hidden');
-    } else {
-        // Poker (including poker-grid) or legacy: show poker controls, hide grid controls
-        if (pokerFlipControls) pokerFlipControls.classList.remove('hidden');
-        if (gridFlipControls) gridFlipControls.classList.add('hidden');
-    }
-}
-
-/**
- * Flip all table cards face up or face down
- */
-function handleFlipAllCards(faceUp) {
-    appState.tableCards.forEach(card => {
-        card.isFaceUp = faceUp;
-        // Update visual representation
-        const cardEl = document.querySelector(`.card[data-card-id="${card.id}"]`);
-        if (cardEl) {
-            if (faceUp) {
-                cardEl.classList.add('face-up');
-            } else {
-                cardEl.classList.remove('face-up');
-            }
-            // Update card image
-            const img = cardEl.querySelector('img');
-            if (img) {
-                img.src = faceUp ? (card.frontImageUrl || '') : (card.backImageUrl || '');
-            }
-        }
-    });
-
-    setStatus(faceUp ? 'All cards flipped face up' : 'All cards flipped face down');
-    updateUI();
-}
-
-// ============================================
-// DECK LOADING
-// ============================================
-
-/**
- * Scan the assets/decks folder and populate the deck dropdown
- */
-function scanAndPopulateDecks() {
-    // Browser mode - create placeholder cards
-    if (!csInterface) {
-        createPlaceholderDeck();
-        return;
-    }
-
-    // CEP mode - get extension path
-    const extPath = csInterface.getSystemPath(SystemPath.EXTENSION);
-    const decksFolder = extPath + '/assets/decks';
-
-    if (!fs || !fs.existsSync(decksFolder)) {
-        setStatus('Decks folder not found. Use Load button to select a deck folder.');
-        createPlaceholderDeck();
-        return;
-    }
-
-    try {
-        // Scan for subdirectories in decks folder
-        const items = fs.readdirSync(decksFolder);
-        const deckFolders = items.filter(item => {
-            const itemPath = decksFolder + '/' + item;
-            // Check if it's a directory and not a file like README.md
-            return fs.statSync(itemPath).isDirectory();
-        });
-
-        if (deckFolders.length === 0) {
-            setStatus('No deck folders found in assets/decks/');
-            createPlaceholderDeck();
-            return;
-        }
-
-        // Clear and populate dropdown
-        deckSelect.innerHTML = '';
-        deckFolders.forEach((folder, index) => {
-            const option = document.createElement('option');
-            option.value = decksFolder + '/' + folder;
-            // Capitalize folder name for display
-            option.textContent = folder.charAt(0).toUpperCase() + folder.slice(1);
-            deckSelect.appendChild(option);
-        });
-
-        // Store decks folder path for later use
-        appState.decksFolder = decksFolder;
-
-        // Auto-load the first deck
-        const firstDeckPath = decksFolder + '/' + deckFolders[0];
-        loadDeckFromPath(firstDeckPath);
-
-        console.log(`Found ${deckFolders.length} deck(s): ${deckFolders.join(', ')}`);
-
-    } catch (e) {
-        console.error('Error scanning decks folder:', e);
-        setStatus('Error scanning decks: ' + e.message, 'error');
-        createPlaceholderDeck();
-    }
-}
-
-/**
- * Handle deck selection change from dropdown
- */
-function handleDeckSelectChange() {
-    const selectedPath = deckSelect.value;
-    if (selectedPath) {
-        // Reset table before loading new deck
-        handleResetTable();
-        loadDeckFromPath(selectedPath);
-    }
-}
-
-
-function handleLoadDeck() {
-    // Use CEP folder dialog if available
-    if (typeof window.cep !== 'undefined' && window.cep.fs) {
-        try {
-            const result = window.cep.fs.showOpenDialogEx(
-                false,    // allowMultipleSelection
-                true,     // chooseDirectory
-                'Select Deck Folder',
-                '',       // initialPath
-                []        // fileTypes
-            );
-
-            if (result.err === 0 && result.data && result.data.length > 0) {
-                loadDeckFromPath(result.data[0]);
-            }
-        } catch (e) {
-            console.error('Error opening folder dialog:', e);
-            setStatus('Error selecting folder', 'error');
-        }
-    } else {
-        // Browser fallback - use file input
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.webkitdirectory = true;
-        input.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                loadDeckFromFiles(e.target.files);
-            }
-        });
-        input.click();
-    }
-}
-
-function loadDeckFromPath(folderPath) {
-    if (!fs) {
-        setStatus('File system not available', 'error');
-        return;
-    }
-
-    try {
-        const files = fs.readdirSync(folderPath);
-        const imageFiles = files.filter(f => /\.(png|jpg|jpeg|gif|webp)$/i.test(f));
-
-        if (imageFiles.length === 0) {
-            setStatus('No image files found in folder', 'error');
-            return;
-        }
-
-        // Find back.png
-        const backFile = imageFiles.find(f => f.toLowerCase() === 'back.png');
-        if (backFile) {
-            appState.backImagePath = folderPath + '/' + backFile;
-        }
-
-        // Store deck path
-        appState.deckPath = folderPath;
-        appState.assetsRootPath = folderPath + '/';
-
-        // Create card data for each image (except back.png)
-        const cardFiles = imageFiles.filter(f => f.toLowerCase() !== 'back.png');
-
-        appState.trayCards = cardFiles.map((filename, index) => {
-            const baseName = filename.replace(/\.[^.]+$/, '');
-            return createCardData(index, filename, baseName, folderPath);
-        });
-
-        renderCardTray();
-        updateAssetsDisplay();
-        setStatus(`Loaded ${appState.trayCards.length} cards from deck`, 'success');
-        // Enable AI button once deck is loaded
-        enableAIButton();
-
-    } catch (e) {
-        console.error('Error loading deck:', e);
-        setStatus('Error loading deck: ' + e.message, 'error');
-    }
-}
-
-function loadDeckFromFiles(files) {
-    const imageFiles = Array.from(files).filter(f =>
-        /\.(png|jpg|jpeg|gif|webp)$/i.test(f.name)
-    );
-
-    if (imageFiles.length === 0) {
-        setStatus('No image files found', 'error');
-        return;
-    }
-
-    // Find back.png
-    const backFile = imageFiles.find(f => f.name.toLowerCase() === 'back.png');
-    if (backFile) {
-        appState.backImagePath = URL.createObjectURL(backFile);
-    }
-
-    // Get folder path from first file
-    if (nodePath && imageFiles[0].path) {
-        appState.deckPath = nodePath.dirname(imageFiles[0].path);
-        appState.assetsRootPath = appState.deckPath + '/';
-    }
-
-    // Create card data
-    const cardFiles = imageFiles.filter(f => f.name.toLowerCase() !== 'back.png');
-
-    appState.trayCards = cardFiles.map((file, index) => {
-        const baseName = file.name.replace(/\.[^.]+$/, '');
-        return {
-            id: `card-${index}-${baseName.replace(/\s+/g, '_')}`,
-            name: baseName,
-            filename: file.name,
-            frontImageUrl: URL.createObjectURL(file),
-            backImageUrl: appState.backImagePath || '',
-            isFaceUp: false,
-            inTray: true
-        };
-    });
-
-    renderCardTray();
-    updateAssetsDisplay();
-    setStatus(`Loaded ${appState.trayCards.length} cards`, 'success');
-    enableAIButton();
-}
-
-function createPlaceholderDeck() {
-    // Create 52 placeholder cards for browser testing
-    appState.trayCards = [];
-    let index = 0;
-
-    for (const suit of SUITS) {
-        for (const rank of RANKS) {
-            const name = `${rank}_${suit}`;
-            appState.trayCards.push({
-                id: `card-${index}-${name}`,
-                name: name,
-                displayName: `${rank.charAt(0).toUpperCase() + rank.slice(1)} of ${suit}`,
-                filename: `${name}.png`,
-                frontImageUrl: '',  // Will show placeholder
-                backImageUrl: '',
-                suit: suit,
-                rank: rank,
-                isFaceUp: false,
-                inTray: true
-            });
-            index++;
-        }
-    }
-
-    // Add Joker cards
-    const jokers = [
-        { name: 'joker_black', displayName: 'Black Joker', color: 'black' },
-        { name: 'joker_red', displayName: 'Red Joker', color: 'red' }
-    ];
-    for (const j of jokers) {
-        appState.trayCards.push({
-            id: `card-${index}-${j.name}`,
-            name: j.name,
-            displayName: j.displayName,
-            filename: `${j.name}.png`,
-            frontImageUrl: '',
-            backImageUrl: '',
-            suit: 'joker',
-            rank: 'joker',
-            jokerColor: j.color,
-            isFaceUp: false,
-            inTray: true
-        });
-        index++;
-    }
-
-    renderCardTray();
-    enableAIButton();
-}
-
-function createCardData(index, filename, baseName, folderPath) {
-    // Check if this is a Joker card
-    const lowerName = baseName.toLowerCase();
-    if (lowerName.includes('joker')) {
-        const isRed = lowerName.includes('red');
-        return {
-            id: `card-${index}-${baseName.replace(/\s+/g, '_')}`,
-            name: baseName,
-            displayName: isRed ? 'Red Joker' : 'Black Joker',
-            filename: filename,
-            frontImageUrl: `file://${folderPath}/${filename}`,
-            backImageUrl: appState.backImagePath ? `file://${appState.backImagePath}` : '',
-            suit: 'joker',
-            rank: 'joker',
-            jokerColor: isRed ? 'red' : 'black',
-            isFaceUp: false,
-            inTray: true
-        };
-    }
-
-    // Try to parse suit from filename
-    let suit = 'unknown';
-    let rank = baseName;
-
-    for (const s of SUITS) {
-        if (baseName.toLowerCase().includes(s)) {
-            suit = s;
-            rank = baseName.toLowerCase().replace(s, '').replace(/[_-]/g, '').trim();
-            break;
-        }
-    }
-
-    return {
-        id: `card-${index}-${baseName.replace(/\s+/g, '_')}`,
-        name: baseName,
-        displayName: baseName.replace(/[_-]/g, ' '),
-        filename: filename,
-        frontImageUrl: `file://${folderPath}/${filename}`,
-        backImageUrl: appState.backImagePath ? `file://${appState.backImagePath}` : '',
-        suit: suit,
-        rank: rank,
-        isFaceUp: false,
-        inTray: true
-    };
-}
-
-// ============================================
-// CARD TRAY
-// ============================================
-
-function renderCardTray() {
-    cardTrayList.innerHTML = '';
-
-    const cardsToShow = getFilteredTrayCards();
-
-    if (cardsToShow.length === 0) {
-        cardTrayList.innerHTML = '<div class="tray-loading"><p>No cards match filter</p></div>';
-        return;
-    }
-
-    cardsToShow.forEach(card => {
-        const cardEl = createTrayCardElement(card);
-        cardTrayList.appendChild(cardEl);
-    });
-
-    trayCardCount.textContent = appState.trayCards.filter(c => c.inTray).length;
-}
-
-function createTrayCardElement(card) {
-    const el = document.createElement('div');
-    el.className = 'tray-card';
-    el.dataset.cardId = card.id;
-    el.draggable = true;
-
-    // Card image
-    const img = document.createElement('img');
-    if (card.frontImageUrl) {
-        img.src = card.frontImageUrl;
-    } else {
-        // Placeholder with suit symbol
-        img.src = createPlaceholderCardImage(card);
-    }
-    img.alt = card.name;
-    el.appendChild(img);
-
-    // Card name
-    const nameEl = document.createElement('div');
-    nameEl.className = 'card-name';
-    nameEl.textContent = card.displayName || card.name;
-    el.appendChild(nameEl);
-
-    // Drag events
-    el.addEventListener('dragstart', (e) => handleTrayCardDragStart(e, card));
-    el.addEventListener('dragend', handleTrayCardDragEnd);
-
-    return el;
-}
-
-function createPlaceholderCardImage(card) {
-    // Create simple SVG placeholder
-    const suitSymbols = {
-        spades: '♠',
-        hearts: '♥',
-        diamonds: '♦',
-        clubs: '♣',
-        joker: '🃏',
-        unknown: '?'
-    };
-    const suitColors = {
-        spades: '#2c3e50',
-        hearts: '#e74c3c',
-        diamonds: '#e74c3c',
-        clubs: '#2c3e50',
-        joker: card.jokerColor === 'red' ? '#e74c3c' : '#2c3e50',
-        unknown: '#666'
-    };
-
-    const symbol = suitSymbols[card.suit] || '?';
-    const color = suitColors[card.suit] || '#666';
-    const rankDisplay = card.suit === 'joker' ? 'J' : (card.rank ? card.rank.charAt(0).toUpperCase() : '?');
-
-    const svg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="56" viewBox="0 0 40 56">
-            <rect width="40" height="56" fill="white" rx="3"/>
-            <text x="5" y="15" font-size="12" fill="${color}">${rankDisplay}</text>
-            <text x="20" y="35" font-size="18" text-anchor="middle" fill="${color}">${symbol}</text>
-        </svg>
-    `;
-    return 'data:image/svg+xml,' + encodeURIComponent(svg);
-}
-
-function getFilteredTrayCards() {
-    const searchTerm = cardSearch.value.toLowerCase();
-    const activeFilter = document.querySelector('.suit-btn.active');
-    const suitFilter = activeFilter ? activeFilter.dataset.suit : 'all';
-
-    return appState.trayCards.filter(card => {
-        if (!card.inTray) return false;
-
-        // Search filter — supports comma-separated terms (e.g. "10,ace,king")
-        if (searchTerm) {
-            var searchTerms = searchTerm.split(',').map(function (t) { return t.trim(); }).filter(function (t) { return t.length > 0; });
-            var matchesAny = searchTerms.some(function (term) {
-                return card.name.toLowerCase().includes(term);
-            });
-            if (!matchesAny) return false;
-        }
-
-        // Suit filter
-        if (suitFilter !== 'all' && card.suit !== suitFilter) {
-            return false;
-        }
-
-        return true;
-    });
-}
-
-function filterTrayCards() {
-    renderCardTray();
-}
-
-function handleSuitFilter(btn) {
-    suitFilterBtns.forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    renderCardTray();
-}
-
-// ============================================
-// DRAG & DROP FROM TRAY
-// ============================================
-
-function handleTrayCardDragStart(e, card) {
-    // Block dragging from tray during board-setting phase
-    if (appState.phase === 'board-setting') {
-        e.preventDefault();
-        return;
-    }
-    e.dataTransfer.setData('text/plain', card.id);
-    e.dataTransfer.effectAllowed = 'move';
-    e.target.classList.add('dragging');
-
-    // Highlight drop zones (both player zones and grid drop zones)
-    playerZones.forEach(zone => zone.classList.add('drag-target'));
-    document.querySelectorAll('.card-drop-zone').forEach(zone => zone.classList.add('drag-target'));
-}
-
-function handleTrayCardDragEnd(e) {
-    e.target.classList.remove('dragging');
-    playerZones.forEach(zone => zone.classList.remove('drag-target', 'drag-over'));
-    document.querySelectorAll('.card-drop-zone').forEach(zone => zone.classList.remove('drag-target', 'drag-over'));
-}
-
-function setupZoneDropTargets() {
-    // Setup player zones (for poker layout)
-    playerZones.forEach(zone => {
-        zone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            zone.classList.add('drag-over');
-        });
-
-        zone.addEventListener('dragleave', () => {
-            zone.classList.remove('drag-over');
-        });
-
-        zone.addEventListener('drop', (e) => handleZoneDrop(e, zone));
-    });
-
-    // Setup grid drop zones (for grid layout) - handled dynamically in renderCardDropZones
-    // Note: Grid zones are created dynamically when entering setup mode
-}
-
-function handleZoneDrop(e, zone) {
-    e.preventDefault();
-    zone.classList.remove('drag-over');
-
-    const cardId = e.dataTransfer.getData('text/plain');
-    console.log('[ZoneDrop] cardId:', cardId, 'groupingMode:', appState.groupingMode, 'groupedCards:', appState.groupedCards.map(c => c.id));
-
-    // Check if the dragged card is part of a group - move all grouped cards
-    const droppedCard = appState.tableCards.find(c => c.id === cardId);
-    const isInGroup = droppedCard && appState.groupedCards.some(c => c.id === cardId);
-    console.log('[ZoneDrop] droppedCard found:', !!droppedCard, 'isInGroup:', isInGroup);
-
-    if (droppedCard && appState.groupingMode && isInGroup) {
-        console.log('[ZoneDrop] Routing to handleGroupedCardsDrop');
-        handleGroupedCardsDrop(zone);
-        return;
-    }
-
-    // Try to find card in tray first
-    let card = appState.trayCards.find(c => c.id === cardId);
-    const fromTray = card && card.inTray;
-
-    // If not in tray, look for it in table cards (for moving between zones)
-    if (!fromTray) {
-        card = appState.tableCards.find(c => c.id === cardId);
-        if (!card) return;
-    }
-
-    // Get zone info
-    const zoneName = zone.dataset.zone;
-    const rotation = parseInt(zone.dataset.rotation) || 0;
-
-    // Check if this is a grid zone with existing cards (for swap/stack logic)
-    // Community zones always accept multi-card, skip swap/stack popup
-    if (zoneName.startsWith('grid-') && appState.phase === 'record') {
-        const placeId = zoneName.replace('grid-', '');
-        const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
-        const isCZ = place && place.isCommunityZone;
-
-        if (!isCZ) {
-            const existingCards = appState.tableCards.filter(c => c.zone === zoneName && c.id !== cardId);
-            if (existingCards.length > 0 && !fromTray) {
-                // Show swap/stack popup for grid zones with existing cards
-                showSwapStackPopup(card, existingCards[0], zoneName, rotation, zone);
-                return;
-            }
-        }
-    }
-
-    if (fromTray) {
-        // From tray - place new card in zone
-        placeCardInZone(card, zoneName, rotation, zone);
-    } else {
-        // Moving card between zones (Record mode)
-        moveCardToZone(card, zoneName, rotation, zone);
-    }
-}
-
-/**
- * Show popup to choose between swap or stack when dropping card on occupied grid zone
- */
-function showSwapStackPopup(movingCard, existingCard, zoneName, rotation, zoneElement) {
-    // Remove any existing popup
-    const oldPopup = document.querySelector('.swap-stack-popup');
-    if (oldPopup) oldPopup.remove();
-
-    const popup = document.createElement('div');
-    popup.className = 'swap-stack-popup';
-    popup.innerHTML = `
-        <div class="popup-title">Zone has a card</div>
-        <div class="popup-buttons">
-            <button class="btn btn-sm btn-swap" title="Swap positions with existing card">🔄 Swap</button>
-            <button class="btn btn-sm btn-stack" title="Stack on top of existing card">📚 Stack</button>
-            <button class="btn btn-sm btn-cancel">✕</button>
-        </div>
-    `;
-
-    // Position near the zone — use fixed coords (popup appended to body)
-    const zoneRect = zoneElement.getBoundingClientRect();
-    popup.style.left = `${zoneRect.left + zoneRect.width / 2}px`;
-    popup.style.top = `${zoneRect.top - 50}px`;
-
-    // Event handlers
-    popup.querySelector('.btn-swap').addEventListener('click', () => {
-        popup.remove();
-        swapCards(movingCard, existingCard);
-    });
-
-    popup.querySelector('.btn-stack').addEventListener('click', () => {
-        popup.remove();
-        moveCardToZone(movingCard, zoneName, rotation, zoneElement);
-    });
-
-    popup.querySelector('.btn-cancel').addEventListener('click', () => {
-        popup.remove();
-    });
-
-    document.body.appendChild(popup);
-}
-
-/**
- * Swap two cards between their zones (used in Record mode for grid)
- */
-function swapCards(card1, card2) {
-    // Take snapshot BEFORE the swap
-    const snapshotBeforeSwap = (appState.phase === 'record' && !appState.isEditingStep) ? takeSnapshot() : null;
-
-    // Store original positions
-    const zone1 = card1.zone;
-    const zone2 = card2.zone;
-    const pos1 = card1.zonePosition;
-    const pos2 = card2.zonePosition;
-
-    // Remove card elements
-    if (card1.element) card1.element.remove();
-    if (card2.element) card2.element.remove();
-
-    // Find zone elements and get their rotation values
-    const zone1Element = document.querySelector(`.card-drop-zone[data-zone="${zone1}"], .player-zone[data-zone="${zone1}"]`);
-    const zone2Element = document.querySelector(`.card-drop-zone[data-zone="${zone2}"], .player-zone[data-zone="${zone2}"]`);
-
-    // Get rotation from zone data attributes (for Pusoy and other rotated layouts)
-    const rotation1 = parseInt(zone1Element?.dataset?.rotation) || 0;
-    const rotation2 = parseInt(zone2Element?.dataset?.rotation) || 0;
-
-    // Swap zone assignments AND update rotation to match destination zone
-    card1.zone = zone2;
-    card1.zonePosition = pos2;
-    card1.rotation = rotation2;  // Card1 inherits rotation of zone2
-
-    card2.zone = zone1;
-    card2.zonePosition = pos1;
-    card2.rotation = rotation1;  // Card2 inherits rotation of zone1
-
-    if (zone1Element) createZoneCardElement(card2, zone1Element);
-    if (zone2Element) createZoneCardElement(card1, zone2Element);
-
-    // Mark as having changes for recording
-    card1.hasChanges = true;
-    card2.hasChanges = true;
-
-    updateUI();
-    setStatus(`Swapped ${card1.displayName || card1.name} with ${card2.displayName || card2.name}`);
-
-    // Show auto-step popup if in Record mode
-    if (snapshotBeforeSwap && appState.phase === 'record' && !appState.isEditingStep) {
-        selectCard(card1);
-        showAutoStepPopup(card1, snapshotBeforeSwap);
-    }
-}
-
-/**
- * Move a card from one zone to another (used in Record mode)
- */
-function moveCardToZone(card, newZoneName, newRotation, newZoneElement) {
-    // Take snapshot BEFORE the move for auto-step feature
-    const snapshotBeforeMove = (appState.phase === 'record' && !appState.isEditingStep) ? takeSnapshot() : null;
-
-    // Remove card element from old zone
-    if (card.element) {
-        card.element.remove();
-    }
-
-    // Update card properties
-    const oldZone = card.zone;
-    card.zone = newZoneName;
-    card.rotation = newRotation;
-
-    // In Record mode with flipAction: start face-down, then animate flip
-    if (appState.phase === 'record' && card.flipAction) {
-        card.isFaceUp = false; // Start face-down for animation
-    }
-    // When moving cards between zones, PRESERVE the card's current face state.
-    // Face state is only set from zone flip checkbox during initial placement (placeCardInZone).
-    // Users control flipping explicitly via right-click > flip or the flip checkbox.
-
-    // Recalculate zone positions for old zone (fill gaps)
-    if (oldZone && oldZone !== newZoneName) {
-        const oldZoneCards = appState.tableCards.filter(c => c.zone === oldZone && c.id !== card.id);
-        oldZoneCards.forEach((c, idx) => {
-            c.zonePosition = idx;
-        });
-        // Re-render old zone cards
-        const oldZoneElement = document.querySelector(`.player-zone[data-zone="${oldZone}"], .community-zone[data-zone="${oldZone}"]`);
-        if (oldZoneElement) {
-            rerenderZoneCards(oldZone, oldZoneElement);
-        }
-    }
-
-    // Get new position in target zone
-    const newZoneCards = appState.tableCards.filter(c => c.zone === newZoneName && c.id !== card.id);
-    card.zonePosition = newZoneCards.length;
-
-    // Community zone rotation is handled by createZoneCardElement for CZ slots
-    // Legacy poker community zone (HTML-based) random rotation:
-    if (appState.boardLayout.boardStyle === 'poker' && newZoneName === 'community' && !newZoneName.startsWith('grid-')) {
-        const randomCheckbox = document.getElementById('communityRandomRotation');
-        if (randomCheckbox && randomCheckbox.checked) {
-            card.rotation = Math.round((Math.random() - 0.5) * 30); // ±15°
-        }
-    }
-
-    // Create visual card in new zone
-    createZoneCardElement(card, newZoneElement);
-
-    // Animate flip after element is created (Record mode with flipAction)
-    if (appState.phase === 'record' && card.flipAction) {
-        setTimeout(() => {
-            flipCard(card);
-        }, 150); // Small delay for visual effect
-    }
-
-    // Mark as having changes for recording
-    if (appState.phase === 'record') {
-        card.hasChanges = true;
-    }
-
-    updateUI();
-    setStatus(`Moved ${card.displayName || card.name} to ${newZoneName} zone`);
-
-    // Show auto-step popup in Record mode (if not manually editing a step)
-    if (snapshotBeforeMove && appState.phase === 'record' && !appState.isEditingStep) {
-        // Select the card so context menu appears next to it
-        selectCard(card);
-        showAutoStepPopup(card, snapshotBeforeMove);
-    }
-}
-
-/**
- * Re-render all cards in a zone (used after moving cards)
- */
-function rerenderZoneCards(zoneName, zoneElement) {
-    const zoneCardsContainer = zoneElement.querySelector('.zone-cards');
-    if (!zoneCardsContainer) return;
-
-    // Clear zone cards container
-    zoneCardsContainer.innerHTML = '';
-
-    // Get all cards in this zone and re-create elements
-    const zoneCards = appState.tableCards.filter(c => c.zone === zoneName);
-    zoneCards.forEach(card => {
-        createZoneCardElement(card, zoneElement);
-    });
-}
-
-
-function placeCardInZone(card, zoneName, rotation, zoneElement) {
-    // Take snapshot BEFORE placing card (for auto-step feature)
-    const snapshotBeforePlace = (appState.phase === 'record' && !appState.isEditingStep && !appState._bulkApplying) ? takeSnapshot() : null;
-
-    // Mark as not in tray
-    card.inTray = false;
-    card.zone = zoneName;
-    card.rotation = rotation;
-
-    // Determine face up/down state based on layout type
-    if (zoneName.startsWith('grid-')) {
-        // Grid layout: check if poker-style (has parent zone flip controls)
-        if (appState.boardLayout.boardStyle === 'poker' && appState.boardLayout.cardPlaces) {
-            const placeId = zoneName.replace('grid-', '');
-            const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
-            if (place && place.zone) {
-                // Use the parent zone's flip checkbox (e.g. flipTop, flipBottom)
-                const parentZone = place.zone;
-                const flipCheckbox = document.querySelector(`#flip${parentZone.charAt(0).toUpperCase() + parentZone.slice(1)}`);
-                card.isFaceUp = flipCheckbox ? flipCheckbox.checked : false;
-            } else {
-                card.isFaceUp = gridDefaultFaceUp ? gridDefaultFaceUp.checked : false;
-            }
-        } else {
-            // Non-poker grid (Pusoy, etc): use gridDefaultFaceUp checkbox
-            card.isFaceUp = gridDefaultFaceUp ? gridDefaultFaceUp.checked : false;
-        }
-    } else {
-        // Legacy poker layout: use zone-specific checkbox
-        const flipCheckbox = document.querySelector(`#flip${zoneName.charAt(0).toUpperCase() + zoneName.slice(1)}`);
-        card.isFaceUp = flipCheckbox ? flipCheckbox.checked : false;
-    }
-
-    // Get existing cards in zone
-    const zoneCards = appState.tableCards.filter(c => c.zone === zoneName);
-    const position = zoneCards.length;
-
-    // Calculate overlap position
-    card.zonePosition = position;
-
-    // Community zone rotation is handled by createZoneCardElement for CZ slots
-    // Legacy poker community zone (HTML-based) random rotation:
-    if (appState.boardLayout.boardStyle === 'poker' && zoneName === 'community' && !zoneName.startsWith('grid-')) {
-        const randomCheckbox = document.getElementById('communityRandomRotation');
-        if (randomCheckbox && randomCheckbox.checked) {
-            card.rotation = Math.round((Math.random() - 0.5) * 30); // ±15°
-        }
-    }
-
-    // Add to table cards
-    appState.tableCards.push(card);
-
-    // Create visual card in zone
-    createZoneCardElement(card, zoneElement);
-
-    // Mark as having changes for recording
-    if (appState.phase === 'record') {
-        card.hasChanges = true;
-    }
-
-    // Update tray (skip during bulk AI apply for performance)
-    if (!appState._bulkApplying) {
-        renderCardTray();
-        hideInstructions();
-        updateUI();
-        setStatus(`Placed ${card.displayName || card.name} in ${zoneName} zone`);
-    }
-
-    // Show auto-step popup in Record mode (if not manually editing a step)
-    if (snapshotBeforePlace && appState.phase === 'record' && !appState.isEditingStep) {
-        selectCard(card);
-        showAutoStepPopup(card, snapshotBeforePlace);
-    }
-}
-
-
-function placeCardOnTable(card, x, y) {
-    card.inTray = false;
-    card.zone = 'table';
-    card.x = x;
-    card.y = y;
-    card.rotation = 0;
-
-    appState.tableCards.push(card);
-
-    createTableCardElement(card);
-
-    renderCardTray();
-    hideInstructions();
-    updateUI();
-
-    setStatus(`Placed ${card.displayName || card.name} on table`);
-}
-
-/**
- * Move an existing card to a new position on the table
- * Used in Record mode to reposition cards from zones to free table area
- */
-function moveCardToPosition(card, x, y) {
-    // Remove existing element
-    if (card.element) {
-        card.element.remove();
-    }
-
-    // Update card state
-    const wasInZone = card.zone !== 'table';
-    card.zone = 'table';
-    card.x = x;
-    card.y = y;
-    card.rotation = 0;
-    card.zonePosition = 0;
-
-    // Create new table card element
-    createTableCardElement(card);
-
-    // Mark as having changes for recording
-    if (appState.phase === 'record') {
-        card.hasChanges = true;
-    }
-
-    updateUI();
-    setStatus(`Moved ${card.displayName || card.name} to table`);
-}
-
-// ============================================
-// CARD ELEMENTS ON TABLE
-// ============================================
-
-function createZoneCardElement(card, zoneElement) {
-    const zoneCardsContainer = zoneElement.querySelector('.zone-cards');
-
-    // Safety check - if container not found, log and skip
-    if (!zoneCardsContainer) {
-        debugWarn(`Zone container not found! zone: ${zoneElement?.dataset?.zone}, id: ${zoneElement?.id}`);
-        return;
-    }
-
-    const zoneName = zoneElement.dataset.zone;
-
-
-    const cardEl = document.createElement('div');
-    cardEl.className = `zone-card ${card.isFaceUp ? 'face-up' : 'face-down'}`;
-    if (appState.groupedCards.some(c => c.id === card.id)) {
-        cardEl.classList.add('grouped');
-    }
-    cardEl.id = card.id;
-    cardEl.dataset.cardId = card.id;
-
-    // Different overlap direction based on zone
-    // Check if this is a community zone grid-slot
-    let isCZSlot = false;
-    if (zoneName && zoneName.startsWith('grid-')) {
-        const placeId = zoneName.replace('grid-', '');
-        const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
-        if (place && place.isCommunityZone) {
-            isCZSlot = true;
-            const czMode = place.czMode || 'row';
-            cardEl.style.position = 'absolute';
-            cardEl.style.zIndex = 400 + (card.zonePosition || 0);
-
-            // Use actual DOM container dimensions for centering
-            // The zoneElement is already scaled to DOM pixels
-            const containerW = zoneElement.offsetWidth;
-            const containerH = zoneElement.offsetHeight;
-            // Get actual card size from CSS (zone-card uses var(--card-width) / var(--card-height))
-            const cardW = 70; // CSS --card-width default
-            const cardH = 100; // CSS --card-height default
-
-            // Center card within zone-cards container
-            cardEl.style.left = `${(containerW - cardW) / 2}px`;
-            cardEl.style.top = `${(containerH - cardH) / 2}px`;
-
-            if (czMode === 'pile') {
-                // Random offset + random rotation within zone bounds
-                const maxOffsetX = Math.max(0, (containerW - cardW) / 2 - 5);
-                const maxOffsetY = Math.max(0, (containerH - cardH) / 2 - 5);
-                const randX = (Math.random() - 0.5) * 2 * maxOffsetX;
-                const randY = (Math.random() - 0.5) * 2 * maxOffsetY;
-                const randRot = Math.round((Math.random() - 0.5) * 30); // ±15°
-                cardEl.style.transform = `translate(${randX}px, ${randY}px) rotate(${randRot}deg)`;
-                card.rotation = randRot; // Store for AE export
-            } else if (czMode === 'stack') {
-                // Perfect stack - all cards centered, no offset
-                cardEl.style.transform = 'none';
-                card.rotation = 0;
-            } else {
-                // 'row' mode - horizontal offset per card, centered
-                const totalCards = appState.tableCards.filter(c => c.zone === zoneName).length;
-                const spacing = Math.min(cardW * 0.7, (containerW - cardW) / Math.max(1, totalCards - 1));
-                const totalWidth = (totalCards - 1) * spacing;
-                const startOffset = -totalWidth / 2;
-                const offsetX = startOffset + (card.zonePosition || 0) * spacing;
-                cardEl.style.transform = `translateX(${offsetX}px) rotate(${card.rotation || 0}deg)`;
-            }
-        }
-    }
-
-    if (!isCZSlot && appState.boardLayout.boardStyle === 'poker' && zoneName === 'community') {
-        // Poker community: pile stacking — cards on top of each other
-        cardEl.style.position = 'absolute';
-        cardEl.style.zIndex = 400 + (card.zonePosition || 0);
-
-        // Apply optional random offset for natural look
-        const randomCheckbox = document.getElementById('communityRandomRotation');
-        if (randomCheckbox && randomCheckbox.checked) {
-            // Random offset slightly so cards don't perfectly overlap
-            const offsetX = (Math.random() - 0.5) * 20; // ±10px
-            const offsetY = (Math.random() - 0.5) * 15; // ±7.5px
-            cardEl.style.transform = `translate(${offsetX}px, ${offsetY}px) rotate(${card.rotation || 0}deg)`;
-        } else {
-            // Neat stack with slight horizontal offset per card
-            const offsetX = (card.zonePosition || 0) * 8; // 8px shift per card
-            cardEl.style.transform = `translateX(${offsetX}px) rotate(${card.rotation || 0}deg)`;
-        }
-    } else if (zoneName === 'left') {
-        // Left zone: cards stack top-to-bottom, later cards on top
-        cardEl.style.marginTop = card.zonePosition > 0 ? `-${CARD_HEIGHT - appState.cardOverlap}px` : '0';
-    } else if (zoneName === 'right') {
-        // Right zone: cards stack bottom-to-top (reverse), so upper cards overlay lower
-        cardEl.style.marginTop = card.zonePosition > 0 ? `-${CARD_HEIGHT - appState.cardOverlap}px` : '0';
-        // Use z-index to reverse stacking visually - higher position = lower z-index
-        cardEl.style.zIndex = 100 - card.zonePosition;
-    } else {
-        // Top/Bottom/Community: stack horizontally, use marginLeft
-        cardEl.style.marginLeft = card.zonePosition > 0 ? `-${CARD_WIDTH - appState.cardOverlap}px` : '0';
-    }
-
-    // Inner structure for flip
-    const inner = document.createElement('div');
-    inner.className = 'card-inner';
-
-    // Front face
-    const front = document.createElement('div');
-    front.className = 'card-face card-front';
-    const frontImg = document.createElement('img');
-    frontImg.src = card.frontImageUrl || createPlaceholderCardImage(card);
-    front.appendChild(frontImg);
-
-    // Back face
-    const back = document.createElement('div');
-    back.className = 'card-face card-back';
-    if (card.backImageUrl) {
-        const backImg = document.createElement('img');
-        backImg.src = card.backImageUrl;
-        back.appendChild(backImg);
-    }
-
-    inner.appendChild(front);
-    inner.appendChild(back);
-    cardEl.appendChild(inner);
-
-    // Click to flip/select
-    cardEl.addEventListener('click', () => handleCardClick(card, cardEl));
-
-    // Make draggable for Record mode (move cards between zones) and Setup mode (return to tray)
-    cardEl.draggable = true;
-    cardEl.addEventListener('dragstart', (e) => {
-        e.dataTransfer.setData('text/plain', card.id);
-        e.dataTransfer.effectAllowed = 'move';
-        cardEl.classList.add('dragging');
-        // Highlight all zones as potential drop targets
-        playerZones.forEach(zone => zone.classList.add('drag-target'));
-        document.querySelectorAll('.card-drop-zone').forEach(zone => zone.classList.add('drag-target'));
-        // Highlight card tray as return target in Setup phase
-        if (appState.phase === 'setup') {
-            const trayPanel = document.getElementById('cardTrayPanel');
-            if (trayPanel) trayPanel.classList.add('drag-target');
-        }
-    });
-    cardEl.addEventListener('dragend', () => {
-        cardEl.classList.remove('dragging');
-        // Remove highlight from all zones
-        playerZones.forEach(zone => zone.classList.remove('drag-target', 'drag-over'));
-        document.querySelectorAll('.card-drop-zone').forEach(zone => zone.classList.remove('drag-target', 'drag-over'));
-        // Remove tray highlight
-        const trayPanel = document.getElementById('cardTrayPanel');
-        if (trayPanel) trayPanel.classList.remove('drag-target', 'drag-over');
-    });
-
-    zoneCardsContainer.appendChild(cardEl);
-    card.element = cardEl;
-}
-
-function createTableCardElement(card) {
-    const cardEl = document.createElement('div');
-    cardEl.className = `card ${card.isFaceUp ? 'face-up' : 'face-down'}`;
-    if (appState.groupedCards.some(c => c.id === card.id)) {
-        cardEl.classList.add('grouped');
-    }
-    cardEl.id = card.id;
-    cardEl.dataset.cardId = card.id;
-
-    // Position
-    const scaleX = gameContainer.offsetWidth / PROJECT_INFO.width;
-    const scaleY = gameContainer.offsetHeight / PROJECT_INFO.height;
-
-    cardEl.style.left = '0';
-    cardEl.style.top = '0';
-    cardEl.style.transform = `translate(${card.x * scaleX}px, ${card.y * scaleY}px) rotate(${card.rotation}deg)`;
-
-    // Inner structure for flip
-    const inner = document.createElement('div');
-    inner.className = 'card-inner';
-
-    // Front face
-    const front = document.createElement('div');
-    front.className = 'card-face card-front';
-    const frontImg = document.createElement('img');
-    frontImg.src = card.frontImageUrl || createPlaceholderCardImage(card);
-    front.appendChild(frontImg);
-
-    // Back face
-    const back = document.createElement('div');
-    back.className = 'card-face card-back';
-    if (card.backImageUrl) {
-        const backImg = document.createElement('img');
-        backImg.src = card.backImageUrl;
-        back.appendChild(backImg);
-    }
-
-    inner.appendChild(front);
-    inner.appendChild(back);
-    cardEl.appendChild(inner);
-
-    // Label
-    const label = document.createElement('div');
-    label.className = 'card-label';
-    label.textContent = card.displayName || card.name;
-    cardEl.appendChild(label);
-
-    // Click to select/flip
-    cardEl.addEventListener('click', (e) => {
-        e.stopPropagation();
-        handleCardClick(card, cardEl);
-    });
-
-    // Make draggable
-    makeCardDraggable(cardEl, card);
-
-    cardArea.appendChild(cardEl);
-    card.element = cardEl;
-}
-
-// ============================================
-// CARD INTERACTIONS
-// ============================================
-
-function handleCardClick(card, element) {
-    // Check if grouping mode is active (Record phase only)
-    if (appState.groupingMode && appState.phase === 'record') {
-        toggleCardGroupSelection(card);
-
-        // If card is now in group, also select it to show context menu for flip/slam
-        const isInGroup = appState.groupedCards.some(c => c.id === card.id);
-        if (isInGroup) {
-            selectCard(card);
-        }
-        return;  // Don't proceed with normal selection flow
-    }
-
-    // Select the card
-    selectCard(card);
-
-    // If in setup phase, also flip the card
-    if (appState.phase === 'setup') {
-        flipCard(card);
-    }
-}
-
-function selectCard(card) {
-    // Deselect previous
-    if (appState.selectedCard && appState.selectedCard.element) {
-        appState.selectedCard.element.classList.remove('selected');
-    }
-
-    appState.selectedCard = card;
-
-    if (card.element) {
-        card.element.classList.add('selected');
-    }
-
-    // Update properties panel
-    noCardSelected.classList.add('hidden');
-    cardProperties.classList.remove('hidden');
-    selectedCardName.textContent = card.displayName || card.name;
-    cardFaceState.textContent = card.isFaceUp ? 'Up' : 'Down';
-
-    // Update card thumbnail
-    const thumbContainer = document.getElementById('selectedCardThumb');
-    thumbContainer.innerHTML = '';
-    if (card.frontImageUrl) {
-        const img = document.createElement('img');
-        img.src = card.frontImageUrl;
-        img.alt = card.displayName || card.name;
-        thumbContainer.appendChild(img);
-    }
-
-    flipCardCheck.checked = card.flipAction || false;
-    slamEffectCheck.checked = card.slamEffect || false;
-    spinEffectCheck.checked = card.spinEffect || false;
-
-    updateCardPosDisplay(card);
-
-    // Show inline context menu next to card (Record mode only)
-    showCardContextMenu(card);
-}
-
-function deselectCard() {
-    if (appState.selectedCard && appState.selectedCard.element) {
-        appState.selectedCard.element.classList.remove('selected');
-    }
-    appState.selectedCard = null;
-
-    noCardSelected.classList.remove('hidden');
-    cardProperties.classList.add('hidden');
-
-    // Hide context menu
-    hideCardContextMenu();
-}
-
-function flipCard(card) {
-    card.isFaceUp = !card.isFaceUp;
-
-    if (card.element) {
-        // Add flip animation
-        card.element.classList.add('flipping');
-
-        setTimeout(() => {
-            card.element.classList.remove('face-up', 'face-down');
-            card.element.classList.add(card.isFaceUp ? 'face-up' : 'face-down');
-            card.element.classList.remove('flipping');
-        }, 200); // Half of flip duration
-    }
-
-    // Update panel
-    if (appState.selectedCard === card) {
-        cardFaceState.textContent = card.isFaceUp ? 'Up' : 'Down';
-    }
-}
-
-function handleZoneFlipChange(e) {
-    const zoneName = e.target.dataset.zone;
-    const shouldFaceUp = e.target.checked;
-
-    // Find all cards in this zone and flip them accordingly
-    appState.tableCards
-        .filter(card => card.zone === zoneName)
-        .forEach(card => {
-            if (card.isFaceUp !== shouldFaceUp) {
-                flipCard(card);
-            }
-        });
-
-    setStatus(`${zoneName.charAt(0).toUpperCase() + zoneName.slice(1)} zone: ${shouldFaceUp ? 'Face up' : 'Face down'}`);
-}
-
-function updateCardPosDisplay(card) {
-    cardPosX.textContent = Math.round(card.x || 0);
-    cardPosY.textContent = Math.round(card.y || 0);
-    cardRot.textContent = `${Math.round(card.rotation || 0)}°`;
-}
-
-// ============================================
-// DRAGGABLE CARDS ON TABLE
-// ============================================
-
-function makeCardDraggable(element, card) {
-    let isDragging = false;
-    let offsetX, offsetY;
-
-    element.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
-        e.preventDefault();
-
-        isDragging = true;
-        element.classList.add('dragging');
-
-        const rect = cardArea.getBoundingClientRect();
-        const scaleX = PROJECT_INFO.width / rect.width;
-        const scaleY = PROJECT_INFO.height / rect.height;
-
-        const mouseX = (e.clientX - rect.left) * scaleX;
-        const mouseY = (e.clientY - rect.top) * scaleY;
-
-        offsetX = card.x - mouseX;
-        offsetY = card.y - mouseY;
-
-        element.style.zIndex = 1000;
-    });
-
-    document.addEventListener('mousemove', (e) => {
-        if (!isDragging) return;
-
-        const rect = cardArea.getBoundingClientRect();
-        const scaleX = PROJECT_INFO.width / rect.width;
-        const scaleY = PROJECT_INFO.height / rect.height;
-
-        const mouseX = (e.clientX - rect.left) * scaleX;
-        const mouseY = (e.clientY - rect.top) * scaleY;
-
-        card.x = mouseX + offsetX;
-        card.y = mouseY + offsetY;
-
-        // Update visual position
-        const visualX = card.x / scaleX;
-        const visualY = card.y / scaleY;
-        element.style.transform = `translate(${visualX}px, ${visualY}px) rotate(${card.rotation}deg)`;
-
-        updateCardPosDisplay(card);
-    });
-
-    document.addEventListener('mouseup', () => {
-        if (!isDragging) return;
-        isDragging = false;
-        element.classList.remove('dragging');
-        element.style.zIndex = '';
-    });
-}
-
-// ============================================
-// OVERLAP CONTROL
-// ============================================
-
-function handleOverlapChange() {
-    appState.cardOverlap = parseInt(overlapSlider.value);
-    overlapValue.textContent = `${appState.cardOverlap}px`;
-
-    // Re-render zone cards with new overlap
-    reRenderZoneCards();
-}
-
-function reRenderZoneCards() {
-    playerZones.forEach(zone => {
-        const zoneName = zone.dataset.zone;
-        const zoneCards = appState.tableCards.filter(c => c.zone === zoneName);
-
-        zoneCards.forEach((card, index) => {
-            if (card.element) {
-                card.element.style.marginLeft = index > 0 ? `-${CARD_WIDTH - appState.cardOverlap}px` : '0';
-            }
-        });
-    });
-}
-
-// ============================================
-// RESET TABLE
-// ============================================
-
-function handleResetTable() {
-    if (appState.tableCards.length === 0 && !appState._bulkApplying) return;
-
-    if (!appState._bulkApplying && !confirm('Return all cards to tray?')) return;
-
-    // Remove card elements
-    appState.tableCards.forEach(card => {
-        if (card.element) {
-            card.element.remove();
-        }
-        card.inTray = true;
-        card.zone = null;
-        card.element = null;
-        card.isFaceUp = false;
-    });
-
-    appState.tableCards = [];
-    appState.selectedCard = null;
-
-    renderCardTray();
-    showInstructions();
-    deselectCard();
-    updateUI();
-
-    setStatus('All cards returned to tray');
-}
-
-/**
- * Return a single card from the table back to the tray
- * Only allowed in Setup phase to avoid breaking recording snapshots
- */
-function returnCardToTray(card) {
-    if (!card) return;
-
-    // Remove card element from DOM
-    if (card.element) {
-        card.element.remove();
-    }
-
-    // Reset card state
-    card.inTray = true;
-    card.zone = null;
-    card.element = null;
-    card.isFaceUp = false;
-    card.zonePosition = 0;
-    card.rotation = 0;
-
-    // Remove from tableCards array
-    appState.tableCards = appState.tableCards.filter(c => c.id !== card.id);
-
-    // Deselect if this was the selected card
-    if (appState.selectedCard && appState.selectedCard.id === card.id) {
-        appState.selectedCard = null;
-        deselectCard();
-    }
-
-    // Re-render tray and update UI
-    renderCardTray();
-    updateUI();
-
-    if (appState.tableCards.length === 0) {
-        showInstructions();
-    }
-
-    setStatus(`Returned ${card.displayName || card.name} to tray`);
-}
-
-/**
- * Setup card tray panel as a drop target for returning cards
- * Only accepts drops during Setup phase
- */
-function setupTrayDropTarget() {
-    const trayPanel = document.getElementById('cardTrayPanel');
-    if (!trayPanel) return;
-
-    trayPanel.addEventListener('dragover', (e) => {
-        // Only accept drops in Setup phase
-        if (appState.phase !== 'setup') return;
-
-        // Only accept cards that are on the table (not from tray itself)
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        trayPanel.classList.add('drag-over');
-    });
-
-    trayPanel.addEventListener('dragleave', () => {
-        trayPanel.classList.remove('drag-over');
-    });
-
-    trayPanel.addEventListener('drop', (e) => {
-        e.preventDefault();
-        trayPanel.classList.remove('drag-over');
-
-        // Only accept drops in Setup phase
-        if (appState.phase !== 'setup') return;
-
-        const cardId = e.dataTransfer.getData('text/plain');
-        const card = appState.tableCards.find(c => c.id === cardId);
-
-        if (card) {
-            returnCardToTray(card);
-        }
-    });
-}
-
-// ============================================
-// RECORDING LOGIC
-// ============================================
-
-function handleAddStep() {
-    if (appState.isEditingStep) {
-        setStatus('Finish current step first', 'error');
-        return;
-    }
-
-    if (appState.tableCards.length === 0) {
-        setStatus('Place some cards on the table first', 'error');
-        return;
-    }
-
-    startSnapshot = takeSnapshot();
-
-    currentStep = {
-        stepId: scenarioData.scenario.length + 1,
-        duration: stepDuration ? parseFloat(stepDuration.value) : 1.0,
-        actions: []
-    };
-
-    appState.isEditingStep = true;
-    appState.currentStepIndex = currentStep.stepId;
-
-    if (finishStepBtn) finishStepBtn.disabled = false;
-    addStepBtn.disabled = true;
-    recordingIndicator.classList.add('active');
-    currentStepNum.textContent = currentStep.stepId;
-
-    setStatus(`Editing Step ${currentStep.stepId} - Move cards and set properties`);
-}
-
-function handleFinishStep() {
-    if (!appState.isEditingStep || !currentStep) return;
-
-    const endSnapshot = takeSnapshot();
-    const actions = computeActions(startSnapshot, endSnapshot);
-
-    currentStep.actions = actions;
-    currentStep.duration = stepDuration ? parseFloat(stepDuration.value) : 1.0;
-
-    // Attach group order overrides if user reordered groups during this step
-    if (appState.pendingGroupOrderOverrides) {
-        currentStep.groupOrderOverrides = JSON.parse(JSON.stringify(appState.pendingGroupOrderOverrides));
-        // Apply overrides to actual group.groupOrder for subsequent steps
-        var groups = appState.boardLayout.slotGroups || [];
-        groups.forEach(function (g) {
-            if (appState.pendingGroupOrderOverrides[g.id] !== undefined) {
-                g.groupOrder = appState.pendingGroupOrderOverrides[g.id];
-            }
-        });
-        appState.pendingGroupOrderOverrides = null;
-    }
-
-    scenarioData.scenario.push(currentStep);
-
-    // Save snapshot for replay and edit restore
-    stepSnapshots.push(JSON.parse(JSON.stringify(endSnapshot)));
-
-    appState.isEditingStep = false;
-    currentStep = null;
-    startSnapshot = null;
-
-    if (finishStepBtn) finishStepBtn.disabled = true;
-    addStepBtn.disabled = false;
-    recordingIndicator.classList.remove('active');
-    currentStepNum.textContent = '-';
-    totalSteps.textContent = scenarioData.scenario.length;
-
-    renderTimeline();
-    renderGroupOrderStrip();
-    setStatus(`Step ${scenarioData.scenario.length} saved with ${actions.length} actions`, 'success');
-    updateUI();
-}
-
-/**
- * Save the initial state of all cards when entering Record mode
- * This is used for replay and restore functionality
- */
-function saveInitialState() {
-    // Skip during AI bulk apply — applyAIScenario manages its own snapshots
-    if (appState._bulkApplying) {
-        debugLog('[saveInitialState] Skipped — _bulkApplying is true');
-        return;
-    }
-
-    scenarioData.initialState = {};
-
-    appState.tableCards.forEach(card => {
-        scenarioData.initialState[card.id] = {
-            x: card.x || 0,
-            y: card.y || 0,
-            rotation: card.rotation || 0,
-            isFaceUp: card.isFaceUp,
-            zone: card.zone,
-            zonePosition: card.zonePosition || 0,
-            zOrder: computeZOrderForCard(card),
-            flipAction: card.flipAction || false,
-            slamEffect: card.slamEffect || false,
-            isSelected: appState.groupedCards.some(c => c.id === card.id)
-        };
-    });
-
-    // Reset step snapshots when entering record mode
-    stepSnapshots = [];
-
-    // Save initial state as stepSnapshots[0] - this is "step 0" (before any actions)
-    // This ensures replay can properly reset to initial positions on subsequent plays
-    stepSnapshots.push(JSON.parse(JSON.stringify(scenarioData.initialState)));
-
-    console.log('Initial state saved:', scenarioData.initialState);
-}
-
-function takeSnapshot() {
-    const snapshot = {};
-    appState.tableCards.forEach(card => {
-        snapshot[card.id] = {
-            x: card.x || 0,
-            y: card.y || 0,
-            rotation: card.rotation || 0,
-            isFaceUp: card.isFaceUp,
-            zone: card.zone,
-            zonePosition: card.zonePosition || 0,
-            zOrder: computeZOrderForCard(card),
-            flipAction: card.flipAction || false,
-            slamEffect: card.slamEffect || false,
-            isSelected: appState.groupedCards.some(c => c.id === card.id)
-        };
-    });
-    return snapshot;
-}
-
-function computeActions(startSnap, endSnap) {
-    const actions = [];
-
-    appState.tableCards.forEach(card => {
-        const start = startSnap[card.id];
-        const end = endSnap[card.id];
-
-        // Calculate AE positions for zones (since zone cards use x/y = 0 in UI)
-        const getAEPosition = (state) => {
-            if (state.zone && state.zone !== 'table') {
-                return getAEZonePosition(state.zone, state.zonePosition);
-            }
-            return { x: Math.round(state.x || 0), y: Math.round(state.y || 0) };
-        };
-
-        // New card placed from tray (not in start snapshot)
-        if (!start && end) {
-            const endPos = getAEPosition(end);
-            actions.push({
-                targetId: card.id,
-                type: 'PLACE',
-                startPosition: { x: -500, y: PROJECT_INFO.height / 2 }, // Start from far left
-                endPosition: endPos,
-                startRotation: 0,
-                endRotation: Math.round(end.rotation || 0),
-                zone: end.zone,
-                flip: card.flipAction,
-                flipToFaceUp: end.isFaceUp,
-                effect: card.slamEffect ? 'SLAM' : null,
-                spin: card.spinEffect
-            });
-            return;
-        }
-
-        if (!start || !end) return;
-
-        // Check for SELECT/DESELECT changes (grouping mode)
-        const startSelected = start.isSelected || false;
-        const endSelected = end.isSelected || false;
-
-        if (startSelected !== endSelected) {
-            // SELECT uses current/end position (card lifts at its current spot)
-            // DESELECT uses START position (card drops at its original spot before moving)
-            const pos = endSelected ? getAEPosition(end) : getAEPosition(start);
-            actions.push({
-                targetId: card.id,
-                type: endSelected ? 'SELECT' : 'DESELECT',
-                position: pos,
-                zone: endSelected ? end.zone : start.zone,
-                zonePosition: endSelected ? (end.zonePosition || 0) : (start.zonePosition || 0),
-                // SELECT moves Y up by SELECT_OFFSET_Y, DESELECT moves back down
-                selectOffset: endSelected ? -25 : 0
-            });
-            // If only selection changed, don't process as TRANSFORM
-            // (unless there are also position/zone changes)
-        }
-
-
-        const startPos = getAEPosition(start);
-        const endPos = getAEPosition(end);
-
-        // Only check position change if zone changed
-        // Cards staying in same zone should NOT get new keyframes just from rearrangement
-        const zoneChanged = end.zone !== start.zone;
-        const posChanged = zoneChanged && (
-            Math.abs(endPos.x - startPos.x) > 1 ||
-            Math.abs(endPos.y - startPos.y) > 1
-        );
-        const rotChanged = Math.abs((end.rotation || 0) - (start.rotation || 0)) > 0.5;
-        const flipChanged = end.isFaceUp !== start.isFaceUp;
-
-        // Standalone flip (face changed but no zone change) → FLIP action
-        if (flipChanged && !zoneChanged) {
-            const pos = getAEPosition(end);
-            actions.push({
-                targetId: card.id,
-                type: 'FLIP',
-                position: pos,
-                zone: end.zone,
-                zonePosition: end.zonePosition || 0,
-                flipToFaceUp: end.isFaceUp
-            });
-            // Don't fall through to TRANSFORM — this is a standalone flip
-            return;
-        }
-
-        // IMPORTANT: Only apply flipAction/slamEffect if card actually moves (zone changed)
-        // These flags are "sticky" on card objects, so we must NOT use them for stationary cards
-        const hasFlipAction = zoneChanged && card.flipAction;
-        const hasSlam = zoneChanged && card.slamEffect;
-        const hasSpin = zoneChanged && card.spinEffect;
-
-        if (posChanged || rotChanged || flipChanged || zoneChanged || hasFlipAction || hasSlam || hasSpin) {
-            // Get endZOrder using group-aware computation
-            var endZOrder = computeZOrderForCard(end);
-            actions.push({
-                targetId: card.id,
-                type: 'TRANSFORM',
-                startPosition: startPos,
-                endPosition: endPos,
-                startRotation: Math.round(start.rotation || 0),
-                endRotation: Math.round(end.rotation || 0),
-                startZone: start.zone,
-                endZone: end.zone,
-                endZOrder: endZOrder,
-                flip: hasFlipAction || flipChanged,
-                flipToFaceUp: end.isFaceUp,
-                effect: hasSlam ? 'SLAM' : null,
-                spin: hasSpin
-            });
-        }
-    });
-
-    // Detect REMOVED cards (in startSnap but not in endSnap / not in tableCards)
-    var currentCardIds = new Set(appState.tableCards.map(function (c) { return c.id; }));
-    Object.keys(startSnap).forEach(function (cardId) {
-        if (!endSnap[cardId] && !currentCardIds.has(cardId)) {
-            var start = startSnap[cardId];
-            var startPos = (start.zone && start.zone !== 'table')
-                ? getAEZonePosition(start.zone, start.zonePosition || 0)
-                : { x: Math.round(start.x || 0), y: Math.round(start.y || 0) };
-            actions.push({
-                targetId: cardId,
-                type: 'REMOVE',
-                startPosition: startPos,
-                endPosition: { x: PROJECT_INFO.width + 500, y: startPos.y },
-                startRotation: Math.round(start.rotation || 0),
-                endRotation: Math.round(start.rotation || 0),
-                zone: start.zone
-            });
-        }
-    });
-
-    return actions;
-}
-
-
-
-
-function handlePropertyChange() {
-    if (!appState.selectedCard) return;
-
-    appState.selectedCard.flipAction = flipCardCheck.checked;
-    appState.selectedCard.slamEffect = slamEffectCheck.checked;
-    appState.selectedCard.spinEffect = spinEffectCheck.checked;
-
-    // Sync popup menu button states
-    updateContextMenuState(appState.selectedCard);
-}
-
-// ============================================
-// COORDINATE TRANSFORMATION SYSTEM
-// UI (1280x720) ↔ AE (1920x1080)
-// ============================================
-
-/**
- * Transform UI coordinates to AE coordinates
- * @param {number} uiX - X position in UI (1280x720)
- * @param {number} uiY - Y position in UI (1280x720)
- * @returns {object} {x, y} position for AE (1920x1080)
- */
-function uiToAEPosition(uiX, uiY) {
-    return {
-        x: Math.round(uiX * COORD_SCALE),
-        y: Math.round(uiY * COORD_SCALE)
-    };
-}
-
-/**
- * Transform AE coordinates to UI coordinates
- * @param {number} aeX - X position in AE (1920x1080)
- * @param {number} aeY - Y position in AE (1920x1080)
- * @returns {object} {x, y} position for UI (1280x720)
- */
-function aeToUIPosition(aeX, aeY) {
-    return {
-        x: Math.round(aeX / COORD_SCALE),
-        y: Math.round(aeY / COORD_SCALE)
-    };
-}
-
-/**
- * Get zone position in UI coordinates (relative to poker table)
- * @param {string} zoneName - Zone name
- * @param {number} zonePosition - Position within zone
- * @returns {object} {x, y} position in UI coordinates
- */
-function getUIZonePosition(zoneName, zonePosition = 0) {
-    const CARD_SPACING_UI = 45; // Card spacing in UI pixels
-
-    // Handle grid zones (grid-place-X)
-    if (zoneName && zoneName.startsWith('grid-')) {
-        const placeId = zoneName.replace('grid-', '');
-
-        // Try to get position from boardLayout.cardPlaces
-        const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
-        if (place) {
-            // Community zone: calculate per-card offset based on czMode
-            if (place.isCommunityZone) {
-                const czMode = place.czMode || 'row';
-                if (czMode === 'row') {
-                    // Horizontal row offset from center
-                    const spacing = Math.min(CARD_SPACING_UI, (place.czWidth || 300) / Math.max(1, zonePosition + 1));
-                    return {
-                        x: Math.round(place.x + (zonePosition * spacing) - (zonePosition * spacing / 2)),
-                        y: Math.round(place.y)
-                    };
-                } else if (czMode === 'pile') {
-                    // Slight deterministic offset per card
-                    const seed = zonePosition * 7919; // Simple pseudo-random from position
-                    const offsetX = ((seed % 20) - 10);
-                    const offsetY = (((seed * 3) % 14) - 7);
-                    return {
-                        x: Math.round(place.x + offsetX),
-                        y: Math.round(place.y + offsetY)
-                    };
-                } else {
-                    // 'stack' - all at center
-                    return { x: place.x, y: place.y };
-                }
-            }
-            return { x: place.x, y: place.y };
-        }
-
-        // Fallback: get position from DOM element
-        const zoneEl = document.querySelector(`.card-drop-zone[data-zone="${zoneName}"]`);
-        if (zoneEl) {
-            const pokerTable = document.getElementById('pokerTable');
-            if (pokerTable) {
-                const tableRect = pokerTable.getBoundingClientRect();
-                const zoneRect = zoneEl.getBoundingClientRect();
-                return {
-                    x: zoneRect.left - tableRect.left + CARD_WIDTH / 2,
-                    y: zoneRect.top - tableRect.top + CARD_HEIGHT / 2
-                };
-            }
-        }
-
-        return { x: UI_WIDTH / 2, y: UI_HEIGHT / 2 };
-    }
-
-    // Zone base positions in UI coordinates (1280x720)
-    // These match the visual layout of the web tool
-    const zonePositions = {
-        'top': { x: UI_WIDTH / 2 - 50, y: 80 },
-        'bottom': { x: UI_WIDTH / 2 - 50, y: UI_HEIGHT - 80 },
-        'left': { x: 120, y: UI_HEIGHT / 2 },
-        'right': { x: UI_WIDTH - 120, y: UI_HEIGHT / 2 },
-        'community': { x: UI_WIDTH / 2 - 80, y: UI_HEIGHT / 2 }
-    };
-
-    const basePos = zonePositions[zoneName] || { x: UI_WIDTH / 2, y: UI_HEIGHT / 2 };
-
-    // Calculate offset for multiple cards
-    let offsetX = (zonePosition || 0) * CARD_SPACING_UI;
-    let offsetY = 0;
-
-    // Vertical zones (left/right) use Y offset
-    if (zoneName === 'left' || zoneName === 'right') {
-        offsetY = (zonePosition || 0) * CARD_SPACING_UI;
-        offsetX = 0;
-    }
-
-    return {
-        x: Math.round(basePos.x + offsetX),
-        y: Math.round(basePos.y + offsetY)
-    };
-}
-
-/**
- * Get zone position for AE export (transformed from UI to AE coordinates)
- * @param {string} zone - Zone name
- * @param {number} zonePosition - Position within zone
- * @returns {object} {x, y} position for AE (1920x1080)
- */
-function getAEZonePosition(zone, zonePosition = 0) {
-    const uiPos = getUIZonePosition(zone, zonePosition);
-    return uiToAEPosition(uiPos.x, uiPos.y);
-}
-
-
-function saveInitialStateForExport() {
-    // This version calculates positions for AE export
-    const exportState = {};
-
-    // Card scale for AE - 50% gives good visibility on 1080p
-    const aeCardScale = 0.625;
-
-    // Get the initial snapshot (step 0) to check which cards existed at start
-    const initialSnap = stepSnapshots[0] || {};
-
-    appState.tableCards.forEach(card => {
-        // Check if card existed in the initial snapshot
-        const wasInInitialSnap = initialSnap[card.id] !== undefined;
-
-        // Calculate position based on zone
-        let posX = card.x || 0;
-        let posY = card.y || 0;
-
-        if (!wasInInitialSnap) {
-            // Card was added from tray during recording - start off-screen left
-            posX = -500;
-            posY = PROJECT_INFO.height / 2;
-        } else if (initialSnap[card.id].zone && initialSnap[card.id].zone !== 'table') {
-            // For zone cards, use INITIAL zone and position (not current card.zone which may have changed)
-            const aePos = getAEZonePosition(initialSnap[card.id].zone, initialSnap[card.id].zonePosition || 0);
-            posX = aePos.x;
-            posY = aePos.y;
-        }
-
-        exportState[card.id] = {
-            name: card.name,
-            filename: card.filename,
-            frontImage: card.filename,
-            backImage: 'back.png',
-            x: Math.round(posX),
-            y: Math.round(posY),
-            rotation: wasInInitialSnap ? (initialSnap[card.id].rotation || 0) : 0,
-            scale: aeCardScale,
-            zone: wasInInitialSnap ? initialSnap[card.id].zone : 'offscreen',
-            zonePosition: wasInInitialSnap ? (initialSnap[card.id].zonePosition || 0) : 0,
-            zOrder: wasInInitialSnap ? (initialSnap[card.id].zOrder || 0) : 0,
-            isFaceUp: wasInInitialSnap ? initialSnap[card.id].isFaceUp : false
-        };
-
-        // For Pusoy layout: include per-card row/col and rowCount for AE expression sliders
-        // Use INITIAL zone (not current card.zone) to get correct row/col if card was swapped
-        const pusoyZone = wasInInitialSnap ? initialSnap[card.id].zone : card.zone;
-        if (appState.boardLayout.boardStyle === 'pusoy' && pusoyZone && pusoyZone.startsWith('grid-')) {
-            const placeId = pusoyZone.replace('grid-', '');
-            const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
-            if (place) {
-                const rowConfigs = [{ count: 3 }, { count: 5 }, { count: 5 }]; // Pusoy 3-5-5
-                const rowCount = rowConfigs[place.row] ? rowConfigs[place.row].count : 1;
-                exportState[card.id].row = place.row;
-                exportState[card.id].col = place.col;
-                exportState[card.id].rowCount = rowCount;
-            }
-        }
-
-        // Include clonerId if the card's place belongs to a cloner group
-        // This helps dealing animation group source cards with their cloner
-        var clonerZone = wasInInitialSnap ? initialSnap[card.id].zone : card.zone;
-        if (clonerZone && clonerZone.startsWith('grid-')) {
-            const placeId = clonerZone.replace('grid-', '');
-            const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
-            if (place && place.clonerId) {
-                exportState[card.id].clonerId = place.clonerId;
-            }
-        }
-    });
-
-    return exportState;
-}
-
-
-function handleExportJSON() {
-    if (appState.tableCards.length === 0) {
-        setStatus('No cards on table to export', 'error');
-        return;
-    }
-
-    // Use export version with AE-calculated positions
-    const exportData = {
-        ...scenarioData,
-        initialState: saveInitialStateForExport()
-    };
-
-    const jsonString = JSON.stringify(exportData, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `poker_scenario_${Date.now()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    setStatus('Scenario exported!', 'success');
-}
-
-function handleExportToAE() {
-    if (!csInterface) {
-        setStatus('After Effects not connected', 'error');
-        return;
-    }
-
-    if (appState.tableCards.length === 0) {
-        setStatus('No cards on table', 'error');
-        return;
-    }
-
-    if (!appState.assetsRootPath) {
-        setStatus('Select Assets Folder first!', 'error');
-        return;
-    }
-
-    // Use export version with AE-calculated positions
-    const exportData = {
-        ...scenarioData,
-        initialState: saveInitialStateForExport(),
-        boardType: appState.boardLayout.boardStyle || appState.boardLayout.type || 'poker',
-        stepBlending: appState.stepBlending || 0,  // Overlap % between steps
-        enableVisualMouse: true  // Create mouse cursor null for swap animations
-    };
-
-    // Include dealing card config if enabled
-    if (appState.dealingCard.enabled) {
-        const aePos = uiToAEPosition(appState.dealingCard.x, appState.dealingCard.y);
-        exportData.dealingCard = {
-            enabled: true,
-            x: aePos.x,
-            y: aePos.y,
-            staggerFrames: appState.dealSpeed || 3  // Frames between each card deal (1=fast, 5=slow)
-        };
-    }
-
-    // Include Pusoy config for AE expression sliders
-    if (appState.boardLayout.boardStyle === 'pusoy') {
-        const spacingSlider = document.getElementById('pusoySpacing');
-        const curvatureSlider = document.getElementById('pusoyCurvature');
-        const layerGapSlider = document.getElementById('pusoyLayerGap');
-        exportData.pusoyConfig = {
-            defaultSpacing: spacingSlider ? parseInt(spacingSlider.value) : 150,
-            defaultCurvature: curvatureSlider ? parseInt(curvatureSlider.value) : 50,
-            defaultLayerGap: layerGapSlider ? parseInt(layerGapSlider.value) : 30,
-            basePivotY: 645  // 430 UI * 1.5 AE scale
-        };
-    }
-
-    // Include slotGroups for group-aware z-order in AE
-    if (appState.boardLayout.slotGroups && appState.boardLayout.slotGroups.length > 0) {
-        exportData.slotGroups = JSON.parse(JSON.stringify(appState.boardLayout.slotGroups));
-    }
-
-    setStatus('Sending to After Effects...', 'recording');
-
-    const jsonString = JSON.stringify(exportData);
-    const assetsPath = escapeForScript(appState.assetsRootPath);
-
-    csInterface.evalScript(
-        `generateSequence('${escapeForScript(jsonString)}', '${assetsPath}')`,
-        (result) => {
-            try {
-                const response = JSON.parse(result);
-                if (response.success) {
-                    setStatus(`✓ ${response.message}`, 'success');
-                } else {
-                    setStatus(`Error: ${response.message}`, 'error');
-                }
-            } catch (e) {
-                setStatus('Sent to After Effects', 'success');
-            }
-        }
-    );
-}
-
-function escapeForScript(str) {
-    return str
-        .replace(/\\/g, '\\\\')
-        .replace(/'/g, "\\'")
-        .replace(/"/g, '\\"')
-        .replace(/\n/g, '\\n')
-        .replace(/\r/g, '\\r');
-}
-
-// ============================================
-// ASSETS FOLDER
-// ============================================
-
-function handleSelectAssetsFolder() {
-    if (typeof window.cep !== 'undefined' && window.cep.fs) {
-        try {
-            const result = window.cep.fs.showOpenDialogEx(
-                false, true, 'Select Assets Folder', '', []
-            );
-
-            if (result.err === 0 && result.data && result.data.length > 0) {
-                appState.assetsRootPath = result.data[0].replace(/\\/g, '/') + '/';
-                updateAssetsDisplay();
-                setStatus('Assets folder set', 'success');
-            }
-        } catch (e) {
-            setStatus('Error selecting folder', 'error');
-        }
-    } else {
-        const path = prompt('Enter assets folder path:', appState.deckPath || 'D:/Assets');
-        if (path) {
-            appState.assetsRootPath = path.replace(/\\/g, '/') + '/';
-            updateAssetsDisplay();
-        }
-    }
-}
-
-function updateAssetsDisplay() {
-    if (appState.assetsRootPath) {
-        const shortPath = appState.assetsRootPath.split('/').slice(-3).join('/');
-        assetsPathDisplay.innerHTML = `<span class="path-label">✓ .../${shortPath}</span>`;
-        assetsPathDisplay.classList.add('has-path');
-    }
-}
-
-// ============================================
-// PROJECT SAVE/LOAD
-// ============================================
-
-function handleSaveProject() {
-    const projectData = {
-        version: '1.0',
-        savedAt: new Date().toISOString(),
-        deckPath: appState.deckPath,
-        assetsRootPath: appState.assetsRootPath,
-        stepBlending: appState.stepBlending,
-        dealSpeed: appState.dealSpeed,
-        boardLayout: appState.boardLayout,
-        // Save card states (without DOM elements)
-        tableCards: appState.tableCards.map(c => ({
-            id: c.id,
-            name: c.name,
-            displayName: c.displayName,
-            filename: c.filename,
-            frontImageUrl: c.frontImageUrl,
-            backImageUrl: c.backImageUrl,
-            suit: c.suit,
-            rank: c.rank,
-            isFaceUp: c.isFaceUp,
-            zone: c.zone,
-            zonePosition: c.zonePosition,
-            rotation: c.rotation,
-            x: c.x,
-            y: c.y
-        })),
-        trayCards: appState.trayCards.map(c => ({
-            id: c.id,
-            name: c.name,
-            displayName: c.displayName,
-            filename: c.filename,
-            frontImageUrl: c.frontImageUrl,
-            backImageUrl: c.backImageUrl,
-            suit: c.suit,
-            rank: c.rank,
-            isFaceUp: c.isFaceUp
-        })),
-        // Save scenario data
-        scenarioData: {
-            initialState: scenarioData.initialState,
-            scenario: scenarioData.scenario
-        },
-        // Save step snapshots
-        stepSnapshots: stepSnapshots
-    };
-
-    const dataStr = JSON.stringify(projectData, null, 2);
-
-    // Use CEP file save dialog
-    if (csInterface) {
-        const defaultFilename = `autonim-poker-project-${Date.now()}.json`;
-        const result = window.cep.fs.showSaveDialogEx(
-            'Save Project',
-            '',
-            ['json'],
-            defaultFilename
-        );
-
-        if (result.data && result.data.length > 0) {
-            const filePath = result.data;
-            const writeResult = window.cep.fs.writeFile(filePath, dataStr);
-
-            if (writeResult.err === 0) {
-                setStatus('Project saved to: ' + filePath.split(/[\\/]/).pop(), 'success');
-            } else {
-                setStatus('Failed to save project', 'error');
-            }
-        } else {
-            setStatus('Save cancelled', '');
-        }
-    } else {
-        // Fallback for browser testing
-        const blob = new Blob([dataStr], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `autonim-poker-project-${Date.now()}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-        setStatus('Project saved to Downloads', 'success');
-    }
-}
-
-function handleLoadProject(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-        try {
-            const projectData = JSON.parse(event.target.result);
-
-            // Restore app state
-            appState.deckPath = projectData.deckPath || null;
-            appState.assetsRootPath = projectData.assetsRootPath || null;
-            appState.stepBlending = projectData.stepBlending || 0;
-            appState.dealSpeed = projectData.dealSpeed || 3;
-            appState.boardLayout = projectData.boardLayout || appState.boardLayout;
-            // Fallback for old projects without slotGroups
-            if (!appState.boardLayout.slotGroups) {
-                appState.boardLayout.slotGroups = [];
-            }
-
-            // Restore cards
-            appState.tableCards = projectData.tableCards || [];
-            appState.trayCards = projectData.trayCards || [];
-
-            // Restore scenario
-            if (projectData.scenarioData) {
-                scenarioData.initialState = projectData.scenarioData.initialState || {};
-                scenarioData.scenario = projectData.scenarioData.scenario || [];
-            }
-
-            // Restore snapshots
-            if (projectData.stepSnapshots) {
-                stepSnapshots.length = 0;
-                projectData.stepSnapshots.forEach(s => stepSnapshots.push(s));
-            }
-
-            // Update UI
-            updateAssetsDisplay();
-            if (projectData.stepBlending) {
-                const slider = document.getElementById('stepBlendingSlider');
-                const value = document.getElementById('stepBlendingValue');
-                if (slider) slider.value = projectData.stepBlending;
-                if (value) value.textContent = projectData.stepBlending + '%';
-            }
-            if (projectData.dealSpeed) {
-                const dealSlider = document.getElementById('dealSpeedSlider');
-                const dealValue = document.getElementById('dealSpeedValue');
-                if (dealSlider) dealSlider.value = projectData.dealSpeed;
-                if (dealValue) dealValue.textContent = projectData.dealSpeed + 'f/card';
-            }
-
-            // Re-render cards on table
-            restoreFromSnapshot(stepSnapshots[stepSnapshots.length - 1] || {});
-
-            // Update tray
-            renderCardTray();
-            renderTimeline();
-            updateUI();
-
-            setStatus('Project loaded!', 'success');
-        } catch (err) {
-            setStatus('Failed to load project: ' + err.message, 'error');
-            console.error('Load project error:', err);
-        }
-    };
-    reader.readAsText(file);
-
-    // Reset file input
-    e.target.value = '';
-}
-
-// ============================================
-// TIMELINE
-// ============================================
-
-function renderTimeline() {
-    // Use new TimelineUI if available
-    if (typeof timelineUI !== 'undefined' && timelineUI !== null) {
-        // Sync timing data first
-        syncTimelineModulesWithSteps();
-        return;
-    }
-
-    // Fallback to old rendering if TimelineUI not loaded
-    timelinePreview.innerHTML = '';
-
-    scenarioData.scenario.forEach((step, index) => {
-        const el = document.createElement('div');
-        el.className = 'timeline-step';
-        if (step.actions.length > 0) el.classList.add('has-actions');
-
-        // Step number
-        const stepNum = document.createElement('span');
-        stepNum.textContent = step.stepId;
-        el.appendChild(stepNum);
-
-        // Action buttons container
-        const actions = document.createElement('div');
-        actions.className = 'step-actions';
-
-        // Edit button
-        const editBtn = document.createElement('button');
-        editBtn.className = 'step-action-btn edit-btn';
-        editBtn.innerHTML = '✏️';
-        editBtn.title = 'Edit step';
-        editBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            handleEditStep(index);
-        });
-        actions.appendChild(editBtn);
-
-        // Delete button
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'step-action-btn delete-btn';
-        deleteBtn.innerHTML = '🗑️';
-        deleteBtn.title = 'Delete step';
-        deleteBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            handleDeleteStep(index);
-        });
-        actions.appendChild(deleteBtn);
-
-        el.appendChild(actions);
-        el.title = `Step ${step.stepId}: ${step.actions.length} actions, ${step.duration}s`;
-        timelinePreview.appendChild(el);
-    });
-
-    // Update replay button state
-    if (replayBtn) {
-        replayBtn.disabled = scenarioData.scenario.length === 0;
-    }
-}
-
-// ============================================
-// UI HELPERS
-// ============================================
-
-function updateUI() {
-    tableCardCount.textContent = `Table: ${appState.tableCards.length}`;
-    stepCount.textContent = `Steps: ${scenarioData.scenario.length}`;
-    totalSteps.textContent = scenarioData.scenario.length;
-}
-
-function setStatus(message, type = '') {
-    statusMessage.textContent = message;
-    statusMessage.className = 'status-bar';
-    if (type) statusMessage.classList.add(`status-${type}`);
-}
-
-function hideInstructions() {
-    tableInstructions.classList.add('hidden');
-}
-
-function showInstructions() {
-    tableInstructions.classList.remove('hidden');
-}
-
-// ============================================
-// REPLAY FUNCTIONALITY
-// ============================================
-
-let replayTimer = null;
-let isReplaying = false;
-let currentReplayStep = 0;
-let replaySpeed = 1;  // 1 = normal, 2 = faster, 0.5 = slower
-
-function handleReplay() {
-    if (scenarioData.scenario.length === 0) {
-        setStatus('No steps to replay', 'error');
-        return;
-    }
-
-    if (isReplaying) {
-        stopReplay();
-        return;
-    }
-
-    // Check if we have snapshots for replay
-    if (stepSnapshots.length === 0) {
-        setStatus('No snapshots recorded - please record some steps first', 'error');
-        debugWarn('stepSnapshots is empty:', stepSnapshots);
-        return;
-    }
-
-    debugLog('Starting replay with', scenarioData.scenario.length, 'steps');
-    debugLog('stepSnapshots:', stepSnapshots);
-
-
-    isReplaying = true;
-    currentReplayStep = 0;
-
-    // Update UI - old controls disabled, using new timeline controls
-    // replayBtn.textContent = '⏸️ Pause';
-    // replayControls.classList.remove('hidden');
-    // replayProgress.textContent = `Initial / ${scenarioData.scenario.length} steps`;
-
-    // Update playhead to start
-    updateTimelinePlayhead(0);
-
-    // Start replay from initial state
-    restoreToInitialState();
-
-    setStatus('Showing initial state...', 'recording');
-
-    // Give user time to see initial state before stepping
-    setTimeout(() => {
-        if (isReplaying) {
-            setStatus('Replaying steps...', 'recording');
-            replayNextStep();
-        }
-    }, 1000);
-}
-
-
-function replayNextStep() {
-    debugLog('=== replayNextStep ===');
-    debugLog('isReplaying:', isReplaying);
-    debugLog('currentReplayStep:', currentReplayStep);
-    debugLog('scenario.length:', scenarioData.scenario.length);
-
-    if (!isReplaying || currentReplayStep >= scenarioData.scenario.length) {
-        debugLog('Stopping replay - condition met');
-        stopReplay();
-        return;
-    }
-
-    const step = scenarioData.scenario[currentReplayStep];
-    debugLog('Playing step:', currentReplayStep + 1, 'duration:', step.duration);
-    // Old progress display disabled - using playhead now
-    // replayProgress.textContent = `Step ${currentReplayStep + 1}/${scenarioData.scenario.length}`;
-
-    // Update playhead position (step start time)
-    const playheadTime = step.startTime || currentReplayStep;
-    updateTimelinePlayhead(playheadTime);
-
-    // Get previous snapshot for start positions
-    // stepSnapshots[0] = initial state, stepSnapshots[1] = after step 1, etc.
-    const prevSnapshot = stepSnapshots[currentReplayStep];  // Start position
-    const targetSnapshot = stepSnapshots[currentReplayStep + 1];  // End position
-
-    if (targetSnapshot) {
-        debugLog('Animating step from snapshot', currentReplayStep);
-
-        // IMPORTANT: First restore cards to previous snapshot position
-        // This ensures correct start positions on subsequent replays
-        restoreFromSnapshot(prevSnapshot);
-
-        // Find cards that changed position (zone changed) or are new
-        const movingCards = [];
-        Object.entries(targetSnapshot).forEach(([cardId, targetState]) => {
-            const prevState = prevSnapshot[cardId];
-
-            // New card added from tray (not in previous snapshot)
-            if (!prevState) {
-                movingCards.push({
-                    cardId,
-                    fromZone: null,  // Card is new, no previous zone
-                    toZone: targetState.zone,
-                    targetState,
-                    isNew: true
-                });
-            } else if (prevState.zone !== targetState.zone) {
-                // Existing card that moved zones
-                movingCards.push({
-                    cardId,
-                    fromZone: prevState.zone,
-                    fromZonePosition: prevState.zonePosition || 0,
-                    toZone: targetState.zone,
-                    targetState
-                });
-            }
-        });
-
-        debugLog('Moving cards:', movingCards.length);
-
-        if (movingCards.length > 0) {
-            // Small delay to let DOM settle after restore, then animate
-            setTimeout(() => {
-                animateCardsSequentially(movingCards, targetSnapshot, () => {
-                    currentReplayStep++;
-                    // Schedule next step
-                    const duration = ((step.duration || 1) * 1000) / replaySpeed;
-                    debugLog('Scheduling next step in', duration, 'ms (speed:', replaySpeed + 'x)');
-                    replayTimer = setTimeout(() => replayNextStep(), duration);
-                });
-            }, 50);
-        } else {
-            // No movement, just restore and continue
-            restoreFromSnapshot(targetSnapshot);
-            currentReplayStep++;
-            const duration = ((step.duration || 1) * 1000) / replaySpeed;
-            replayTimer = setTimeout(() => replayNextStep(), duration);
-        }
-    } else {
-        debugWarn('No stepSnapshot at index', currentReplayStep);
-        currentReplayStep++;
-        replayTimer = setTimeout(() => replayNextStep(), 1000);
-    }
-}
-
-/**
- * Animate cards moving to new positions sequentially
- */
-function animateCardsSequentially(movingCards, targetSnapshot, onComplete) {
-    const ANIMATION_DURATION = 400; // ms per card
-    let index = 0;
-
-    // Calculate scale factor to convert UI coordinates (1280x720) to actual container size
-    const pokerTable = document.getElementById('pokerTable');
-    const tableWidth = pokerTable ? pokerTable.offsetWidth : gameContainer.offsetWidth;
-    const tableHeight = pokerTable ? pokerTable.offsetHeight : gameContainer.offsetHeight;
-    const scaleX = tableWidth / UI_WIDTH;
-    const scaleY = tableHeight / UI_HEIGHT;
-
-    debugLog('Animation scale factors:', { scaleX, scaleY, tableWidth, tableHeight, UI_WIDTH, UI_HEIGHT });
-
-    function animateNext() {
-        if (index >= movingCards.length) {
-            // All animations complete, restore final state
-            restoreFromSnapshot(targetSnapshot);
-            onComplete();
-            return;
-        }
-
-        const move = movingCards[index];
-        let card = appState.tableCards.find(c => c.id === move.cardId);
-
-        // For new cards (from tray), we need to find or create them
-        if (move.isNew && !card) {
-            // Find card in tray
-            card = appState.trayCards.find(c => c.id === move.cardId);
-            if (card) {
-                // Add to table cards
-                appState.tableCards.push(card);
-                appState.trayCards = appState.trayCards.filter(c => c.id !== move.cardId);
-            }
-        }
-
-        if (card) {
-            // Create element if it doesn't exist
-            if (!card.element) {
-                card.isFaceUp = move.targetState.isFaceUp;
-                const element = createTableCardElement(card);
-                card.element = element;
-            }
-
-            // Get start and end positions in UI coordinates (1280x720)
-            // Use zonePosition from state to get correct offset within zone
-            const startPos = move.isNew
-                ? { x: -100, y: UI_HEIGHT / 2 }  // Start from left edge
-                : getUIZonePosition(move.fromZone, move.fromZonePosition || 0);
-            const endPos = getUIZonePosition(move.toZone, move.targetState.zonePosition || 0);
-
-            // Get poker table offset relative to gameContainer
-            const containerRect = gameContainer.getBoundingClientRect();
-            const tableRect = pokerTable ? pokerTable.getBoundingClientRect() : containerRect;
-            const offsetX = tableRect.left - containerRect.left;
-            const offsetY = tableRect.top - containerRect.top;
-
-            // Scale card dimensions as well
-            const scaledCardWidth = CARD_WIDTH * scaleX;
-            const scaledCardHeight = CARD_HEIGHT * scaleY;
-
-            // Remove from zone container, add to gameContainer for free movement
-            const cardEl = card.element;
-            cardEl.style.position = 'absolute';
-            // Scale UI coordinates to actual container size
-            cardEl.style.left = `${offsetX + (startPos.x * scaleX) - scaledCardWidth / 2}px`;
-            cardEl.style.top = `${offsetY + (startPos.y * scaleY) - scaledCardHeight / 2}px`;
-            cardEl.style.zIndex = '200';
-            cardEl.style.transition = `left ${ANIMATION_DURATION}ms ease, top ${ANIMATION_DURATION}ms ease`;
-
-            // Move to gameContainer if not already there
-            if (cardEl.parentElement !== gameContainer) {
-                gameContainer.appendChild(cardEl);
-            }
-
-            debugLog(`Animating ${card.id}: from (${startPos.x}, ${startPos.y}) to (${endPos.x}, ${endPos.y})${move.isNew ? ' [NEW]' : ''}`);
-
-            // Trigger animation
-            requestAnimationFrame(() => {
-                cardEl.style.left = `${offsetX + (endPos.x * scaleX) - scaledCardWidth / 2}px`;
-                cardEl.style.top = `${offsetY + (endPos.y * scaleY) - scaledCardHeight / 2}px`;
-            });
-
-            // Wait for animation, then animate next
-            setTimeout(() => {
-                index++;
-                animateNext();
-            }, ANIMATION_DURATION + 50);
-        } else {
-            index++;
-            animateNext();
-        }
-    }
-
-    animateNext();
-}
-
-
-function stopReplay() {
-    isReplaying = false;
-
-    if (replayTimer) {
-        clearTimeout(replayTimer);
-        replayTimer = null;
-    }
-
-    // Reset UI
-    replayBtn.textContent = '▶️ Replay Steps';
-    replayControls.classList.add('hidden');
-
-    setStatus(`Replay finished at step ${currentReplayStep}/${scenarioData.scenario.length}`, 'success');
-}
-
-function restoreToInitialState() {
-    debugLog('=== restoreToInitialState ===');
-    debugLog('initialState:', scenarioData.initialState);
-    debugLog('tableCards:', appState.tableCards);
-
-    // First, remove all card elements from zones
-    playerZones.forEach(zone => {
-        const container = zone.querySelector('.zone-cards');
-        if (container) container.innerHTML = '';
-    });
-    // Also clear grid drop zones
-    document.querySelectorAll('.card-drop-zone .zone-cards').forEach(container => {
-        container.innerHTML = '';
-    });
-    // Clear community zone
-    const communityZoneContainer = document.querySelector('.community-zone .zone-cards');
-    if (communityZoneContainer) communityZoneContainer.innerHTML = '';
-
-    // Clear ALL card elements ANYWHERE in gameContainer (nuclear cleanup)
-    // This ensures animated cards are removed regardless of DOM location
-    // Must include both .card (table cards) and .zone-card (zone cards) classes
-    gameContainer.querySelectorAll('.card, .zone-card').forEach(cardEl => {
-        cardEl.remove();
-    });
-
-    cardArea.innerHTML = '';
-
-    // Apply initial state to all cards
-    Object.entries(scenarioData.initialState).forEach(([cardId, state]) => {
-        const card = appState.tableCards.find(c => c.id === cardId);
-        if (!card) {
-            debugWarn('Card not found in tableCards:', cardId);
-            return;
-        }
-
-        debugLog(`Restoring card ${cardId} to zone: ${state.zone}`);
-        card.x = state.x;
-        card.y = state.y;
-        card.rotation = state.rotation;
-        card.isFaceUp = state.isFaceUp;
-        card.zone = state.zone;
-        card.zonePosition = state.zonePosition || 0;
-        card.element = null;
-    });
-
-    // Re-create elements ONLY for cards in the initial state
-    // Filter tableCards to only include those in initialState
-    const initialStateCardIds = Object.keys(scenarioData.initialState);
-    const cardsInInitialState = appState.tableCards.filter(c => initialStateCardIds.includes(c.id));
-
-    // Sort by zone and zonePosition to ensure correct order
-    const sortedCards = cardsInInitialState.sort((a, b) => {
-        if (a.zone !== b.zone) return (a.zone || '').localeCompare(b.zone || '');
-        return (a.zonePosition || 0) - (b.zonePosition || 0);
-    });
-
-    debugLog('sortedCards for rendering:', sortedCards.map(c => ({ id: c.id, zone: c.zone })));
-
-    sortedCards.forEach(card => {
-        try {
-            if (card.zone && card.zone !== 'table') {
-                // Use specific selectors to target zone divs (including grid drop zones)
-                const zoneElement = document.querySelector(`.player-zone[data-zone="${card.zone}"], .community-zone[data-zone="${card.zone}"], .card-drop-zone[data-zone="${card.zone}"]`);
-                debugLog(`Creating zone card ${card.id} in zone ${card.zone}, element found:`, !!zoneElement);
-                if (zoneElement) {
-                    createZoneCardElement(card, zoneElement);
-                }
-            } else if (card.zone === 'table') {
-                debugLog(`Creating table card ${card.id}`);
-                createTableCardElement(card);
-            } else {
-                debugWarn(`Card ${card.id} has no valid zone:`, card.zone);
-            }
-        } catch (err) {
-            debugWarn(`ERROR creating card ${card.id}:`, err.message);
-            console.error('Full error:', err);
-        }
-    });
-
-    debugLog('=== restoreToInitialState COMPLETE ===');
-    updateUI();
-}
-
-
-
-// ============================================
-// EDIT/DELETE STEPS
-// ============================================
-
-let pendingWarningCallback = null;
-
-function handleDeleteStep(stepIndex) {
-    if (stepIndex < 0 || stepIndex >= scenarioData.scenario.length) return;
-
-    const isLastStep = stepIndex === scenarioData.scenario.length - 1;
-
-    if (!isLastStep) {
-        // Deleting middle step - warn about subsequent steps
-        showWarningModal(
-            `Deleting step ${stepIndex + 1} will also delete all ${scenarioData.scenario.length - stepIndex - 1} subsequent steps. Continue?`,
-            () => {
-                // Delete this step and all after it, keep steps 0..stepIndex-1
-                scenarioData.scenario = scenarioData.scenario.slice(0, stepIndex);
-                // Keep snapshots 0..stepIndex (need stepIndex+1 snapshots for stepIndex steps)
-                stepSnapshots = stepSnapshots.slice(0, stepIndex + 1);
-                renumberSteps();
-                renderTimeline();
-                updateUI();
-                setStatus(`Deleted step ${stepIndex + 1} and subsequent steps`, 'success');
-            }
-        );
-    } else {
-        // Deleting last step - just remove it
-        scenarioData.scenario.pop();
-        stepSnapshots.pop();
-        renderTimeline();
-        updateUI();
-        setStatus(`Deleted step ${stepIndex + 1}`, 'success');
-    }
-}
-
-function handleEditStep(stepIndex) {
-    if (stepIndex < 0 || stepIndex >= scenarioData.scenario.length) return;
-
-    const isLastStep = stepIndex === scenarioData.scenario.length - 1;
-
-    if (!isLastStep) {
-        // Editing middle step - warn about subsequent steps
-        showWarningModal(
-            `Editing step ${stepIndex + 1} will delete all ${scenarioData.scenario.length - stepIndex - 1} subsequent steps. Continue?`,
-            () => {
-                // Delete steps from stepIndex onward, keep steps 0..stepIndex-1
-                scenarioData.scenario = scenarioData.scenario.slice(0, stepIndex);
-                // Keep snapshots 0..stepIndex (snap[stepIndex] = state BEFORE step at stepIndex)
-                stepSnapshots = stepSnapshots.slice(0, stepIndex + 1);
-                renumberSteps();
-
-                // Restore to state before this step
-                if (stepIndex === 0) {
-                    restoreToInitialState();
-                } else if (stepSnapshots[stepIndex]) {
-                    restoreFromSnapshot(stepSnapshots[stepIndex]);
-                }
-
-                renderTimeline();
-                updateUI();
-                setStatus(`Ready to re-record step ${stepIndex + 1}. Click "Add Step" to start.`, 'success');
-            }
-        );
-    } else {
-        // Editing last step - just remove it and restore to the state BEFORE this step
-        scenarioData.scenario.pop();
-
-        if (stepSnapshots.length > 1) {
-            // Pop the end-state snapshot of the removed step
-            stepSnapshots.pop();
-            // Now the last snapshot is the START state of the removed step
-            const prevSnapshot = stepSnapshots[stepSnapshots.length - 1];
-
-            if (prevSnapshot) {
-                restoreFromSnapshot(prevSnapshot);
-            } else {
-                restoreToInitialState();
-            }
-        } else {
-            restoreToInitialState();
-        }
-
-        renderTimeline();
-        updateUI();
-        setStatus(`Ready to re-record last step. Click "Add Step" to start.`, 'success');
-    }
-}
-
-function renumberSteps() {
-    scenarioData.scenario.forEach((step, idx) => {
-        step.stepId = idx + 1;
-    });
-}
-
-function restoreFromSnapshot(snapshot) {
-    debugLog('=== restoreFromSnapshot ===');
-    debugLog('snapshot:', snapshot);
-
-    // First, remove all card elements from zones
-    playerZones.forEach(zone => {
-        const container = zone.querySelector('.zone-cards');
-        if (container) container.innerHTML = '';
-    });
-    // Also clear grid drop zones
-    document.querySelectorAll('.card-drop-zone .zone-cards').forEach(container => {
-        container.innerHTML = '';
-    });
-    // Clear community zone
-    const communityZone = document.querySelector('.community-zone .zone-cards');
-    if (communityZone) communityZone.innerHTML = '';
-
-    // Clear ALL card elements ANYWHERE in gameContainer (nuclear cleanup)
-    // This ensures animated cards are removed regardless of DOM location
-    // Must include both .card (table cards) and .zone-card (zone cards) classes
-    gameContainer.querySelectorAll('.card, .zone-card').forEach(cardEl => {
-        cardEl.remove();
-    });
-
-    cardArea.innerHTML = '';
-
-    // Clear and rebuild groupedCards based on snapshot isSelected
-    appState.groupedCards = [];
-
-    // Restore each card to its saved state
-    Object.entries(snapshot).forEach(([cardId, state]) => {
-        const card = appState.tableCards.find(c => c.id === cardId);
-        if (!card) {
-            debugWarn('Card not found in tableCards:', cardId);
-            return;
-        }
-
-        debugLog(`Restoring card ${cardId} to zone: ${state.zone}`);
-        // Restore all properties
-        card.x = state.x || 0;
-        card.y = state.y || 0;
-        card.rotation = state.rotation || 0;
-        card.isFaceUp = state.isFaceUp;
-        card.zone = state.zone;
-        card.zonePosition = state.zonePosition || 0;
-        card.flipAction = state.flipAction || false;
-        card.slamEffect = state.slamEffect || false;
-        card.element = null;
-
-        // Track selected cards for grouping
-        if (state.isSelected) {
-            appState.groupedCards.push(card);
-        }
-    });
-
-    // Re-create elements ONLY for cards in the snapshot
-    // Filter tableCards to only include those in the snapshot
-    const snapshotCardIds = Object.keys(snapshot);
-    const cardsInSnapshot = appState.tableCards.filter(c => snapshotCardIds.includes(c.id));
-
-    // Sort by zone and zonePosition to ensure correct order
-    const sortedCards = cardsInSnapshot.sort((a, b) => {
-        if (a.zone !== b.zone) return (a.zone || '').localeCompare(b.zone || '');
-        return (a.zonePosition || 0) - (b.zonePosition || 0);
-    });
-
-    debugLog('sortedCards for rendering:', sortedCards.map(c => ({ id: c.id, zone: c.zone })));
-
-    sortedCards.forEach(card => {
-        if (card.zone && card.zone !== 'table') {
-            // Use specific selectors to target zone divs (including grid drop zones)
-            const zoneElement = document.querySelector(`.player-zone[data-zone="${card.zone}"], .community-zone[data-zone="${card.zone}"], .card-drop-zone[data-zone="${card.zone}"]`);
-            debugLog(`Creating zone card ${card.id} in zone ${card.zone}, element found:`, !!zoneElement);
-            if (zoneElement) {
-                createZoneCardElement(card, zoneElement);
-            }
-        } else if (card.zone === 'table') {
-            debugLog(`Creating table card ${card.id}`);
-            createTableCardElement(card);
-        } else {
-            debugWarn(`Card ${card.id} has no valid zone:`, card.zone);
-        }
-
-        // Apply .grouped class if card is selected
-        const isCardSelected = snapshot[card.id]?.isSelected || false;
-        if (isCardSelected && card.element) {
-            card.element.classList.add('grouped');
-        }
-    });
-
-    // Update group count display
-    updateGroupCount();
-    updateUI();
-}
-
-
-
-// ============================================
-// WARNING MODAL
-// ============================================
-
-function showWarningModal(message, onConfirm) {
-    if (!warningModal) return;
-
-    warningMessage.textContent = message;
-    pendingWarningCallback = onConfirm;
-    warningModal.classList.remove('hidden');
-}
-
-function hideWarningModal() {
-    if (!warningModal) return;
-
-    warningModal.classList.add('hidden');
-    pendingWarningCallback = null;
-}
-
-function confirmWarning() {
-    if (pendingWarningCallback) {
-        pendingWarningCallback();
-    }
-    hideWarningModal();
-}
-
-// ============================================
-// AUTO-STEP POPUP
-// ============================================
-
-// ============================================
-// HELP MODAL
-// ============================================
-
-function showHelpModal() {
-    if (!helpModal) return;
-    helpModal.classList.remove('hidden');
-}
-
-function hideHelpModal() {
-    if (!helpModal) return;
-    helpModal.classList.add('hidden');
-}
-
-// Open video links in system default browser (CEP panels can't embed YouTube)
-function initHelpVideoLinks() {
-    if (!helpModal) return;
-    helpModal.querySelectorAll('.help-video-card[data-url]').forEach(card => {
-        card.addEventListener('click', function () {
-            const url = this.getAttribute('data-url');
-            if (url) {
-                try {
-                    var csInterface = new CSInterface();
-                    csInterface.openURLInDefaultBrowser(url);
-                } catch (e) {
-                    window.open(url, '_blank');
-                }
-            }
-        });
-    });
-}
-
-// ============================================
-// AUTO-STEP POPUP
-// ============================================
-
-/**
- * Show auto-step popup when card is moved in Record mode
- */
-function showAutoStepPopup(card, previousSnapshot) {
-    if (!autoStepPopup) return;
-    if (appState._bulkApplying) return; // Suppress during AI scenario apply
-
-    // BUG FIX: Only set pendingChangeSnapshot if not already pending.
-    // When multiple cards are selected rapidly (grouping mode), each call overwrites
-    // the snapshot, losing the first card's SELECT change. Keeping the ORIGINAL snapshot
-    // ensures computeActions detects ALL card changes between snapshot and current state.
-    if (!pendingChangeSnapshot) {
-        pendingChangeSnapshot = previousSnapshot;
-    }
-    pendingChangeCard = card;
-
-    autoStepPopup.classList.remove('hidden');
-
-    // If auto-record is enabled, start countdown to auto-accept
-    if (appState.autoRecord) {
-        startAutoRecordCountdown();
-    }
-}
-
-/**
- * Hide auto-step popup
- */
-function hideAutoStepPopup() {
-    if (!autoStepPopup) return;
-
-    autoStepPopup.classList.add('hidden');
-    pendingChangeSnapshot = null;
-    pendingChangeCard = null;
-}
-
-/**
- * Handle Yes button - create new step automatically
- */
-function handleAutoStepYes() {
-    debugLog('=== handleAutoStepYes ===');
-    debugLog('pendingChangeSnapshot:', !!pendingChangeSnapshot);
-
-    if (!pendingChangeSnapshot) {
-        debugWarn('No pendingChangeSnapshot, aborting');
-        hideAutoStepPopup();
-        return;
-    }
-
-    // Create step automatically
-    const endSnapshot = takeSnapshot();
-    const actions = computeActions(pendingChangeSnapshot, endSnapshot);
-
-    debugLog('pendingChangeSnapshot keys:', Object.keys(pendingChangeSnapshot || {}));
-    debugLog('endSnapshot keys:', Object.keys(endSnapshot || {}));
-    debugLog('actions computed:', actions.length, actions);
-
-    if (actions.length > 0) {
-        const newStep = {
-            stepId: scenarioData.scenario.length + 1,
-            duration: stepDuration ? parseFloat(stepDuration.value) : 1.0,
-            actions: actions
-        };
-
-        // BUG #4 fix: attach pending group order overrides
-        if (appState.pendingGroupOrderOverrides) {
-            newStep.groupOrderOverrides = JSON.parse(JSON.stringify(appState.pendingGroupOrderOverrides));
-            var groups = appState.boardLayout.slotGroups || [];
-            groups.forEach(function (g) {
-                if (appState.pendingGroupOrderOverrides[g.id] !== undefined) {
-                    g.groupOrder = appState.pendingGroupOrderOverrides[g.id];
-                }
-            });
-            appState.pendingGroupOrderOverrides = null;
-        }
-
-        scenarioData.scenario.push(newStep);
-
-        // Save snapshot for replay and edit restore
-        stepSnapshots.push(JSON.parse(JSON.stringify(endSnapshot)));
-
-        totalSteps.textContent = scenarioData.scenario.length;
-        renderTimeline();
-        updateUI();
-        debugLog('Step created:', newStep.stepId, 'Total steps:', scenarioData.scenario.length);
-        setStatus(`Step ${scenarioData.scenario.length} auto-created with ${actions.length} actions`, 'success');
-    } else {
-        debugWarn('No actions detected between snapshots');
-        setStatus('No changes detected', 'info');
-    }
-
-    hideAutoStepPopup();
-}
-
-
-/**
- * Handle No button - revert card to previous position
- */
-function handleAutoStepNo() {
-    if (!pendingChangeSnapshot) {
-        hideAutoStepPopup();
-        return;
-    }
-
-    // Revert all cards to previous snapshot
-    restoreFromSnapshot(pendingChangeSnapshot);
-
-    // Clear sticky flags only on the card(s) involved in the reverted move.
-    // These flags are set via UI checkboxes, not stored in snapshots,
-    // and can cause spurious TRANSFORM actions in subsequent steps.
-    if (pendingChangeCard) {
-        pendingChangeCard.flipAction = false;
-        pendingChangeCard.slamEffect = false;
-    } else if (appState.groupedCards.length > 0) {
-        // Grouped move — clear only the grouped cards
-        appState.groupedCards.forEach(card => {
-            card.flipAction = false;
-            card.slamEffect = false;
-        });
-    }
-
-    // Re-apply "grouped" CSS class to restored grouped cards
-    appState.groupedCards.forEach(card => {
-        if (card.element) {
-            card.element.classList.add('grouped');
-        }
-    });
-
-    setStatus('Changes reverted', 'info');
-    hideAutoStepPopup();
-}
-
-/**
- * Trigger auto-step popup when card movement is detected in Record mode
- * Called from moveCardToZone
- */
-function triggerAutoStepCheck() {
-    if (appState.phase !== 'record') return;
-    if (appState.isEditingStep) return; // Don't trigger if manually editing a step
-
-    // Take snapshot before showing popup (this becomes the "before" state)
-    // Note: The snapshot was taken BEFORE the move in moveCardToZone
-}
-
-// ============================================
-// INLINE CARD CONTEXT MENU
-// ============================================
-
-/**
- * Show context menu next to selected card (Record mode only)
- */
-function showCardContextMenu(card) {
-    if (!cardContextMenu || !card.element) return;
-
-    // Only show in Record mode
-    if (appState.phase !== 'record') {
-        hideCardContextMenu();
-        return;
-    }
-
-    // Check if popup is disabled by user toggle
-    var showToggle = document.getElementById('showContextMenuToggle');
-    if (showToggle && !showToggle.checked) {
-        hideCardContextMenu();
-        return;
-    }
-
-    // Use pinned position (fixed coords) if available, otherwise default to top-right of game area
-    const pinned = _ctxMenuPinnedPos;
-    if (pinned) {
-        cardContextMenu.style.left = pinned.left + 'px';
-        cardContextMenu.style.top = pinned.top + 'px';
-    } else {
-        // Default: top-right corner of game container
-        const containerRect = gameContainer.getBoundingClientRect();
-        cardContextMenu.style.left = (containerRect.right - 320) + 'px';
-        cardContextMenu.style.top = (containerRect.top + 10) + 'px';
-    }
-
-    // Update button states
-    updateContextMenuState(card);
-
-    // Show/hide group action buttons — show if grouping with 2+ grouped, OR if 2+ cards are on the table
-    const tableCardsOnBoard = appState.tableCards.filter(c => c.zone && !c.inTray);
-    const hasGroupedCards = appState.groupingMode && appState.groupedCards.length > 1;
-    const showAllBtns = hasGroupedCards || tableCardsOnBoard.length >= 2;
-    if (ctxGroupDivider) ctxGroupDivider.classList.toggle('hidden', !showAllBtns);
-    if (ctxFlipAllBtn) ctxFlipAllBtn.classList.toggle('hidden', !showAllBtns);
-    if (ctxSlamAllBtn) ctxSlamAllBtn.classList.toggle('hidden', !showAllBtns);
-    if (ctxSpinAllBtn) ctxSpinAllBtn.classList.toggle('hidden', !showAllBtns);
-
-    cardContextMenu.classList.remove('hidden');
-}
-
-/**
- * Hide context menu
- */
-function hideCardContextMenu() {
-    if (!cardContextMenu) return;
-    cardContextMenu.classList.add('hidden');
-}
-
-/**
- * Setup drag-to-pin for cardContextMenu (position: fixed, body-level).
- * The entire menu bar is draggable (mousedown on menu background or drag handle).
- * Clicking buttons works normally. Position saved in localStorage.
- * Double-click handle or click reset → unpin (back to default corner).
- */
-function setupCtxMenuDrag() {
-    if (!cardContextMenu) return;
-
-    // Load pinned position from localStorage
-    try {
-        var saved = localStorage.getItem('ctxMenuPinnedPos');
-        if (saved) _ctxMenuPinnedPos = JSON.parse(saved);
-    } catch (e) { /* ignore */ }
-
-    var handle = cardContextMenu.querySelector('.ctx-drag-handle');
-    var resetBtn = cardContextMenu.querySelector('.ctx-reset-btn');
-
-    var isDragging = false;
-    var didDrag = false;
-    var dragOffsetX = 0, dragOffsetY = 0;
-
-    // Start drag on mousedown anywhere on the menu (except buttons)
-    cardContextMenu.addEventListener('mousedown', function (e) {
-        // Only start drag from handle, divider, or menu background — not from buttons
-        if (e.target.tagName === 'BUTTON') return;
-        e.preventDefault();
-        isDragging = true;
-        didDrag = false;
-        var menuRect = cardContextMenu.getBoundingClientRect();
-        dragOffsetX = e.clientX - menuRect.left;
-        dragOffsetY = e.clientY - menuRect.top;
-        cardContextMenu.classList.add('ctx-dragging');
-    });
-
-    document.addEventListener('mousemove', function (e) {
-        if (!isDragging) return;
-        didDrag = true;
-        var left = e.clientX - dragOffsetX;
-        var top = e.clientY - dragOffsetY;
-        // Clamp within viewport
-        left = Math.max(0, Math.min(left, window.innerWidth - 50));
-        top = Math.max(0, Math.min(top, window.innerHeight - 30));
-        cardContextMenu.style.left = left + 'px';
-        cardContextMenu.style.top = top + 'px';
-    });
-
-    document.addEventListener('mouseup', function () {
-        if (!isDragging) return;
-        isDragging = false;
-        cardContextMenu.classList.remove('ctx-dragging');
-        if (!didDrag) return; // Only pin if actually dragged
-        // Save pinned position
-        _ctxMenuPinnedPos = {
-            left: parseInt(cardContextMenu.style.left),
-            top: parseInt(cardContextMenu.style.top)
-        };
-        try {
-            localStorage.setItem('ctxMenuPinnedPos', JSON.stringify(_ctxMenuPinnedPos));
-        } catch (e) { /* ignore */ }
-        cardContextMenu.classList.add('ctx-pinned');
-        if (resetBtn) resetBtn.classList.remove('hidden');
-    });
-
-    // Double-click handle or click reset → unpin
-    function unpinMenu() {
-        _ctxMenuPinnedPos = null;
-        try { localStorage.removeItem('ctxMenuPinnedPos'); } catch (e) { /* ignore */ }
-        cardContextMenu.classList.remove('ctx-pinned');
-        if (resetBtn) resetBtn.classList.add('hidden');
-        if (appState.selectedCard) showCardContextMenu(appState.selectedCard);
-    }
-
-    if (handle) {
-        handle.addEventListener('dblclick', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            unpinMenu();
-        });
-    }
-
-    if (resetBtn) {
-        resetBtn.addEventListener('click', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            unpinMenu();
-        });
-        if (_ctxMenuPinnedPos) resetBtn.classList.remove('hidden');
-    }
-
-    if (_ctxMenuPinnedPos) {
-        cardContextMenu.classList.add('ctx-pinned');
-    }
-}
-
-/**
- * Update context menu button active states
- */
-function updateContextMenuState(card) {
-    if (!card) return;
-
-    if (ctxFlipBtn) {
-        ctxFlipBtn.classList.toggle('active', card.flipAction || false);
-    }
-    if (ctxSlamBtn) {
-        ctxSlamBtn.classList.toggle('active', card.slamEffect || false);
-    }
-    if (ctxSpinBtn) {
-        ctxSpinBtn.classList.toggle('active', card.spinEffect || false);
-    }
-}
-
-/**
- * Toggle flip action on selected card
- */
-function toggleCtxFlip() {
-    if (!appState.selectedCard) return;
-
-    appState.selectedCard.flipAction = !appState.selectedCard.flipAction;
-
-    // Always flip the card visually when toggle changes
-    // Enable flipAction: shows END state (flipped)
-    // Disable flipAction: flips back to original state
-    flipCard(appState.selectedCard);
-
-
-    // Sync with properties panel
-    flipCardCheck.checked = appState.selectedCard.flipAction;
-
-    // Update button state
-    if (ctxFlipBtn) {
-        ctxFlipBtn.classList.toggle('active', appState.selectedCard.flipAction);
-    }
-
-    setStatus(appState.selectedCard.flipAction ? 'Flip animation enabled' : 'Flip animation disabled');
-
-    // Auto-hide menu after selection (with brief delay to show state change)
-    setTimeout(() => {
-        hideCardContextMenu();
-    }, 300);
-}
-
-/**
- * Handle Flip.Ani — flip card and trigger step recording
- * Records the flip as a standalone FLIP action (no movement needed)
- */
-function handleFlipAni() {
-    if (!appState.selectedCard) return;
-    if (appState.phase !== 'record') {
-        setStatus('Flip.Ani only works in Record mode');
-        return;
-    }
-
-    // Take snapshot BEFORE the flip
-    const beforeSnapshot = takeSnapshot();
-
-    // Flip the card visually
-    flipCard(appState.selectedCard);
-
-    debugLog(`[FlipAni] Card ${appState.selectedCard.id} flipped to ${appState.selectedCard.isFaceUp ? 'face-up' : 'face-down'}`);
-
-    // Trigger step recording popup (same flow as card movement)
-    showAutoStepPopup(appState.selectedCard, beforeSnapshot);
-
-    hideCardContextMenu();
-}
-
-/**
- * Toggle slam effect on selected card
- */
-function toggleCtxSlam() {
-    if (!appState.selectedCard) return;
-
-    appState.selectedCard.slamEffect = !appState.selectedCard.slamEffect;
-
-    // Sync with properties panel
-    slamEffectCheck.checked = appState.selectedCard.slamEffect;
-
-    // Update button state
-    if (ctxSlamBtn) {
-        ctxSlamBtn.classList.toggle('active', appState.selectedCard.slamEffect);
-    }
-
-    setStatus(appState.selectedCard.slamEffect ? 'Slam effect enabled' : 'Slam effect disabled');
-
-    // Auto-hide menu after selection (with brief delay to show state change)
-    setTimeout(() => {
-        hideCardContextMenu();
-    }, 300);
-}
-
-/**
- * Toggle flip action on ALL grouped cards
- */
-function toggleCtxFlipAll() {
-    // Use grouped cards if in grouping mode, otherwise all table cards on board
-    const targetCards = (appState.groupingMode && appState.groupedCards.length > 0)
-        ? appState.groupedCards
-        : appState.tableCards.filter(c => c.zone && !c.inTray);
-    if (targetCards.length === 0) return;
-
-    // Determine new state: toggle based on majority
-    const enabledCount = targetCards.filter(c => c.flipAction).length;
-    const newState = enabledCount < targetCards.length / 2;
-
-    targetCards.forEach(card => {
-        card.flipAction = newState;
-        // Flip visually if state changed
-        flipCard(card);
-    });
-
-    // Update properties panel if selected card is in group
-    if (appState.selectedCard && targetCards.some(c => c.id === appState.selectedCard.id)) {
-        flipCardCheck.checked = appState.selectedCard.flipAction;
-        if (ctxFlipBtn) {
-            ctxFlipBtn.classList.toggle('active', appState.selectedCard.flipAction);
-        }
-    }
-
-    setStatus(newState
-        ? `Flip animation enabled for ${targetCards.length} cards`
-        : `Flip animation disabled for ${targetCards.length} cards`
-    );
-
-    // Auto-hide menu after selection
-    setTimeout(() => {
-        hideCardContextMenu();
-    }, 300);
-}
-
-/**
- * Toggle slam effect on ALL grouped cards
- */
-function toggleCtxSlamAll() {
-    // Use grouped cards if in grouping mode, otherwise all table cards on board
-    const targetCards = (appState.groupingMode && appState.groupedCards.length > 0)
-        ? appState.groupedCards
-        : appState.tableCards.filter(c => c.zone && !c.inTray);
-    if (targetCards.length === 0) return;
-
-    // Determine new state: toggle based on majority
-    const enabledCount = targetCards.filter(c => c.slamEffect).length;
-    const newState = enabledCount < targetCards.length / 2;
-
-    targetCards.forEach(card => {
-        card.slamEffect = newState;
-    });
-
-    // Update properties panel if selected card is in group
-    if (appState.selectedCard && targetCards.some(c => c.id === appState.selectedCard.id)) {
-        slamEffectCheck.checked = appState.selectedCard.slamEffect;
-        if (ctxSlamBtn) {
-            ctxSlamBtn.classList.toggle('active', appState.selectedCard.slamEffect);
-        }
-    }
-
-    setStatus(newState
-        ? `Slam effect enabled for ${targetCards.length} cards`
-        : `Slam effect disabled for ${targetCards.length} cards`
-    );
-
-    // Auto-hide menu after selection
-    setTimeout(() => {
-        hideCardContextMenu();
-    }, 300);
-}
-
-/**
- * Toggle spin effect on selected card
- */
-function toggleCtxSpin() {
-    if (!appState.selectedCard) return;
-
-    appState.selectedCard.spinEffect = !appState.selectedCard.spinEffect;
-
-    // Sync with properties panel
-    spinEffectCheck.checked = appState.selectedCard.spinEffect;
-
-    // Update button state
-    if (ctxSpinBtn) {
-        ctxSpinBtn.classList.toggle('active', appState.selectedCard.spinEffect);
-    }
-
-    setStatus(appState.selectedCard.spinEffect ? 'Spin effect enabled' : 'Spin effect disabled');
-
-    // Auto-hide menu after selection (with brief delay to show state change)
-    setTimeout(() => {
-        hideCardContextMenu();
-    }, 300);
-}
-
-/**
- * Toggle spin effect on ALL grouped cards
- */
-function toggleCtxSpinAll() {
-    // Use grouped cards if in grouping mode, otherwise all table cards on board
-    const targetCards = (appState.groupingMode && appState.groupedCards.length > 0)
-        ? appState.groupedCards
-        : appState.tableCards.filter(c => c.zone && !c.inTray);
-    if (targetCards.length === 0) return;
-
-    // Determine new state: toggle based on majority
-    const enabledCount = targetCards.filter(c => c.spinEffect).length;
-    const newState = enabledCount < targetCards.length / 2;
-
-    targetCards.forEach(card => {
-        card.spinEffect = newState;
-    });
-
-    // Update properties panel if selected card is in group
-    if (appState.selectedCard && targetCards.some(c => c.id === appState.selectedCard.id)) {
-        spinEffectCheck.checked = appState.selectedCard.spinEffect;
-        if (ctxSpinBtn) {
-            ctxSpinBtn.classList.toggle('active', appState.selectedCard.spinEffect);
-        }
-    }
-
-    setStatus(newState
-        ? `Spin effect enabled for ${targetCards.length} cards`
-        : `Spin effect disabled for ${targetCards.length} cards`
-    );
-
-    // Auto-hide menu after selection
-    setTimeout(() => {
-        hideCardContextMenu();
-    }, 300);
-}
-
-// ============================================
-// Z-ORDER UTILITY
-// ============================================
-
-/**
- * Ensure all card places have a valid zOrder for AE Z-positioning.
- * RULE: Cards visually "in front" (lower on screen / higher row) get HIGHER zOrder.
- * Higher zOrder → more negative Z in AE → closer to camera → in front.
- *
- * Priority:
- * 1. If ANY place already has zOrder → skip (layout manages its own, e.g. Poker/Pusoy)
- * 2. If place has row/col → calculate (row * maxCols) + col
- * 3. Fallback → use array index
- */
-function ensureZOrder(cardPlaces) {
-    if (!cardPlaces || cardPlaces.length === 0) return;
-
-    // Check if ANY place already has zOrder (layout self-manages)
-    var hasExistingZOrder = cardPlaces.some(function (p) { return p.zOrder !== undefined; });
-    if (hasExistingZOrder) return;
-
-    // Find max cols for row-based calculation
-    var maxCols = cardPlaces.reduce(function (max, p) {
-        return Math.max(max, (p.col || 0) + 1);
-    }, 1);
-
-    cardPlaces.forEach(function (place, index) {
-        if (place.row !== undefined && place.col !== undefined) {
-            place.zOrder = (place.row * maxCols) + place.col;
-        } else {
-            place.zOrder = index;
-        }
-    });
-}
-
-// ============================================
-// BOARD SETTING FUNCTIONS
-// ============================================
-
-/**
- * Load preset from file or predefined presets
- */
-function handleLoadPreset() {
-    const presetValue = presetSelect.value;
-
-    // Clean up previous layout before loading new one
-    deselectCardPlace();
-    clearCardPlaceMarkers();
-    clearCardDropZones();
-    gameContainer.classList.remove('grid-mode', 'poker-grid-mode');
-
-    // Determine effective boardStyle for controls visibility
-    let effectiveBoardStyle = presetValue;
-
-    if (presetValue === 'poker') {
-        loadPokerLayout();
-    } else if (presetValue === 'pusoy') {
-        loadPusoyLayout();
-    } else if (presetValue === 'pusoy-2p') {
-        loadPusoyMultiLayout(2);
-    } else if (presetValue === 'pusoy-4p') {
-        loadPusoyMultiLayout(4);
-    } else if (presetValue === 'card-sorting') {
-        loadGridLayout(4, 3);
-    } else if (presetValue === 'custom') {
-        // Start with empty grid (no card places)
-        appState.boardLayout = {
-            type: 'grid',
-            name: 'Custom',
-            boardStyle: 'custom',
-            gridCols: 4,
-            gridRows: 3,
-            cardPlaces: [],
-            slotGroups: []
-        };
-        gameContainer.classList.add('grid-mode');
-        setStatus('Custom layout - Add card places with buttons above');
-    } else if (presetValue.startsWith('saved:')) {
-        // Load user-saved layout from localStorage
-        const layoutName = presetValue.substring(6);
-        const savedLayouts = loadSavedLayouts();
-        const data = savedLayouts[layoutName];
-
-        if (!data || !data.cardPlaces) {
-            setStatus(`Layout "${layoutName}" not found`, 'error');
-            return;
-        }
-
-        // Restore board layout (same logic as autoRestoreBoardLayout)
-        appState.boardLayout = {
-            type: data.type || 'grid',
-            name: data.name || layoutName,
-            boardStyle: data.boardStyle || 'custom',
-            gridCols: data.gridCols || 4,
-            gridRows: data.gridRows || 3,
-            cardPlaces: data.cardPlaces,
-            slotGroups: data.slotGroups || []
-        };
-
-        // Restore CSS classes based on boardStyle
-        if (data.type === 'grid') gameContainer.classList.add('grid-mode');
-        if (data.boardStyle === 'poker') gameContainer.classList.add('poker-grid-mode');
-
-        // Restore Pusoy slider values
-        if (data.pusoyConfig) {
-            const s = document.getElementById('pusoySpacing');
-            const c = document.getElementById('pusoyCurvature');
-            const l = document.getElementById('pusoyLayerGap');
-            if (s) s.value = data.pusoyConfig.spacing;
-            if (c) c.value = data.pusoyConfig.curvature;
-            if (l) l.value = data.pusoyConfig.layerGap;
-        }
-
-        // Use effective boardStyle for controls visibility (Gap 2)
-        effectiveBoardStyle = data.boardStyle || 'custom';
-
-        debugLog(`[SaveLayout] Loaded "${layoutName}" with ${data.cardPlaces.length} places, ${(data.slotGroups || []).length} groups`);
-        setStatus(`Loaded layout: ${layoutName}`);
-    }
-
-    // Toggle Grid Size controls visibility using effective boardStyle (Gap 2)
-    toggleGridControlsVisibility(effectiveBoardStyle);
-
-    updateCardPlacesList();
-    renderCardPlaceMarkers();
-    updateGroupPanelVisibility();
-    // Auto-trigger Transform Indicator on new layout if it has card places
-    if (!document.body.classList.contains('previewing-preset')) {
-        if (presetValue !== 'custom' && appState.boardLayout && appState.boardLayout.cardPlaces.length > 0) {
-            appState.selectedCardPlaces = [...appState.boardLayout.cardPlaces];
-            setTimeout(() => {
-                if (typeof syncTransformIndicator === 'function') syncTransformIndicator();
-            }, 100);
-        }
-    }
-}
-
-function renderGroupPencils() {
-    // Clear old pencils
-    document.querySelectorAll('.group-pencil-btn, .clone-btn, .group-tools-float, .quadrant-number-watermark').forEach(b => b.remove());
-
-    const svgOverlay = document.getElementById('tableQuadrantsOverlay');
-    if (svgOverlay) {
-        svgOverlay.querySelectorAll('text').forEach(t => t.remove());
-    }
-
-    if (!appState.boardLayout || !appState.boardLayout.cardPlaces || appState.boardLayout.cardPlaces.length === 0) return;
-    
-    const gameContainer = document.getElementById('gameContainer');
-    const pokerTable = document.getElementById('pokerTable');
-    if (!gameContainer) return;
-    
-    let scaleX = 1, scaleY = 1, offsetX = 0, offsetY = 0;
-    if (pokerTable) {
-        const tableRect = pokerTable.getBoundingClientRect();
-        const containerRect = gameContainer.getBoundingClientRect();
-        scaleX = pokerTable.offsetWidth / UI_WIDTH;
-        scaleY = pokerTable.offsetHeight / UI_HEIGHT;
-        offsetX = tableRect.left - containerRect.left;
-        offsetY = tableRect.top - containerRect.top;
-    }
-
-    const Q_CENTERS = {
-        1: { x: 640, y: 720 * 0.78, rot: 0 },
-        2: { x: 1280 * 0.20, y: 360, rot: 90 },
-        3: { x: 640, y: 720 * 0.22, rot: 180 },
-        4: { x: 1280 * 0.80, y: 360, rot: -90 }
-    };
-
-    let baseQuadrant = -1; 
-    let quadrantCreationOrder = 1;
-
-    // Map quadrant via slotGroup macros to prevent visual spillover generating multiple pencils/clones
-    const quadrantCards = { 1: [], 2: [], 3: [], 4: [] };
-    const quadrantOrder = []; 
-    
-    appState.boardLayout.slotGroups.forEach(g => {
-        if (!g.slotIds || g.slotIds.length === 0) return;
-        const groupPlaces = appState.boardLayout.cardPlaces.filter(p => g.slotIds.includes(p.id));
-        if (groupPlaces.length === 0) return;
-        
-        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        groupPlaces.forEach(p => {
-            if (p.x < minX) minX = p.x;
-            if (p.x > maxX) maxX = p.x;
-            if (p.y < minY) minY = p.y;
-            if (p.y > maxY) maxY = p.y;
-        });
-        const cx = minX + (maxX - minX) / 2;
-        const cy = minY + (maxY - minY) / 2;
-
-        const dx = cx - 640;
-        const dy = cy - 360;
-        let q = 1;
-        if (Math.abs(dy) / 360 > Math.abs(dx) / 640) q = (dy > 0) ? 1 : 3;
-        else q = (dx > 0) ? 4 : 2;
-
-        quadrantCards[q].push(...groupPlaces);
-        if (!quadrantOrder.includes(q)) {
-            quadrantOrder.push(q);
-        }
-    });
-
-    [1, 2, 3, 4].forEach(q => {
-        const places = quadrantCards[q];
-
-        if (places.length > 0) {
-            if (baseQuadrant === -1) baseQuadrant = q;
-
-            // Draw Dynamic Watermark Number using a DOM DIV to float above cards
-            const WatermarkCenters = {
-                1: { x: 640, y: 580 },
-                2: { x: 230, y: 380 },
-                3: { x: 640, y: 180 },
-                4: { x: 1050, y: 380 }
-            };
-
-            const watermark = document.createElement('div');
-            watermark.className = 'quadrant-number-watermark';
-            
-            // The number is the chronological order this quadrant was discovered
-            const orderIndex = quadrantOrder.indexOf(q) + 1;
-            watermark.textContent = String(orderIndex);
-            
-            watermark.style.position = 'absolute';
-            watermark.style.left = `${WatermarkCenters[q].x * scaleX + offsetX}px`;
-            watermark.style.top = `${WatermarkCenters[q].y * scaleY + offsetY}px`;
-            watermark.style.transform = 'translate(-50%, -50%)';
-            watermark.style.fontSize = `${150 * scaleY}px`;
-            watermark.style.fontWeight = '900';
-            watermark.style.color = '#fff';
-            watermark.style.opacity = '0.3';
-            watermark.style.zIndex = '900000'; // High enough to sit on top of cards
-            watermark.style.pointerEvents = 'none';
-            watermark.style.fontFamily = 'monospace';
-            watermark.style.textShadow = '0 10px 30px rgba(0,0,0,0.8)';
-            gameContainer.appendChild(watermark);
-
-            const allSelected = places.every(p => appState.selectedCardPlaces && appState.selectedCardPlaces.includes(p));
-            if (allSelected && document.body.classList.contains('indicator-active')) return; 
-
-            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-            places.forEach(p => {
-                if (p.x < minX) minX = p.x;
-                if (p.x > maxX) maxX = p.x;
-                if (p.y < minY) minY = p.y;
-                if (p.y > maxY) maxY = p.y;
-            });
-            const cx = minX + (maxX - minX)/2;
-
-            const editDomX = cx * scaleX + offsetX;
-            const editDomY = (maxY * scaleY + offsetY) + 60;  
-
-            const pencilBtn = document.createElement('button');
-            pencilBtn.className = 'group-pencil-btn';
-            pencilBtn.innerHTML = '✏️ Edit Hand';
-            pencilBtn.title = `Edit Hand`;
-            pencilBtn.style.left = `${editDomX}px`;
-            pencilBtn.style.top = `${editDomY}px`;
-            pencilBtn.style.transform = 'translate(-50%, -50%)';
-            pencilBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                appState.selectedCardPlaces = [...places];
-                renderCardPlaceMarkers();
-                if (typeof syncTransformIndicator === 'function') syncTransformIndicator();
-                renderGroupPencils();
-            });
-            gameContainer.appendChild(pencilBtn);
-        }
-    });
-
-    if (baseQuadrant !== -1) {
-        [1, 2, 3, 4].forEach(q => {
-            const places = quadrantCards[q];
-
-            if (places.length === 0) {
-                const domX = Q_CENTERS[q].x * scaleX + offsetX;
-                const domY = Q_CENTERS[q].y * scaleY + offsetY;
-
-                const cloneBtn = document.createElement('button');
-                cloneBtn.className = 'clone-btn';
-                cloneBtn.innerHTML = '➕';
-                cloneBtn.title = `Clone layout to this area`;
-                cloneBtn.style.position = 'absolute';
-                cloneBtn.style.left = `${domX}px`;
-                cloneBtn.style.top = `${domY}px`;
-                cloneBtn.style.transform = 'translate(-50%, -50%) scale(1.6)';
-                cloneBtn.style.opacity = '0.7';
-                cloneBtn.style.zIndex = '1000001';
-                
-                cloneBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    cloneHandToTargetQuadrant(baseQuadrant, q);
-                });
-                gameContainer.appendChild(cloneBtn);
-            }
-        });
-    }
-}
-
-function cloneHandToTargetQuadrant(sourceQuad, targetQuad) {
-    const Q_CENTERS = {
-        1: { x: 640, y: 720 * 0.78, rot: 0 },
-        2: { x: 1280 * 0.20, y: 360, rot: 90 },
-        3: { x: 640, y: 720 * 0.22, rot: 180 },
-        4: { x: 1280 * 0.80, y: 360, rot: -90 }
-    };
-
-    const sourceQuadDef = Q_CENTERS[sourceQuad];
-    const targetQuadDef = Q_CENTERS[targetQuad];
-
-    const angleDiff = targetQuadDef.rot - sourceQuadDef.rot;
-    const angleRad = angleDiff * Math.PI / 180;
-    const cosA = Math.cos(angleRad);
-    const sinA = Math.sin(angleRad);
-
-    // Identify all source groups purely inside sourceQuad
-    const sourceGroupsToClone = appState.boardLayout.slotGroups.filter(g => {
-        if (!g.slotIds || g.slotIds.length === 0) return false;
-        // Check if the FIRST place is in the sourceQuad
-        const p1 = appState.boardLayout.cardPlaces.find(p => p.id === g.slotIds[0]);
-        if (!p1) return false;
-        const dx = p1.x - 640;
-        const dy = p1.y - 360;
-        let placeQ = 1;
-        if (Math.abs(dy) / 360 > Math.abs(dx) / 640) placeQ = (dy > 0) ? 1 : 3;
-        else placeQ = (dx > 0) ? 4 : 2;
-        return placeQ === sourceQuad;
-    });
-
-    if (sourceGroupsToClone.length === 0) return;
-
-    // Determine the centroid of all cards in the source quadrant to spin around mathematically
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    sourceGroupsToClone.forEach(g => {
-        const places = appState.boardLayout.cardPlaces.filter(p => g.slotIds.includes(p.id));
-        places.forEach(p => {
-            if (p.x < minX) minX = p.x;
-            if (p.x > maxX) maxX = p.x;
-            if (p.y < minY) minY = p.y;
-            if (p.y > maxY) maxY = p.y;
-        });
-    });
-    const srcCx = minX + (maxX - minX)/2;
-    const srcCy = minY + (maxY - minY)/2;
-
-    sourceGroupsToClone.forEach(g => {
-        const places = appState.boardLayout.cardPlaces.filter(p => g.slotIds.includes(p.id));
-        const clonedPlaces = [];
-        const newSlotIds = [];
-        let placeCounter = appState.boardLayout.cardPlaces.length + Math.floor(Math.random() * 1000);
-
-        places.forEach(p => {
-            // Spin around the mathematical center of the entire hand
-            let localX = p.x - srcCx;
-            let localY = p.y - srcCy;
-            
-            // Apply orbit spin
-            let rotX = localX * cosA - localY * sinA;
-            let rotY = localX * sinA + localY * cosA;
-
-            let newId = `place-${Date.now()}-${placeCounter++}`;
-            newSlotIds.push(newId);
-
-            let newRot = (p.rotation || 0) + angleDiff;
-            // Normalize
-            while (newRot >= 360) newRot -= 360;
-            while (newRot < 0) newRot += 360;
-
-            clonedPlaces.push({
-                ...p,
-                id: newId,
-                x: targetQuadDef.x + rotX,
-                y: targetQuadDef.y + rotY,
-                rotation: newRot,
-            });
-        });
-
-        appState.boardLayout.cardPlaces.push(...clonedPlaces);
-
-        // Remove old 'Clone' texts from name if cloning multiple times, then append targetQuad
-        let cleanName = g.name.replace(/ Quadrant \d+/g, '').replace(/ Clone/g, '');
-        createSlotGroup(cleanName + ` Quadrant ${targetQuad}`, newSlotIds);
-    });
-
-    // Reorder groups based on Quadrants if they want:
-    // But keeping it as is ensures rendering in order of generation.
-
-    renderCardPlaceMarkers();
-    updateGroupPanelVisibility();
-    setStatus(`Cloned hand to quadrant ${targetQuad}`);
-}
-
-
-/**
- * Load default poker layout with fixed card slots
- * Each player zone has 13 slots, community has 7
- * Uses grid type so all grid infrastructure (drop zones, z-order, AE export) applies
- */
-function loadPokerLayout() {
-    var places = [];
-    var spacing = 45; // Card overlap spacing in UI pixels
-
-    // --- Top zone: 13 slots, horizontal, centered ---
-    var topStartX = (UI_WIDTH / 2) - (6 * spacing); // Center 13 cards
-    for (var i = 0; i < 13; i++) {
-        places.push({
-            id: 'top-' + i,
-            zone: 'top',
-            x: topStartX + (i * spacing),
-            y: 80,
-            rotation: 0,
-            zOrder: i,
-            label: 'T' + (i + 1)
-        });
-    }
-
-    // --- Bottom zone: 13 slots, horizontal, centered ---
-    var bottomStartX = (UI_WIDTH / 2) - (6 * spacing);
-    for (var i = 0; i < 13; i++) {
-        places.push({
-            id: 'bottom-' + i,
-            zone: 'bottom',
-            x: bottomStartX + (i * spacing),
-            y: UI_HEIGHT - 80,
-            rotation: 0,
-            zOrder: 100 + i,
-            label: 'B' + (i + 1)
-        });
-    }
-
-    // --- Left zone: 13 slots, vertical ---
-    var leftStartY = 130;
-    for (var i = 0; i < 13; i++) {
-        places.push({
-            id: 'left-' + i,
-            zone: 'left',
-            x: 120,
-            y: leftStartY + (i * spacing),
-            rotation: 0,
-            zOrder: 200 + i,
-            label: 'L' + (i + 1)
-        });
-    }
-
-    // --- Right zone: 13 slots, vertical ---
-    var rightStartY = 130;
-    for (var i = 0; i < 13; i++) {
-        places.push({
-            id: 'right-' + i,
-            zone: 'right',
-            x: UI_WIDTH - 120,
-            y: rightStartY + (i * spacing),
-            rotation: 0,
-            zOrder: 300 + i,
-            label: 'R' + (i + 1)
-        });
-    }
-
-    // --- Community zone: CZ slot at center ---
-    places.push({
-        id: 'community',
-        x: UI_WIDTH / 2,
-        y: UI_HEIGHT / 2,
-        label: 'Community',
-        zOrder: 400,
-        isCommunityZone: true,
-        czMode: 'pile',
-        czWidth: 350,
-        czHeight: 200
-    });
-
-    // Auto-create slot groups by zone
-    var topSlots = places.filter(function (p) { return p.zone === 'top'; }).map(function (p) { return p.id; });
-    var bottomSlots = places.filter(function (p) { return p.zone === 'bottom'; }).map(function (p) { return p.id; });
-    var leftSlots = places.filter(function (p) { return p.zone === 'left'; }).map(function (p) { return p.id; });
-    var rightSlots = places.filter(function (p) { return p.zone === 'right'; }).map(function (p) { return p.id; });
-    var communitySlots = places.filter(function (p) { return p.isCommunityZone; }).map(function (p) { return p.id; });
-
-    appState.boardLayout = {
-        type: 'grid',
-        name: 'Poker (4 Players)',
-        boardStyle: 'poker',
-        gridCols: 13,
-        gridRows: 4,
-        cardPlaces: places,
-        slotGroups: [
-            { id: 'poker-top', name: 'Top Player', slotIds: topSlots, groupOrder: 0, color: getGroupColor(0) },
-            { id: 'poker-bottom', name: 'Bottom Player', slotIds: bottomSlots, groupOrder: 1, color: getGroupColor(1) },
-            { id: 'poker-left', name: 'Left Player', slotIds: leftSlots, groupOrder: 2, color: getGroupColor(2) },
-            { id: 'poker-right', name: 'Right Player', slotIds: rightSlots, groupOrder: 3, color: getGroupColor(3) },
-            { id: 'poker-community', name: 'Community', slotIds: communitySlots, groupOrder: 4, color: getGroupColor(4) }
-        ]
-    };
-
-    gameContainer.classList.add('grid-mode');
-    // Note: poker-grid-mode removed — community zone now uses CZ slot system
-    setStatus('Loaded Poker layout (4 zones × 13 slots + community zone)');
-}
-
-/**
- * Load Pusoy layout (3-5-5 pyramid formation)
- * Row 0 (top): 3 cards
- * Row 1 (middle): 5 cards  
- * Row 2 (bottom): 5 cards
- * 
- * Z-order: 
- * - Within row: left cards behind, right cards in front
- * - Between rows: bottom row in front of middle, middle in front of top
- */
-function loadPusoyLayout() {
-    const places = [];
-
-    // Use UI coordinate system (1280x720) for consistency with animation/export
-    // The positions will be scaled down when rendering to actual DOM size
-    const tableWidth = UI_WIDTH;  // 1280
-    const tableHeight = UI_HEIGHT; // 720
-
-    // Read slider values from DOM (with defaults)
-    const spacingSlider = document.getElementById('pusoySpacing');
-    const curvatureSlider = document.getElementById('pusoyCurvature');
-    const layerGapSlider = document.getElementById('pusoyLayerGap');
-
-    const baseSpacing = spacingSlider ? parseInt(spacingSlider.value) : 150;
-    const curvature = curvatureSlider ? parseInt(curvatureSlider.value) : 50;
-    const layerGap = layerGapSlider ? parseInt(layerGapSlider.value) : 30;
-
-    // Fan configuration for each row
-    // fanRadius decreases for each row (top row biggest, bottom row smallest)
-    // angleSpread scales with curvature slider
-    // pivotY increases by layerGap for each row
-    // basePivotY of 430 in UI coords (720 height) → 645 in AE coords (1080 height)
-    const basePivotY = 430; // Starting pivot Y position (adjusted for AE centering)
-    const rowConfigs = [
-        { row: 0, count: 3, fanRadius: baseSpacing + 30, angleSpread: curvature - 20, pivotY: basePivotY },
-        { row: 1, count: 5, fanRadius: baseSpacing, angleSpread: curvature, pivotY: basePivotY + layerGap },
-        { row: 2, count: 5, fanRadius: baseSpacing - 30, angleSpread: curvature + 5, pivotY: basePivotY + (layerGap * 2) }
-    ];
-
-    const centerX = tableWidth / 2;
-    let placeIndex = 0;
-
-    rowConfigs.forEach(config => {
-        const { row, count, fanRadius, angleSpread, pivotY } = config;
-
-        // Convert to radians
-        const spreadRad = (angleSpread * Math.PI) / 180;
-        const startAngle = -spreadRad / 2;  // Start from left
-        const angleStep = count > 1 ? spreadRad / (count - 1) : 0;
-
-        for (let col = 0; col < count; col++) {
-            // Calculate angle for this card (from vertical, -90° = up)
-            const angle = startAngle + (col * angleStep);
-
-            // Position card using polar coordinates from pivot point
-            // X = centerX + radius * sin(angle)
-            // Y = pivotY - radius * cos(angle)
-            const x = centerX + (fanRadius * Math.sin(angle));
-            const y = pivotY - (fanRadius * Math.cos(angle));
-
-            // Rotation matches the angle (convert to degrees)
-            const rotation = Math.round((angle * 180) / Math.PI);
-
-            // Z-order: higher row = front, higher col = front within row
-            const zOrder = (row * 10) + col;
-
-            places.push({
-                id: `place-${placeIndex}`,
-                x: x,
-                y: y,
-                col: col,
-                row: row,
-                rotation: rotation,
-                zOrder: zOrder,
-                label: String(placeIndex + 1)
-            });
-            placeIndex++;
-        }
-    });
-
-    // Create a single unified slotGroup for the ENTIRE HAND to enable full-hand dragging/editing
-    appState.boardLayout = {
-        type: 'grid',
-        name: 'Pusoy (3-5-5)',
-        boardStyle: 'pusoy',
-        gridCols: 5,
-        gridRows: 3,
-        cardPlaces: places,
-        slotGroups: [
-            { id: 'pusoy-hand', name: 'Pusoy Hand', slotIds: places.map(p => p.id), groupOrder: 0, color: getGroupColor(0) }
-        ]
-    };
-
-    gameContainer.classList.add('grid-mode');
-    setStatus('Loaded Pusoy layout (3-5-5 fan)');
-}
-
-/**
- * Generate a single Pusoy 3-5-5 fan hand at a given position/orientation.
- * Returns an array of card place objects.
- * @param {string} playerPrefix - ID prefix (e.g. 'p1', 'p2')
- * @param {number} centerX - Pivot X in UI coords
- * @param {number} basePivotY - Pivot Y for top row in UI coords
- * @param {number} orientationDeg - Rotation offset for entire hand (0=bottom, 180=top, 90=left, -90=right)
- * @param {number} scale - Scale factor (1.0 = full size, 0.6 = 60%)
- * @param {number} baseZOrder - Starting z-order for this hand
- * @param {number} baseSpacing - Fan radius from slider
- * @param {number} curvature - Angle spread from slider
- * @param {number} layerGap - Gap between rows from slider
- */
-function generatePusoyHand(playerPrefix, centerX, basePivotY, orientationDeg, scale, baseZOrder, baseSpacing, curvature, layerGap) {
-    const places = [];
-    const orientationRad = (orientationDeg * Math.PI) / 180;
-
-    const rowConfigs = [
-        { row: 0, count: 3, fanRadius: (baseSpacing + 30) * scale, angleSpread: curvature - 20, pivotYOffset: 0 },
-        { row: 1, count: 5, fanRadius: baseSpacing * scale, angleSpread: curvature, pivotYOffset: layerGap * scale },
-        { row: 2, count: 5, fanRadius: (baseSpacing - 30) * scale, angleSpread: curvature + 5, pivotYOffset: (layerGap * 2) * scale }
-    ];
-
-    let placeIndex = 0;
-
-    rowConfigs.forEach(config => {
-        const { row, count, fanRadius, angleSpread, pivotYOffset } = config;
-        const spreadRad = (angleSpread * Math.PI) / 180;
-        const startAngle = -spreadRad / 2;
-        const angleStep = count > 1 ? spreadRad / (count - 1) : 0;
-
-        for (let col = 0; col < count; col++) {
-            const angle = startAngle + (col * angleStep);
-
-            // Local position relative to pivot (before orientation rotation)
-            const localX = fanRadius * Math.sin(angle);
-            const localY = -(fanRadius * Math.cos(angle)) + pivotYOffset;
-
-            // Rotate local position by orientation
-            const rotatedX = localX * Math.cos(orientationRad) - localY * Math.sin(orientationRad);
-            const rotatedY = localX * Math.sin(orientationRad) + localY * Math.cos(orientationRad);
-
-            const x = centerX + rotatedX;
-            const y = basePivotY + rotatedY;
-
-            // Card rotation = fan angle + orientation
-            const cardRotation = Math.round((angle * 180) / Math.PI) + orientationDeg;
-
-            const zOrder = baseZOrder + (row * 10) + col;
-
-            places.push({
-                id: playerPrefix + '-' + placeIndex,
-                x: x,
-                y: y,
-                col: col,
-                row: row,
-                rotation: cardRotation,
-                zOrder: zOrder,
-                label: playerPrefix.toUpperCase() + (placeIndex + 1)
-            });
-            placeIndex++;
-        }
-    });
-
-    return places;
-}
-
-/**
- * Load multi-player Pusoy layout
- * @param {number} playerCount - 2 or 4 players
- */
-function loadPusoyMultiLayout(playerCount) {
-    const spacingSlider = document.getElementById('pusoySpacing');
-    const curvatureSlider = document.getElementById('pusoyCurvature');
-    const layerGapSlider = document.getElementById('pusoyLayerGap');
-
-    const baseSpacing = spacingSlider ? parseInt(spacingSlider.value) : 150;
-    const curvature = curvatureSlider ? parseInt(curvatureSlider.value) : 50;
-    const layerGap = layerGapSlider ? parseInt(layerGapSlider.value) : 30;
-
-    let places = [];
-    const slotGroups = [];
-    const scale = playerCount === 2 ? 0.75 : 0.55;
-
-    // Player positions: each defined by centerX, pivotY, orientation
-    let playerPositions = [];
-    if (playerCount === 1) {
-        playerPositions = [
-            { prefix: 'p1', label: 'Player 1 (Bottom)', cx: UI_WIDTH / 2, py: UI_HEIGHT * 0.78, orient: 0 }
-        ];
-    } else if (playerCount === 2) {
-        playerPositions = [
-            { prefix: 'p1', label: 'Player 1 (Bottom)', cx: UI_WIDTH / 2, py: UI_HEIGHT * 0.72, orient: 0 },
-            { prefix: 'p2', label: 'Player 2 (Top)', cx: UI_WIDTH / 2, py: UI_HEIGHT * 0.28, orient: 180 }
-        ];
-    } else {
-        playerPositions = [
-            { prefix: 'p1', label: 'Player 1 (Bottom)', cx: UI_WIDTH / 2, py: UI_HEIGHT * 0.78, orient: 0 },
-            { prefix: 'p2', label: 'Player 2 (Top)', cx: UI_WIDTH / 2, py: UI_HEIGHT * 0.22, orient: 180 },
-            { prefix: 'p3', label: 'Player 3 (Left)', cx: UI_WIDTH * 0.18, py: UI_HEIGHT / 2, orient: 90 },
-            { prefix: 'p4', label: 'Player 4 (Right)', cx: UI_WIDTH * 0.82, py: UI_HEIGHT / 2, orient: -90 }
-        ];
-    }
-
-    playerPositions.forEach((pos, idx) => {
-        const hand = generatePusoyHand(
-            pos.prefix, pos.cx, pos.py, pos.orient, scale,
-            idx * 100, baseSpacing, curvature, layerGap
-        );
-        places = places.concat(hand);
-
-        // Create a single unified slotGroup for the ENTIRE player hand
-        slotGroups.push({
-            id: pos.prefix + '-hand', name: pos.label,
-            slotIds: hand.map(p => p.id), groupOrder: idx, color: getGroupColor(idx)
-        });
-    });
-
-    const presetName = 'Pusoy ' + playerCount + 'P';
-    appState.boardLayout = {
-        type: 'grid',
-        name: presetName,
-        boardStyle: 'pusoy',
-        gridCols: 5,
-        gridRows: 3 * playerCount,
-        cardPlaces: places,
-        slotGroups: slotGroups
-    };
-
-    gameContainer.classList.add('grid-mode');
-    setStatus('Loaded ' + presetName + ' layout (' + places.length + ' slots)');
-}
-
-/**
- * Setup Pusoy layout slider controls and visibility toggle
- */
-function setupPusoySliderControls() {
-    const pusoyControls = document.getElementById('pusoyControls');
-    const presetSelect = document.getElementById('presetSelect');
-    const loadPresetBtn = document.getElementById('loadPresetBtn');
-
-    const spacingSlider = document.getElementById('pusoySpacing');
-    const curvatureSlider = document.getElementById('pusoyCurvature');
-    const layerGapSlider = document.getElementById('pusoyLayerGap');
-
-    const spacingValue = document.getElementById('pusoySpacingValue');
-    const curvatureValue = document.getElementById('pusoyCurvatureValue');
-    const layerGapValue = document.getElementById('pusoyLayerGapValue');
-
-    if (!pusoyControls || !presetSelect) return;
-
-    // Function to toggle Pusoy controls visibility
-    const togglePusoyControls = () => {
-        const isPusoy = presetSelect.value.startsWith('pusoy');
-        pusoyControls.classList.toggle('hidden', !isPusoy);
-
-        // Add Pusoy Pack: visible for both pusoy and custom presets
-        const addPusoyPackSection = document.getElementById('addPusoyPackSection');
-        if (addPusoyPackSection) {
-            const showPack = isPusoy || presetSelect.value === 'custom';
-            addPusoyPackSection.classList.toggle('hidden', !showPack);
-        }
-    };
-
-    // Function to update layout when sliders change
-    const updatePusoyLayout = () => {
-        // Update display values
-        if (spacingSlider && spacingValue) {
-            spacingValue.textContent = spacingSlider.value;
-        }
-        if (curvatureSlider && curvatureValue) {
-            curvatureValue.textContent = curvatureSlider.value + '°';
-        }
-        if (layerGapSlider && layerGapValue) {
-            layerGapValue.textContent = layerGapSlider.value;
-        }
-
-        // Regenerate layout if Pusoy is selected
-        if (appState.boardLayout.boardStyle === 'pusoy') {
-            const currentPreset = presetSelect.value;
-            if (currentPreset === 'pusoy-2p') {
-                loadPusoyMultiLayout(2);
-            } else if (currentPreset === 'pusoy-4p') {
-                loadPusoyMultiLayout(4);
-            } else {
-                loadPusoyLayout();
-            }
-            renderCardPlaceMarkers();
-            renderCardDropZones();
-        }
-    };
-
-    // Show/hide on preset change
-    presetSelect.addEventListener('change', () => {
-        togglePusoyControls();
-        toggleGridControlsVisibility(presetSelect.value);
-    });
-
-    // Show controls after preset is loaded
-    if (loadPresetBtn) {
-        loadPresetBtn.addEventListener('click', () => {
-            setTimeout(() => {
-                togglePusoyControls();
-                toggleGridControlsVisibility(presetSelect.value);
-            }, 100);
-        });
-    }
-
-    // Slider event listeners
-    if (spacingSlider) spacingSlider.addEventListener('input', updatePusoyLayout);
-    if (curvatureSlider) curvatureSlider.addEventListener('input', updatePusoyLayout);
-    if (layerGapSlider) layerGapSlider.addEventListener('input', updatePusoyLayout);
-}
-
-/**
- * Load grid layout with specified columns and rows
- * Uses UI coordinates (1280x720) — consistent with loadPokerLayout/loadPusoyLayout
- */
-function loadGridLayout(cols, rows) {
-    const places = [];
-
-    // Use UI coordinate system (1280x720) for consistency with other layouts
-    const spacingX = 100;  // Horizontal spacing between cards in UI coords
-    const spacingY = 120;  // Vertical spacing between cards in UI coords
-    const totalW = cols * spacingX;
-    const totalH = rows * spacingY;
-    const startX = (UI_WIDTH - totalW) / 2 + spacingX / 2;
-    const startY = (UI_HEIGHT - totalH) / 2 + spacingY / 2;
-
-    let placeId = 0;
-    for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < cols; col++) {
-            places.push({
-                id: `place-${placeId}`,
-                x: startX + col * spacingX,
-                y: startY + row * spacingY,
-                col: col,
-                row: row,
-                label: String(placeId + 1)
-            });
-            placeId++;
-        }
-    }
-
-    appState.boardLayout = {
-        type: 'grid',
-        name: `Card Sorting (${cols}x${rows})`,
-        boardStyle: 'card-sorting',
-        gridCols: cols,
-        gridRows: rows,
-        cardPlaces: places,
-        slotGroups: []
-    };
-
-    // Auto-assign zOrder based on row/col
-    ensureZOrder(places);
-
-    gameContainer.classList.add('grid-mode');
-    setStatus(`Loaded ${cols}x${rows} grid layout`);
-}
-
-/** 
- * Toggle Grid Size / Card Sorting controls visibility based on preset
- */
-function toggleGridControlsVisibility(presetValue) {
-    const gridControlsEl = document.querySelector('.grid-controls');
-    const cardSortingControls = document.getElementById('cardSortingControls');
-
-    const showGrid = (presetValue === 'card-sorting' || presetValue === 'custom');
-    if (gridControlsEl) gridControlsEl.classList.toggle('hidden', !showGrid);
-
-    const showSorting = (presetValue === 'card-sorting');
-    if (cardSortingControls) cardSortingControls.classList.toggle('hidden', !showSorting);
-}
-
-/** 
- * Snap/redistribute card places using current slider spacing values
- */
-function snapCardPlacesToGrid(spacingX, spacingY) {
-    const places = appState.boardLayout.cardPlaces;
-    if (!places || places.length === 0) return;
-
-    const cols = appState.boardLayout.gridCols || 4;
-    const rows = appState.boardLayout.gridRows || Math.ceil(places.length / cols);
-
-    const totalW = cols * spacingX;
-    const totalH = rows * spacingY;
-    const startX = (UI_WIDTH - totalW) / 2 + spacingX / 2;
-    const startY = (UI_HEIGHT - totalH) / 2 + spacingY / 2;
-
-    places.forEach((place, idx) => {
-        const col = idx % cols;
-        const row = Math.floor(idx / cols);
-        place.x = startX + col * spacingX;
-        place.y = startY + row * spacingY;
-        place.col = col;
-        place.row = row;
-        place.rotation = 0;
-        // Recalculate zOrder based on new row/col
-        place.zOrder = (row * cols) + col;
-    });
-
-    renderCardPlaceMarkers();
-    updateCardPlacesList();
-    updateGroupPanelVisibility();
-    setStatus(`Snapped ${places.length} cards to ${cols}×${rows} grid`);
-}
-
-/** 
- * Reset card sorting sliders to defaults and redistribute
- */
-function handleGridResetDefault() {
-    const hSlider = document.getElementById('gridHSpacing');
-    const vSlider = document.getElementById('gridVSpacing');
-    const hValue = document.getElementById('gridHSpacingValue');
-    const vValue = document.getElementById('gridVSpacingValue');
-
-    if (hSlider) { hSlider.value = 100; if (hValue) hValue.textContent = '100'; }
-    if (vSlider) { vSlider.value = 120; if (vValue) vValue.textContent = '120'; }
-
-    snapCardPlacesToGrid(100, 120);
-    setStatus('Reset grid to default spacing');
-}
-
-/** 
- * Setup card sorting slider controls (H/V spacing) — similar to Pusoy slider pattern
- */
-function setupCardSortingSliderControls() {
-    const hSlider = document.getElementById('gridHSpacing');
-    const vSlider = document.getElementById('gridVSpacing');
-    const hValue = document.getElementById('gridHSpacingValue');
-    const vValue = document.getElementById('gridVSpacingValue');
-    const resetBtn = document.getElementById('gridResetDefaultBtn');
-
-    const updateGridFromSliders = () => {
-        const sx = hSlider ? parseInt(hSlider.value) : 100;
-        const sy = vSlider ? parseInt(vSlider.value) : 120;
-        if (hValue) hValue.textContent = String(sx);
-        if (vValue) vValue.textContent = String(sy);
-
-        if (appState.boardLayout.boardStyle === 'card-sorting') {
-            snapCardPlacesToGrid(sx, sy);
-        }
-    };
-
-    if (hSlider) hSlider.addEventListener('input', updateGridFromSliders);
-    if (vSlider) vSlider.addEventListener('input', updateGridFromSliders);
-    if (resetBtn) resetBtn.addEventListener('click', handleGridResetDefault);
-}
-
-// ============================================
-// DEALING CARD CONTROLS
-// ============================================
-
-/**
- * Setup dealing card toggle and draggable slot
- * When enabled, a card-shaped marker appears on the table
- * to indicate where cards will "deal from" in AE export
- */
-function setupDealingCardControls() {
-    if (!dealingCardToggle) return;
-
-    dealingCardToggle.addEventListener('change', (e) => {
-        appState.dealingCard.enabled = e.target.checked;
-        const dealSpeedRow = document.getElementById('dealSpeedRow');
-        if (e.target.checked) {
-            renderDealingSlot();
-            if (dealSpeedRow) dealSpeedRow.classList.remove('hidden');
-            updateDealTimeEstimate();
-            setStatus('Dealing Card enabled — drag the deck marker to position');
-        } else {
-            removeDealingSlot();
-            if (dealSpeedRow) dealSpeedRow.classList.add('hidden');
-            setStatus('Dealing Card disabled');
-        }
-    });
-}
-
-/**
- * Update the estimated dealing duration display
- * Formula matches AE: ((numCards-1) * staggerFrames + moveFrames + holdFrames) / fps
- */
-function updateDealTimeEstimate() {
-    const el = document.getElementById('dealTimeEstimate');
-    if (!el) return;
-    const numCards = appState.tableCards.length;
-    if (numCards === 0) {
-        el.textContent = '';
-        return;
-    }
-    const stagger = appState.dealSpeed || 3;
-    const moveFrames = 10;  // MOVE_DURATION_FRAMES in AE
-    const holdFrames = Math.max(5, Math.round(30 / (3 / stagger)));  // Scale hold with speed
-    const totalFrames = Math.max(numCards - 1, 0) * stagger + moveFrames + holdFrames;
-    const seconds = (totalFrames / 30).toFixed(1);
-    el.textContent = '~' + seconds + 's';
-}
-
-/**
- * Render the dealing card slot marker on the game container
- * This is a draggable deck-shaped element
- */
-function renderDealingSlot() {
-    // Remove existing if any
-    removeDealingSlot();
-
-    const marker = document.createElement('div');
-    marker.id = 'dealingSlotMarker';
-    marker.className = 'dealing-card-slot';
-    marker.innerHTML = '🃏<span>DEAL</span>';
-    marker.title = 'Drag to reposition dealing slot';
-
-    // Delete button
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'marker-delete';
-    deleteBtn.textContent = '✕';
-    deleteBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        appState.dealingCard.enabled = false;
-        if (dealingCardToggle) dealingCardToggle.checked = false;
-        removeDealingSlot();
-        updateDealingSlotButton();
-        setStatus('Dealing Card removed');
-    });
-    marker.appendChild(deleteBtn);
-
-    // Position using UI coordinates → DOM pixel coordinates
-    const containerRect = gameContainer.getBoundingClientRect();
-    const scaleX = containerRect.width / UI_WIDTH;
-    const scaleY = containerRect.height / UI_HEIGHT;
-
-    marker.style.left = (appState.dealingCard.x * scaleX) + 'px';
-    marker.style.top = (appState.dealingCard.y * scaleY) + 'px';
-
-    // Make draggable
-    let isDragging = false;
-    let offsetX = 0, offsetY = 0;
-
-    marker.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        isDragging = true;
-        // When .dragging is added, transform: translate(-50%, -50%) is removed
-        // Compensate by adjusting left/top so the marker doesn't jump
-        const markerW = marker.offsetWidth;
-        const markerH = marker.offsetHeight;
-        const containerRect = gameContainer.getBoundingClientRect();
-        const currentLeft = parseFloat(marker.style.left) || 0;
-        const currentTop = parseFloat(marker.style.top) || 0;
-        // Before dragging: CSS position is center, transform shifts -50%,-50%
-        // After dragging: no transform, so position should be at top-left corner
-        const adjustedLeft = currentLeft - markerW / 2;
-        const adjustedTop = currentTop - markerH / 2;
-        marker.style.left = adjustedLeft + 'px';
-        marker.style.top = adjustedTop + 'px';
-        marker.classList.add('dragging');
-        // Offset from mouse to marker top-left corner
-        offsetX = e.clientX - containerRect.left - adjustedLeft;
-        offsetY = e.clientY - containerRect.top - adjustedTop;
-    });
-
-    document.addEventListener('mousemove', (e) => {
-        if (!isDragging) return;
-        const containerRect = gameContainer.getBoundingClientRect();
-        const x = e.clientX - containerRect.left - offsetX;
-        const y = e.clientY - containerRect.top - offsetY;
-
-        marker.style.left = x + 'px';
-        marker.style.top = y + 'px';
-
-        // Update UI coordinates
-        const scaleX = containerRect.width / UI_WIDTH;
-        const scaleY = containerRect.height / UI_HEIGHT;
-        appState.dealingCard.x = Math.round(x / scaleX);
-        appState.dealingCard.y = Math.round(y / scaleY);
-    });
-
-    document.addEventListener('mouseup', () => {
-        if (isDragging) {
-            isDragging = false;
-            // Convert back to center-based positioning (CSS transform: translate(-50%, -50%))
-            const currentLeft = parseFloat(marker.style.left) || 0;
-            const currentTop = parseFloat(marker.style.top) || 0;
-            const markerW = marker.offsetWidth;
-            const markerH = marker.offsetHeight;
-            marker.style.left = (currentLeft + markerW / 2) + 'px';
-            marker.style.top = (currentTop + markerH / 2) + 'px';
-            marker.classList.remove('dragging');
-            console.log('[DealingCard] Position:', appState.dealingCard.x, appState.dealingCard.y);
-        }
-    });
-
-    gameContainer.appendChild(marker);
-}
-
-/**
- * Remove the dealing card slot marker from DOM
- */
-function removeDealingSlot() {
-    const existing = document.getElementById('dealingSlotMarker');
-    if (existing) existing.remove();
-}
-
-/**
- * Update the Add Deal button state (disabled when dealing card exists)
- */
-function updateDealingSlotButton() {
-    const btn = document.getElementById('addDealingSlotBtn');
-    if (btn) {
-        btn.disabled = appState.dealingCard.enabled;
-        btn.title = appState.dealingCard.enabled ? 'Dealing card already added (max 1)' : 'Add dealing card origin (max 1)';
-    }
-}
-
-/**
- * Apply grid size from input fields
- */
-function handleApplyGrid() {
-    const cols = parseInt(gridCols.value) || 4;
-    const rows = parseInt(gridRows.value) || 3;
-
-    loadGridLayout(cols, rows);
-    updateCardPlacesList();
-    renderCardPlaceMarkers();
-    updateGroupPanelVisibility();
-}
-
-/**
- * Add a single card place at center
- */
-function handleAddCardPlace() {
-    const containerWidth = gameContainer.offsetWidth || 800;
-    const containerHeight = gameContainer.offsetHeight || 450;
-
-    const newId = appState.boardLayout.cardPlaces.length;
-    const newPlace = {
-        id: `place-${newId}`,
-        x: containerWidth / 2,
-        y: containerHeight / 2,
-        label: String(newId + 1),
-        zOrder: newId
-    };
-
-    appState.boardLayout.cardPlaces.push(newPlace);
-    appState.boardLayout.type = 'grid';
-
-    updateCardPlacesList();
-    renderCardPlaceMarkers();
-    updateGroupPanelVisibility();
-    setStatus(`Added card place #${newId + 1}`);
-}
-
-/**
- * Add a community zone slot (multi-card zone) at center
- */
-function handleAddCommunityZone() {
-    // Count existing community zones for labeling
-    const czCount = appState.boardLayout.cardPlaces.filter(p => p.isCommunityZone).length;
-    const newId = appState.boardLayout.cardPlaces.length;
-
-    const newPlace = {
-        id: `cz-${czCount}`,
-        x: UI_WIDTH / 2,
-        y: UI_HEIGHT / 2,
-        label: `CZ ${czCount + 1}`,
-        zOrder: 500 + czCount,
-        isCommunityZone: true,
-        czMode: 'row',        // 'row' | 'pile' | 'stack'
-        czWidth: 300,          // Width in UI pixels
-        czHeight: 120          // Height in UI pixels
-    };
-
-    appState.boardLayout.cardPlaces.push(newPlace);
-    appState.boardLayout.type = 'grid';
-
-    updateCardPlacesList();
-    renderCardPlaceMarkers();
-    updateGroupPanelVisibility();
-    setStatus(`Added community zone #${czCount + 1}`);
-    debugLog(`[CommunityZone] Created ${newPlace.id} at UI(${newPlace.x}, ${newPlace.y}) mode=${newPlace.czMode}`);
-}
-
-/**
- * Clear all card places
- */
-function handleClearBoard() {
-    appState.boardLayout.cardPlaces = [];
-    appState.boardLayout.slotGroups = [];
-    updateCardPlacesList();
-    renderCardPlaceMarkers();
-    updateGroupPanelVisibility();
-    setStatus('Cleared all card places');
-}
-
-/**
- * Save current layout as preset JSON
- * Serializes full board state: cardPlaces (with zone, clonerId), slotGroups, boardStyle, pusoyConfig
- */
-function handleSavePreset() {
-    const name = presetName.value.trim() || 'Custom Layout';
-
-    const presetData = {
-        name: name,
-        type: appState.boardLayout.type,
-        boardStyle: appState.boardLayout.boardStyle,
-        description: `Saved preset: ${name}`,
-        gridCols: appState.boardLayout.gridCols,
-        gridRows: appState.boardLayout.gridRows,
-        cardPlaces: appState.boardLayout.cardPlaces.map(p => {
-            const placeData = {
-                id: p.id,
-                x: Math.round(p.x),
-                y: Math.round(p.y),
-                col: p.col,
-                row: p.row,
-                rotation: p.rotation || 0,
-                zOrder: p.zOrder,
-                label: p.label,
-                zone: p.zone || null
-            };
-            // Serialize community zone fields
-            if (p.isCommunityZone) {
-                placeData.isCommunityZone = true;
-                placeData.czMode = p.czMode || 'row';
-                placeData.czWidth = p.czWidth || 300;
-                placeData.czHeight = p.czHeight || 120;
-            }
-            // Serialize cloner reference
-            if (p.clonerId) placeData.clonerId = p.clonerId;
-            return placeData;
-        }),
-        // Serialize slot groups (cloner groups, pusoy packs, user groups)
-        slotGroups: (appState.boardLayout.slotGroups || []).map(g => {
-            const group = { ...g };
-            if (g.clonerConfig) group.clonerConfig = { ...g.clonerConfig };
-            return group;
-        }),
-        // Save Pusoy slider values if applicable
-        pusoyConfig: null
-    };
-
-    // Capture Pusoy slider state
-    if (presetData.boardStyle === 'pusoy') {
-        const s = document.getElementById('pusoySpacing');
-        const c = document.getElementById('pusoyCurvature');
-        const l = document.getElementById('pusoyLayerGap');
-        presetData.pusoyConfig = {
-            spacing: s ? parseInt(s.value) : 150,
-            curvature: c ? parseInt(c.value) : 50,
-            layerGap: l ? parseInt(l.value) : 30
-        };
-    }
-
-    // Always save to localStorage for persistence
-    saveLayoutToStorage(name, presetData);
-    refreshSavedLayoutsDropdown();
-
-    // Also try to save to file system (CEP mode)
-    if (fs && appState.decksFolder) {
-        const presetsFolder = appState.decksFolder.replace('/decks', '/presets');
-        const filename = name.toLowerCase().replace(/\s+/g, '-') + '.json';
-        const filepath = presetsFolder + '/' + filename;
-
-        try {
-            // Ensure presets folder exists
-            if (!fs.existsSync(presetsFolder)) {
-                fs.mkdirSync(presetsFolder, { recursive: true });
-            }
-
-            fs.writeFileSync(filepath, JSON.stringify(presetData, null, 2));
-            debugLog(`[SaveLayout] Also saved to filesystem: ${filepath}`);
-        } catch (e) {
-            console.error('[SaveLayout] Filesystem write failed:', e);
-        }
-    }
-
-    setStatus(`Layout saved: ${name}`, 'success');
-    debugLog(`[SaveLayout] Saved "${name}" — ${presetData.cardPlaces.length} places, ${presetData.slotGroups.length} groups`);
-}
-
-/**
- * Download preset as JSON file (browser fallback)
- */
-function downloadPresetJSON(data, filename) {
-    const jsonStr = JSON.stringify(data, null, 2);
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-
-    URL.revokeObjectURL(url);
-    setStatus(`Preset downloaded: ${filename}`, 'success');
-}
-
-// ============================================
-// SAVED LAYOUTS (localStorage persistence)
-// ============================================
-
-const SAVED_LAYOUTS_KEY = 'autonim_savedLayouts';
-
-/**
- * Save a layout to localStorage
- * @param {string} name - Layout name (key)
- * @param {object} data - Full preset data object
- */
-function saveLayoutToStorage(name, data) {
-    try {
-        const layouts = loadSavedLayouts();
-        layouts[name] = data;
-        localStorage.setItem(SAVED_LAYOUTS_KEY, JSON.stringify(layouts));
-        debugLog(`[SaveLayout] Saved "${name}" to localStorage (${Object.keys(layouts).length} total)`);
-    } catch (e) {
-        console.error('[SaveLayout] Failed to save to localStorage:', e);
-    }
-}
-
-/**
- * Load all saved layouts from localStorage
- * @returns {object} { name: layoutData } map
- */
-function loadSavedLayouts() {
-    try {
-        const json = localStorage.getItem(SAVED_LAYOUTS_KEY);
-        return json ? JSON.parse(json) : {};
-    } catch (e) {
-        console.error('[SaveLayout] Failed to read saved layouts:', e);
-        return {};
-    }
-}
-
-/**
- * Delete a saved layout from localStorage
- * @param {string} name - Layout name to delete
- */
-function deleteSavedLayout(name) {
-    try {
-        const layouts = loadSavedLayouts();
-        delete layouts[name];
-        localStorage.setItem(SAVED_LAYOUTS_KEY, JSON.stringify(layouts));
-        debugLog(`[SaveLayout] Deleted "${name}" from localStorage`);
-    } catch (e) {
-        console.error('[SaveLayout] Failed to delete layout:', e);
-    }
-}
-
-/**
- * Refresh the preset dropdown with user-saved layouts from localStorage
- * Adds saved layouts after a separator below built-in presets
- */
-function refreshSavedLayoutsDropdown() {
-    const select = document.getElementById('presetSelect');
-    if (!select) return;
-
-    // Remove existing saved layout options and separator
-    select.querySelectorAll('.saved-layout-option, .saved-layout-separator').forEach(el => el.remove());
-
-    const layouts = loadSavedLayouts();
-    const names = Object.keys(layouts);
-    if (names.length === 0) return;
-
-    // Add separator
-    const separator = document.createElement('option');
-    separator.disabled = true;
-    separator.textContent = '── Saved Layouts ──';
-    separator.className = 'saved-layout-separator';
-    select.appendChild(separator);
-
-    // Add each saved layout
-    names.forEach(name => {
-        const option = document.createElement('option');
-        option.value = `saved:${name}`;
-        option.textContent = `📁 ${name}`;
-        option.className = 'saved-layout-option';
-        select.appendChild(option);
-    });
-
-    debugLog(`[SaveLayout] Dropdown refreshed with ${names.length} saved layout(s)`);
-}
-
-// ============================================
-// BOARD AUTOSAVE / RESTORE
-// ============================================
-
-const AUTOSAVE_KEY = 'autonim_boardLayout';
-
-/**
- * Get the autosave file path for CEP mode
- * @returns {string|null} File path or null if not in CEP
- */
-function getAutosaveFilePath() {
-    if (!fs || !csInterface) return null;
-    try {
-        const extPath = csInterface.getSystemPath(SystemPath.EXTENSION);
-        return extPath + '/assets/autosave-board.json';
-    } catch (e) {
-        return null;
-    }
-}
-
-/**
- * Auto-save current board layout state
- * Called when leaving board-setting phase
- */
-function autoSaveBoardLayout() {
-    try {
-        const data = {
-            name: appState.boardLayout.name || 'Autosave',
-            boardStyle: appState.boardLayout.boardStyle,
-            type: appState.boardLayout.type,
-            gridCols: appState.boardLayout.gridCols,
-            gridRows: appState.boardLayout.gridRows,
-            cardPlaces: appState.boardLayout.cardPlaces.map(p => {
-                const place = {
-                    id: p.id, x: Math.round(p.x), y: Math.round(p.y),
-                    col: p.col, row: p.row,
-                    rotation: p.rotation || 0,
-                    zOrder: p.zOrder, label: p.label,
-                    zone: p.zone || null
-                };
-                if (p.isCommunityZone) {
-                    place.isCommunityZone = true;
-                    place.czMode = p.czMode || 'row';
-                    place.czWidth = p.czWidth || 300;
-                    place.czHeight = p.czHeight || 120;
-                }
-                if (p.clonerId) place.clonerId = p.clonerId;
-                return place;
-            }),
-            slotGroups: (appState.boardLayout.slotGroups || []).map(g => {
-                const group = { ...g };
-                if (g.clonerConfig) group.clonerConfig = { ...g.clonerConfig };
-                return group;
-            }),
-            // Save Pusoy slider values if applicable
-            pusoyConfig: null
-        };
-
-        // Capture Pusoy slider state
-        if (data.boardStyle === 'pusoy') {
-            const s = document.getElementById('pusoySpacing');
-            const c = document.getElementById('pusoyCurvature');
-            const l = document.getElementById('pusoyLayerGap');
-            data.pusoyConfig = {
-                spacing: s ? parseInt(s.value) : 150,
-                curvature: c ? parseInt(c.value) : 50,
-                layerGap: l ? parseInt(l.value) : 30
-            };
-        }
-
-        const json = JSON.stringify(data, null, 2);
-
-        // CEP mode: write to filesystem
-        const filepath = getAutosaveFilePath();
-        if (filepath && fs) {
-            fs.writeFileSync(filepath, json);
-            debugLog(`[Autosave] Saved board layout to ${filepath}`);
-        }
-
-        // Also save to localStorage as fallback / browser mode
-        try {
-            localStorage.setItem(AUTOSAVE_KEY, json);
-        } catch (e) { /* ignore quota errors */ }
-
-    } catch (e) {
-        console.error('[Autosave] Failed to save board layout:', e);
-    }
-}
-
-/**
- * Attempt to restore board layout from autosave
- * @returns {boolean} true if restored successfully
- */
-function autoRestoreBoardLayout() {
-    try {
-        let json = null;
-
-        // Try filesystem first (CEP mode)
-        const filepath = getAutosaveFilePath();
-        if (filepath && fs && fs.existsSync(filepath)) {
-            json = fs.readFileSync(filepath, 'utf8');
-            debugLog('[Autosave] Loaded board from filesystem');
-        }
-
-        // Fallback to localStorage (browser mode)
-        if (!json) {
-            json = localStorage.getItem(AUTOSAVE_KEY);
-            if (json) debugLog('[Autosave] Loaded board from localStorage');
-        }
-
-        if (!json) return false;
-
-        const data = JSON.parse(json);
-        if (!data.cardPlaces || data.cardPlaces.length === 0) return false;
-
-        // Restore board layout
-        appState.boardLayout = {
-            type: data.type || 'grid',
-            name: data.name || 'Restored Layout',
-            boardStyle: data.boardStyle || 'custom',
-            gridCols: data.gridCols || 4,
-            gridRows: data.gridRows || 3,
-            cardPlaces: data.cardPlaces,
-            slotGroups: data.slotGroups || []
-        };
-
-        // Restore Pusoy slider values
-        if (data.pusoyConfig) {
-            const s = document.getElementById('pusoySpacing');
-            const c = document.getElementById('pusoyCurvature');
-            const l = document.getElementById('pusoyLayerGap');
-            if (s) s.value = data.pusoyConfig.spacing;
-            if (c) c.value = data.pusoyConfig.curvature;
-            if (l) l.value = data.pusoyConfig.layerGap;
-        }
-
-        // Update preset selector to match restored layout
-        const presetSelect = document.getElementById('presetSelect');
-        if (presetSelect && data.boardStyle) {
-            const option = presetSelect.querySelector(`option[value="${data.boardStyle}"]`);
-            if (option) presetSelect.value = data.boardStyle;
-        }
-
-        if (data.type === 'grid') gameContainer.classList.add('grid-mode');
-        debugLog(`[Autosave] Restored "${data.name}" with ${data.cardPlaces.length} places`);
-        return true;
-
-    } catch (e) {
-        console.error('[Autosave] Failed to restore board layout:', e);
-        return false;
-    }
-}
-
-/**
- * Render card place markers on the game container
- */
-function renderCardPlaceMarkers() {
-    // Clear existing markers
-    clearCardPlaceMarkers();
-
-    if (appState.boardLayout.type !== 'grid' || appState.boardLayout.cardPlaces.length === 0) {
-        return;
-    }
-
-    // Render markers in gameContainer (not pokerTable) so they appear above the table
-    if (!gameContainer) return;
-
-    // Get poker table position for offset calculation
-    const pokerTable = document.getElementById('pokerTable');
-    if (!pokerTable) return;
-
-    const tableRect = pokerTable.getBoundingClientRect();
-    const containerRect = gameContainer.getBoundingClientRect();
-    const tableWidth = pokerTable.offsetWidth;
-    const tableHeight = pokerTable.offsetHeight;
-
-    // Calculate offset from gameContainer to pokerTable
-    const offsetX = tableRect.left - containerRect.left;
-    const offsetY = tableRect.top - containerRect.top;
-
-    // Scale factors to convert UI coordinates (1280x720) to actual DOM size
-    const scaleX = tableWidth / UI_WIDTH;
-    const scaleY = tableHeight / UI_HEIGHT;
-
-    appState.boardLayout.cardPlaces.forEach((place, index) => {
-        const marker = document.createElement('div');
-        marker.className = 'card-place-marker';
-        marker.dataset.placeId = place.id;
-
-        // Scale UI coordinates to DOM pixels, then position relative to gameContainer
-        const scaledX = place.x * scaleX;
-        const scaledY = place.y * scaleY;
-
-        if (place.isCommunityZone) {
-            // Community zone: use czWidth/czHeight scaled
-            marker.classList.add('community-zone-marker');
-            const markerW = (place.czWidth || 300) * scaleX;
-            const markerH = (place.czHeight || 120) * scaleY;
-            marker.style.width = `${markerW}px`;
-            marker.style.height = `${markerH}px`;
-            marker.style.left = `${offsetX + scaledX - markerW / 2}px`;
-            marker.style.top = `${offsetY + scaledY - markerH / 2}px`;
-        } else {
-            // Normal slot: card-sized
-            marker.style.left = `${offsetX + scaledX - CARD_WIDTH / 2}px`;
-            marker.style.top = `${offsetY + scaledY - CARD_HEIGHT / 2}px`;
-        }
-
-        // Apply rotation and z-order for Pusoy layout
-        if (place.rotation) {
-            marker.style.transform = `rotate(${place.rotation}deg)`;
-        }
-        if (place.zOrder !== undefined) {
-            marker.style.zIndex = String(computeFinalZOrder(place) + 10);
-        }
-
-        // Group color coding
-        var placeGroup = getGroupForPlace(place.id);
-        if (placeGroup) {
-            marker.style.borderColor = placeGroup.color;
-            marker.title = placeGroup.name + ' (z:' + computeFinalZOrder(place) + ')';
-        }
-
-        // Place number / label
-        const number = document.createElement('span');
-        number.className = 'place-number';
-        number.textContent = place.label || String(index + 1);
-        marker.appendChild(number);
-
-        // Community zone: add mode badge + cycle button
-        if (place.isCommunityZone) {
-            const modeBadge = document.createElement('span');
-            modeBadge.className = 'cz-mode-badge';
-            modeBadge.textContent = (place.czMode || 'row').toUpperCase();
-            marker.appendChild(modeBadge);
-
-            // Mode cycle button
-            const modeBtn = document.createElement('button');
-            modeBtn.className = 'cz-mode-btn';
-            modeBtn.textContent = '🔄';
-            modeBtn.title = 'Cycle mode: Row → Pile → Stack';
-            modeBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const modes = ['row', 'pile', 'stack'];
-                const currentIdx = modes.indexOf(place.czMode || 'row');
-                place.czMode = modes[(currentIdx + 1) % modes.length];
-                modeBadge.textContent = place.czMode.toUpperCase();
-                debugLog(`[CommunityZone] ${place.id} mode → ${place.czMode}`);
-            });
-            marker.appendChild(modeBtn);
-
-            // Resize handle (bottom-right)
-            const resizeHandle = document.createElement('div');
-            resizeHandle.className = 'cz-resize-handle';
-            resizeHandle.addEventListener('mousedown', (e) => startResizeCommunityZone(e, place, marker, scaleX, scaleY));
-            marker.appendChild(resizeHandle);
-        }
-
-        // Delete button
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'marker-delete';
-        deleteBtn.textContent = '✕';
-        deleteBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            deleteCardPlace(place.id);
-        });
-        marker.appendChild(deleteBtn);
-
-        // Rotation handle (bottom-left) — only for normal slots, not CZ
-        if (!place.isCommunityZone) {
-            const rotateHandle = document.createElement('div');
-            rotateHandle.className = 'marker-rotate';
-            rotateHandle.title = 'Drag to rotate';
-            rotateHandle.textContent = '↻';
-            rotateHandle.addEventListener('mousedown', (e) => startRotateMarker(e, place, marker));
-            marker.appendChild(rotateHandle);
-        }
-
-        // Make draggable (pass event for group drag detection)
-        marker.addEventListener('mousedown', (e) => {
-            if (e.target.classList.contains('marker-delete') || e.target.classList.contains('cz-mode-btn') || e.target.classList.contains('cz-resize-handle') || e.target.classList.contains('marker-rotate')) return;
-            startDragMarker(e, place, marker);
-        });
-
-        // Click to select (Shift+Click for multi-select)
-        marker.addEventListener('click', (e) => {
-            if (e.target.classList.contains('marker-delete') || e.target.classList.contains('cz-mode-btn')) return;
-
-            if (e.shiftKey) {
-                // Shift+Click: toggle this marker in multi-select
-                // If multi-select is empty but there's a single selected marker, add it first
-                if (appState.selectedCardPlaces.length === 0 && appState.selectedCardPlace) {
-                    appState.selectedCardPlaces.push(appState.selectedCardPlace);
-                    const prevMarker = document.querySelector(`.card-place-marker[data-place-id="${appState.selectedCardPlace.id}"]`);
-                    if (prevMarker) prevMarker.classList.add('multi-selected');
-                }
-                const idx = appState.selectedCardPlaces.indexOf(place);
-                if (idx >= 0) {
-                    appState.selectedCardPlaces.splice(idx, 1);
-                    marker.classList.remove('multi-selected');
-                } else {
-                    appState.selectedCardPlaces.push(place);
-                    marker.classList.add('multi-selected');
-                }
-                // Also select for CZ panel
-                selectCardPlace(place, marker);
-                updateCreateGroupBtnState();
-                if (typeof syncTransformIndicator === 'function') syncTransformIndicator();
-                debugLog(`[MultiSelect] ${appState.selectedCardPlaces.length} slots selected`);
-            } else {
-                // Normal click: single select, clear multi-select
-                appState.selectedCardPlaces = [];
-                document.querySelectorAll('.card-place-marker.multi-selected').forEach(m => m.classList.remove('multi-selected'));
-                selectCardPlace(place, marker);
-                updateCreateGroupBtnState();
-                if (typeof syncTransformIndicator === 'function') syncTransformIndicator();
-            }
-        });
-
-        // Apply multi-selected class if in selection
-        if (appState.selectedCardPlaces.includes(place)) {
-            marker.classList.add('multi-selected');
-        }
-
-        gameContainer.appendChild(marker);
-    });
-    
-    if (typeof renderGroupPencils === 'function') renderGroupPencils();
-}
-
-/**
- * Clear all card place markers from DOM
- */
-function clearCardPlaceMarkers() {
-    const markers = document.querySelectorAll('.card-place-marker');
-    markers.forEach(m => m.remove());
-}
-
-/**
- * Render card drop zones for Setup mode (non-editable)
- */
-function renderCardDropZones() {
-    // Clear existing drop zones
-    clearCardDropZones();
-
-    if (appState.boardLayout.type !== 'grid' || appState.boardLayout.cardPlaces.length === 0) {
-        return;
-    }
-
-    if (!gameContainer) return;
-
-    // Get poker table position for offset calculation
-    const pokerTable = document.getElementById('pokerTable');
-    if (!pokerTable) return;
-
-    const tableRect = pokerTable.getBoundingClientRect();
-    const containerRect = gameContainer.getBoundingClientRect();
-    const tableWidth = pokerTable.offsetWidth;
-    const tableHeight = pokerTable.offsetHeight;
-
-    const offsetX = tableRect.left - containerRect.left;
-    const offsetY = tableRect.top - containerRect.top;
-
-    // Scale factors to convert UI coordinates (1280x720) to actual DOM size
-    const scaleX = tableWidth / UI_WIDTH;
-    const scaleY = tableHeight / UI_HEIGHT;
-
-    appState.boardLayout.cardPlaces.forEach((place, index) => {
-        const zone = document.createElement('div');
-        zone.className = 'card-drop-zone';
-        zone.dataset.placeId = place.id;
-        zone.dataset.zone = `grid-${place.id}`;
-        zone.dataset.rotation = String(place.rotation || 0);
-
-        // Scale UI coordinates to DOM pixels, then position relative to gameContainer
-        const scaledX = place.x * scaleX;
-        const scaledY = place.y * scaleY;
-
-        if (place.isCommunityZone) {
-            // Community zone: use czWidth/czHeight
-            zone.classList.add('community-zone-drop');
-            zone.dataset.czMode = place.czMode || 'row';
-            const zoneW = (place.czWidth || 300) * scaleX;
-            const zoneH = (place.czHeight || 120) * scaleY;
-            zone.style.width = `${zoneW}px`;
-            zone.style.height = `${zoneH}px`;
-            zone.style.left = `${offsetX + scaledX - zoneW / 2}px`;
-            zone.style.top = `${offsetY + scaledY - zoneH / 2}px`;
-        } else {
-            // Normal slot: card-sized
-            zone.style.left = `${offsetX + scaledX - CARD_WIDTH / 2}px`;
-            zone.style.top = `${offsetY + scaledY - CARD_HEIGHT / 2}px`;
-        }
-
-        // Apply rotation and z-order for Pusoy layout
-        if (place.rotation) {
-            zone.style.transform = `rotate(${place.rotation}deg)`;
-        }
-        if (place.zOrder !== undefined) {
-            zone.style.zIndex = String(computeFinalZOrder(place) + 10); // +10 to ensure above table
-        }
-
-        // Zone label
-        const label = document.createElement('span');
-        label.className = 'zone-number';
-        label.textContent = place.label || String(index + 1);
-        zone.appendChild(label);
-
-        // Community zone: show mode indicator
-        if (place.isCommunityZone) {
-            const modeLabel = document.createElement('span');
-            modeLabel.className = 'cz-drop-mode';
-            modeLabel.textContent = (place.czMode || 'row').toUpperCase();
-            zone.appendChild(modeLabel);
-        }
-
-        // Cards container
-        const cardsContainer = document.createElement('div');
-        cardsContainer.className = 'zone-cards';
-        zone.appendChild(cardsContainer);
-
-        // Add drop event handlers
-        zone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            zone.classList.add('drag-over');
-        });
-
-        zone.addEventListener('dragleave', () => {
-            zone.classList.remove('drag-over');
-        });
-
-        zone.addEventListener('drop', (e) => handleZoneDrop(e, zone));
-
-        // Shift+Click to multi-select drop zones
-        zone.addEventListener('click', (e) => {
-            if (!e.shiftKey) return;
-            e.stopPropagation();
-            const placeId = place.id;
-            const idx = appState.selectedDropZones.indexOf(placeId);
-            if (idx >= 0) {
-                appState.selectedDropZones.splice(idx, 1);
-                zone.classList.remove('zone-multi-selected');
-            } else {
-                appState.selectedDropZones.push(placeId);
-                zone.classList.add('zone-multi-selected');
-            }
-        });
-
-        // Right-click to show slot fill context menu
-        zone.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const placeId = place.id;
-            // If zone not already selected, single-select it
-            if (!appState.selectedDropZones.includes(placeId)) {
-                clearDropZoneSelection();
-                appState.selectedDropZones.push(placeId);
-                zone.classList.add('zone-multi-selected');
-            }
-            showSlotContextMenu(e);
-        });
-
-        gameContainer.appendChild(zone);
-
-        // Restore multi-selected state after render
-        if (appState.selectedDropZones.includes(place.id)) {
-            zone.classList.add('zone-multi-selected');
-        }
-    });
-
-    // Restore existing cards in grid zones
-    restoreGridCards();
-}
-
-/**
- * Restore cards that are already in grid zones after re-rendering drop zones
- */
-function restoreGridCards() {
-    const gridCards = appState.tableCards.filter(c => c.zone && c.zone.startsWith('grid-'));
-
-    gridCards.forEach(card => {
-        const zoneElement = document.querySelector(`.card-drop-zone[data-zone="${card.zone}"]`);
-        if (zoneElement) {
-            createZoneCardElement(card, zoneElement);
-        }
-    });
-}
-
-/**
- * Clear all card drop zones from DOM
- */
-function clearCardDropZones() {
-    const zones = document.querySelectorAll('.card-drop-zone');
-    zones.forEach(z => z.remove());
-}
-
-// ============================================
-// SLOT FILL FEATURE (Auto / Manual)
-// ============================================
-
-/**
- * Clear multi-select state for drop zones
- */
-function clearDropZoneSelection() {
-    appState.selectedDropZones = [];
-    document.querySelectorAll('.card-drop-zone.zone-multi-selected').forEach(z => {
-        z.classList.remove('zone-multi-selected');
-    });
-}
-
-/**
- * Get selected empty slots (no card placed yet), sorted by cardPlaces index
- */
-function getSelectedEmptySlots() {
-    const selected = appState.selectedDropZones;
-    if (!selected.length) return [];
-
-    // Get the ordered list of cardPlaces, filtered to selected + empty
-    return appState.boardLayout.cardPlaces.filter(place => {
-        if (!selected.includes(place.id)) return false;
-        // Check if zone already has a card
-        const zoneName = 'grid-' + place.id;
-        return !appState.tableCards.some(c => c.zone === zoneName);
-    });
-}
-
-/**
- * Show the slot fill context menu at mouse position
- */
-function showSlotContextMenu(e) {
-    if (!slotContextMenu || !gameContainer) return;
-    hideSlotContextMenu();
-
-    const containerRect = gameContainer.getBoundingClientRect();
-    let x = e.clientX - containerRect.left;
-    let y = e.clientY - containerRect.top;
-
-    // Clamp to container bounds
-    const menuW = 140;
-    const menuH = 80;
-    if (x + menuW > containerRect.width) x = containerRect.width - menuW;
-    if (y + menuH > containerRect.height) y = containerRect.height - menuH;
-
-    slotContextMenu.style.left = x + 'px';
-    slotContextMenu.style.top = y + 'px';
-    slotContextMenu.classList.remove('hidden');
-}
-
-/**
- * Hide the slot fill context menu
- */
-function hideSlotContextMenu() {
-    if (slotContextMenu) slotContextMenu.classList.add('hidden');
-}
-
-/**
- * Auto fill selected empty slots with random cards from tray
- */
-function fillSlotsAuto() {
-    hideSlotContextMenu();
-
-    const emptySlots = getSelectedEmptySlots();
-    if (emptySlots.length === 0) {
-        setStatus('No empty slots selected', 'warning');
-        clearDropZoneSelection();
-        return;
-    }
-
-    // Get available tray cards
-    const available = appState.trayCards.filter(c => c.inTray);
-    if (available.length === 0) {
-        setStatus('No cards available in tray', 'warning');
-        return;
-    }
-
-    // Shuffle available cards (Fisher-Yates)
-    const shuffled = [...available];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-
-    // Take min(emptySlots, available) cards
-    const count = Math.min(emptySlots.length, shuffled.length);
-    const cardsToPlace = shuffled.slice(0, count);
-
-    // Bulk place
-    appState._bulkApplying = true;
-    for (let i = 0; i < count; i++) {
-        const place = emptySlots[i];
-        const card = cardsToPlace[i];
-        const zoneName = 'grid-' + place.id;
-        const rotation = place.rotation || 0;
-        const zoneElement = document.querySelector(`.card-drop-zone[data-zone="${zoneName}"]`);
-        if (zoneElement) {
-            placeCardInZone(card, zoneName, rotation, zoneElement);
-        }
-    }
-    appState._bulkApplying = false;
-
-    renderCardTray();
-    hideInstructions();
-    updateUI();
-    clearDropZoneSelection();
-
-    const msg = count < emptySlots.length
-        ? `Auto filled ${count}/${emptySlots.length} slots (tray ran out)`
-        : `Auto filled ${count} slots`;
-    setStatus(msg, 'success');
-}
-
-/**
- * Show manual fill overlay
- */
-function showManualFillOverlay() {
-    hideSlotContextMenu();
-    if (!manualFillOverlay) return;
-
-    const emptySlots = getSelectedEmptySlots();
-    if (emptySlots.length === 0) {
-        setStatus('No empty slots selected', 'warning');
-        clearDropZoneSelection();
-        return;
-    }
-
-    // Update slot count display
-    if (manualFillSlotCount) {
-        manualFillSlotCount.textContent = `${emptySlots.length} slot${emptySlots.length > 1 ? 's' : ''}`;
-    }
-
-    // Reset input and error
-    if (manualFillInput) manualFillInput.value = '';
-    if (manualFillError) {
-        manualFillError.textContent = '';
-        manualFillError.classList.add('hidden');
-    }
-
-    manualFillOverlay.classList.remove('hidden');
-    setTimeout(() => { if (manualFillInput) manualFillInput.focus(); }, 50);
-}
-
-/**
- * Hide manual fill overlay
- */
-function hideManualFillOverlay() {
-    if (manualFillOverlay) manualFillOverlay.classList.add('hidden');
-}
-
-/**
- * Execute manual fill — parse input, validate, then bulk place
- * All-or-nothing: if any card is invalid, nothing gets placed
- */
-function executeManualFill() {
-    if (!manualFillInput) return;
-
-    const raw = manualFillInput.value.trim();
-    if (!raw) {
-        showManualFillError('Please enter card codes');
-        return;
-    }
-
-    // Parse input: split by space, comma, or semicolon
-    const codes = raw.split(/[\s,;]+/).filter(s => s.length > 0);
-    if (codes.length === 0) {
-        showManualFillError('Please enter card codes');
-        return;
-    }
-
-    const emptySlots = getSelectedEmptySlots();
-    if (emptySlots.length === 0) {
-        showManualFillError('No empty slots available');
-        return;
-    }
-
-    // Check count mismatch
-    if (codes.length > emptySlots.length) {
-        showManualFillError(`Too many cards: ${codes.length} entered, but only ${emptySlots.length} empty slot${emptySlots.length > 1 ? 's' : ''} selected`);
-        return;
-    }
-
-    // Get available tray cards
-    const trayAvailable = appState.trayCards.filter(c => c.inTray);
-
-    // Resolve all card codes (all-or-nothing validation)
-    const resolvedCards = [];
-    const errors = [];
-    const usedBaseNames = new Set();
-
-    for (let i = 0; i < codes.length; i++) {
-        const code = codes[i];
-        const card = typeof resolveCardName === 'function'
-            ? resolveCardName(code, trayAvailable)
-            : trayAvailable.find(c => c.name === code);
-
-        if (!card) {
-            errors.push(`"${code}" — card not found`);
-            continue;
-        }
-
-        // Check duplicate in this batch
-        if (usedBaseNames.has(card.name)) {
-            errors.push(`"${code}" — duplicate card`);
-            continue;
-        }
-
-        usedBaseNames.add(card.name);
-        resolvedCards.push(card);
-    }
-
-    // If any errors, show them all and abort
-    if (errors.length > 0) {
-        showManualFillError(errors.join('\n'));
-        return;
-    }
-
-    // All valid — bulk place
-    hideManualFillOverlay();
-
-    appState._bulkApplying = true;
-    for (let i = 0; i < resolvedCards.length; i++) {
-        const place = emptySlots[i];
-        const card = resolvedCards[i];
-        const zoneName = 'grid-' + place.id;
-        const rotation = place.rotation || 0;
-        const zoneElement = document.querySelector(`.card-drop-zone[data-zone="${zoneName}"]`);
-        if (zoneElement) {
-            placeCardInZone(card, zoneName, rotation, zoneElement);
-        }
-    }
-    appState._bulkApplying = false;
-
-    renderCardTray();
-    hideInstructions();
-    updateUI();
-    clearDropZoneSelection();
-    setStatus(`Manually filled ${resolvedCards.length} slot${resolvedCards.length > 1 ? 's' : ''}`, 'success');
-}
-
-/**
- * Show error message in manual fill overlay
- */
-function showManualFillError(msg) {
-    if (manualFillError) {
-        manualFillError.textContent = msg;
-        manualFillError.classList.remove('hidden');
-    }
-}
-
-/**
- * Delete a card place by ID
- */
-function deleteCardPlace(placeId) {
-    appState.boardLayout.cardPlaces = appState.boardLayout.cardPlaces.filter(p => p.id !== placeId);
-
-    // Remove from any group
-    removeSlotFromAllGroups(placeId);
-    cleanupEmptyGroups();
-
-    // Re-label remaining places (preserve community zone labels)
-    let normalIdx = 0;
-    appState.boardLayout.cardPlaces.forEach((p) => {
-        if (!p.isCommunityZone) {
-            normalIdx++;
-            p.label = String(normalIdx);
-        }
-    });
-
-    updateCardPlacesList();
-    renderCardPlaceMarkers();
-    updateGroupPanelVisibility();
-    setStatus('Card place deleted');
-}
-
-/**
- * Select a card place marker
- */
-function selectCardPlace(place, markerElement) {
-    // Deselect previous
-    document.querySelectorAll('.card-place-marker.selected').forEach(m => m.classList.remove('selected'));
-
-    appState.selectedCardPlace = place;
-    if (markerElement) {
-        markerElement.classList.add('selected');
-    }
-
-    // Show CZ settings panel if community zone
-    const czPanel = document.getElementById('czSettingsPanel');
-    if (czPanel && place.isCommunityZone) {
-        czPanel.classList.remove('hidden');
-
-        // Populate settings
-        const nameEl = document.getElementById('czSettingName');
-        if (nameEl) nameEl.textContent = place.label || place.id;
-
-        // Mode buttons
-        czPanel.querySelectorAll('.cz-mode-option').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.mode === (place.czMode || 'row'));
-        });
-
-        // Width/Height sliders
-        const wSlider = document.getElementById('czWidthSlider');
-        const hSlider = document.getElementById('czHeightSlider');
-        const wValue = document.getElementById('czWidthValue');
-        const hValue = document.getElementById('czHeightValue');
-        if (wSlider) { wSlider.value = place.czWidth || 300; }
-        if (hSlider) { hSlider.value = place.czHeight || 120; }
-        if (wValue) { wValue.textContent = place.czWidth || 300; }
-        if (hValue) { hValue.textContent = place.czHeight || 120; }
-    } else if (czPanel) {
-        czPanel.classList.add('hidden');
-    }
-
-    // Enable cloner button when a slot is selected
-    updateClonerBtnState();
-}
-
-/**
- * Deselect any selected card place marker and hide CZ settings
- */
-function deselectCardPlace() {
-    document.querySelectorAll('.card-place-marker.selected').forEach(m => m.classList.remove('selected'));
-    document.querySelectorAll('.card-place-marker.multi-selected').forEach(m => m.classList.remove('multi-selected'));
-    appState.selectedCardPlace = null;
-    appState.selectedCardPlaces = [];
-    const czPanel = document.getElementById('czSettingsPanel');
-    if (czPanel) czPanel.classList.add('hidden');
-
-    // Disable cloner button when nothing selected
-    updateClonerBtnState();
-
-    if (typeof syncTransformIndicator === 'function') syncTransformIndicator();
-}
-
-/**
- * Update the cloner button enabled/disabled state
- * Cloner requires exactly one slot to be selected as source
- */
-function updateClonerBtnState() {
-    var clonerBtn = document.getElementById('clonerBtn');
-    if (clonerBtn) {
-        clonerBtn.disabled = !appState.selectedCardPlace;
-    }
-}
-
-/**
- * Initialize CZ settings panel event listeners
- */
-function initCZSettingsPanel() {
-    const czPanel = document.getElementById('czSettingsPanel');
-    if (!czPanel) return;
-
-    // Mode buttons
-    czPanel.querySelectorAll('.cz-mode-option').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const place = appState.selectedCardPlace;
-            if (!place || !place.isCommunityZone) return;
-
-            place.czMode = btn.dataset.mode;
-            czPanel.querySelectorAll('.cz-mode-option').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            renderCardPlaceMarkers();
-            // Re-select to keep panel open
-            const marker = document.querySelector(`.card-place-marker[data-place-id="${place.id}"]`);
-            if (marker) selectCardPlace(place, marker);
-            debugLog(`[CommunityZone] ${place.id} mode → ${place.czMode}`);
-        });
-    });
-
-    // Width slider
-    const wSlider = document.getElementById('czWidthSlider');
-    const wValue = document.getElementById('czWidthValue');
-    if (wSlider) {
-        wSlider.addEventListener('input', () => {
-            const place = appState.selectedCardPlace;
-            if (!place || !place.isCommunityZone) return;
-            place.czWidth = parseInt(wSlider.value);
-            if (wValue) wValue.textContent = wSlider.value;
-            renderCardPlaceMarkers();
-            const marker = document.querySelector(`.card-place-marker[data-place-id="${place.id}"]`);
-            if (marker) {
-                marker.classList.add('selected');
-            }
-        });
-    }
-
-    // Height slider
-    const hSlider = document.getElementById('czHeightSlider');
-    const hValue = document.getElementById('czHeightValue');
-    if (hSlider) {
-        hSlider.addEventListener('input', () => {
-            const place = appState.selectedCardPlace;
-            if (!place || !place.isCommunityZone) return;
-            place.czHeight = parseInt(hSlider.value);
-            if (hValue) hValue.textContent = hSlider.value;
-            renderCardPlaceMarkers();
-            const marker = document.querySelector(`.card-place-marker[data-place-id="${place.id}"]`);
-            if (marker) {
-                marker.classList.add('selected');
-            }
-        });
-    }
-
-    // Click on table/container to deselect
-    const pokerTable = document.getElementById('pokerTable');
-    if (pokerTable) {
-        pokerTable.addEventListener('click', (e) => {
-            // Only deselect if clicking directly on the table (not on a marker)
-            if (e.target === pokerTable || e.target.classList.contains('table-felt') || e.target.classList.contains('table-border-ring')) {
-                if (appState.phase === 'board-setting') {
-                    deselectCardPlace();
-                }
-            }
-        });
-    }
-
-    // Lasso selection: mousedown on gameContainer (board-setting phase)
-    if (gameContainer) {
-        let lassoRect = null;
-        let lassoStartX = 0, lassoStartY = 0;
-        let isLassoing = false;
-
-        gameContainer.addEventListener('mousedown', (e) => {
-            if (appState.phase !== 'board-setting' && appState.phase !== 'setup') return;
-            if (e.button !== 0) return;
-            // Only start lasso if clicking on table/felt (not on markers, buttons, cards, etc.)
-            const target = e.target;
-            if (target.closest('.card-place-marker') || target.closest('.dealing-card-slot') || target.closest('button')) return;
-            // In setup phase: don't start lasso if clicking on a card or filled zone
-            if (appState.phase === 'setup' && (target.closest('.zone-card') || target.closest('.card'))) return;
-
-            const containerRect = gameContainer.getBoundingClientRect();
-            lassoStartX = e.clientX - containerRect.left;
-            lassoStartY = e.clientY - containerRect.top;
-            isLassoing = true;
-
-            // Create lasso rect element
-            lassoRect = document.createElement('div');
-            lassoRect.className = 'selection-rect';
-            lassoRect.style.left = `${lassoStartX}px`;
-            lassoRect.style.top = `${lassoStartY}px`;
-            lassoRect.style.width = '0px';
-            lassoRect.style.height = '0px';
-            gameContainer.appendChild(lassoRect);
-        });
-
-        document.addEventListener('mousemove', (e) => {
-            if (!isLassoing || !lassoRect) return;
-            
-            // Fix for stuck drag: if left mouse button is no longer pressed (e.g. released outside window)
-            if (e.buttons !== 1) {
-                // Abort lasso
-                isLassoing = false;
-                if (lassoRect) lassoRect.remove();
-                lassoRect = null;
-                return;
-            }
-
-            const containerRect = gameContainer.getBoundingClientRect();
-            const currentX = e.clientX - containerRect.left;
-            const currentY = e.clientY - containerRect.top;
-
-            const left = Math.min(lassoStartX, currentX);
-            const top = Math.min(lassoStartY, currentY);
-            const width = Math.abs(currentX - lassoStartX);
-            const height = Math.abs(currentY - lassoStartY);
-
-            lassoRect.style.left = `${left}px`;
-            lassoRect.style.top = `${top}px`;
-            lassoRect.style.width = `${width}px`;
-            lassoRect.style.height = `${height}px`;
-        });
-
-        document.addEventListener('mouseup', (e) => {
-            if (!isLassoing || !lassoRect) return;
-            isLassoing = false;
-
-            const rectBounds = lassoRect.getBoundingClientRect();
-            lassoRect.remove();
-            lassoRect = null;
-
-            // Minimum size threshold to avoid accidental clicks
-            if (rectBounds.width < 5 && rectBounds.height < 5) return;
-
-            if (appState.phase === 'setup') {
-                // Setup phase: select empty drop zones and show fill context menu
-                clearDropZoneSelection();
-                const dropZones = document.querySelectorAll('.card-drop-zone');
-                dropZones.forEach(zone => {
-                    const zoneBounds = zone.getBoundingClientRect();
-                    if (zoneBounds.left < rectBounds.right &&
-                        zoneBounds.right > rectBounds.left &&
-                        zoneBounds.top < rectBounds.bottom &&
-                        zoneBounds.bottom > rectBounds.top) {
-                        const zoneName = zone.dataset.zone;
-                        if (!zoneName) return;
-                        const placeId = zoneName.replace('grid-', '');
-                        // Only select EMPTY slots (no card in this zone)
-                        const hasCard = appState.tableCards.some(c => c.zone === zoneName);
-                        if (!hasCard) {
-                            appState.selectedDropZones.push(placeId);
-                            zone.classList.add('zone-multi-selected');
-                        }
-                    }
-                });
-
-                if (appState.selectedDropZones.length > 0) {
-                    debugLog(`[LassoSelect] Selected ${appState.selectedDropZones.length} empty slots`);
-                    // Show fill context menu at mouse position
-                    showSlotContextMenu(e);
-                }
-            } else {
-                // Board-setting phase: select markers
-                const markers = document.querySelectorAll('.card-place-marker');
-                appState.selectedCardPlaces = [];
-                markers.forEach(marker => {
-                    const markerBounds = marker.getBoundingClientRect();
-                    if (markerBounds.left < rectBounds.right &&
-                        markerBounds.right > rectBounds.left &&
-                        markerBounds.top < rectBounds.bottom &&
-                        markerBounds.bottom > rectBounds.top) {
-                        const placeId = marker.dataset.placeId;
-                        const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
-                        if (place) {
-                            appState.selectedCardPlaces.push(place);
-                            marker.classList.add('multi-selected');
-                        }
-                    } else {
-                        marker.classList.remove('multi-selected');
-                    }
-                });
-
-                if (appState.selectedCardPlaces.length > 0) {
-                    debugLog(`[LassoSelect] Selected ${appState.selectedCardPlaces.length} markers`);
-                }
-                updateCreateGroupBtnState();
-                if (typeof syncTransformIndicator === 'function') syncTransformIndicator();
-            }
-        });
-    }
-
-    // Ctrl+Z: Undo marker positions, rotation, and group operations (board-setting phase)
-    document.addEventListener('keydown', (e) => {
-        if (appState.phase !== 'board-setting') return;
-        if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-            e.preventDefault();
-
-            // Try marker undo stack first (position/rotation changes OR delete undo)
-            if (appState.markerUndoStack.length > 0) {
-                const snapshot = appState.markerUndoStack.pop();
-
-                // Delete undo: restore full cardPlaces + slotGroups
-                if (snapshot.type === 'delete') {
-                    appState.boardLayout.cardPlaces = snapshot.cardPlaces;
-                    appState.boardLayout.slotGroups = snapshot.slotGroups;
-                    renderCardPlaceMarkers();
-                    updateCardPlacesList();
-                    updateGroupPanelVisibility();
-                    debugLog(`[Undo] Restored ${snapshot.cardPlaces.length} markers after delete`);
-                }
-                // Position/rotation undo
-                else {
-                    snapshot.forEach(saved => {
-                        const place = appState.boardLayout.cardPlaces.find(p => p.id === saved.id);
-                        if (place) {
-                            place.x = saved.x;
-                            place.y = saved.y;
-                            place.rotation = saved.rotation || 0;
-                            // Restore CZ dimensions if present
-                            if (saved.czWidth !== undefined) place.czWidth = saved.czWidth;
-                            if (saved.czHeight !== undefined) place.czHeight = saved.czHeight;
-                        }
-                    });
-                    renderCardPlaceMarkers();
-                    updateCardPlacesList();
-                    debugLog(`[Undo] Restored marker state (${appState.markerUndoStack.length} left)`);
-                }
-            }
-            // Otherwise try group undo stack
-            else if (typeof undoGroupAction === 'function') {
-                undoGroupAction();
-                renderGroupPanel();
-                renderCardPlaceMarkers();
-                debugLog('[Undo] Restored group state');
-            }
-        }
-
-        // Delete/Backspace: delete selected markers (multi-select or single)
-        if (e.key === 'Delete' || e.key === 'Backspace') {
-            // Don't delete if focus is in a text input/textarea (allow range/checkbox/radio)
-            if (e.target.tagName === 'TEXTAREA') return;
-            if (e.target.tagName === 'INPUT' && !['range', 'checkbox', 'radio'].includes(e.target.type)) return;
-
-            const toDelete = appState.selectedCardPlaces.length > 0
-                ? [...appState.selectedCardPlaces]
-                : (appState.selectedCardPlace ? [appState.selectedCardPlace] : []);
-            if (toDelete.length === 0) return;
-
-            e.preventDefault();
-
-            // Push full cardPlaces + slotGroups snapshot for undo
-            appState.markerUndoStack.push({
-                type: 'delete',
-                cardPlaces: JSON.parse(JSON.stringify(appState.boardLayout.cardPlaces)),
-                slotGroups: JSON.parse(JSON.stringify(appState.boardLayout.slotGroups || []))
-            });
-
-            toDelete.forEach(p => deleteCardPlace(p.id));
-            deselectCardPlace();
-            debugLog(`[Delete] Removed ${toDelete.length} marker(s)`);
-            setStatus(`Deleted ${toDelete.length} card place(s)`);
-        }
-    });
-}
-
-/**
- * Start dragging a marker (supports group drag for multi-selected markers)
- */
-function startDragMarker(e, place, marker) {
-    if (e.button !== 0) return; // Left click only
-
-    e.preventDefault();
-    marker.classList.add('dragging');
-
-    const pokerTable = document.getElementById('pokerTable');
-    const tableRect = pokerTable.getBoundingClientRect();
-    const containerRect = gameContainer.getBoundingClientRect();
-    const tableWidth = pokerTable.offsetWidth;
-    const tableHeight = pokerTable.offsetHeight;
-
-    // Calculate offset from gameContainer to pokerTable
-    const offsetX = tableRect.left - containerRect.left;
-    const offsetY = tableRect.top - containerRect.top;
-
-    // Scale factors: UI coordinates (1280x720) → DOM pixels
-    const scaleX = tableWidth / UI_WIDTH;
-    const scaleY = tableHeight / UI_HEIGHT;
-
-    const startX = e.clientX;
-    const startY = e.clientY;
-
-    // Save position+rotation snapshot for undo (before any movement)
-    const undoSnapshot = appState.boardLayout.cardPlaces.map(p => ({ id: p.id, x: p.x, y: p.y, rotation: p.rotation || 0 }));
-    let hasMoved = false;
-
-    // Check if this is a group drag (marker is in multi-select)
-    const isGroupDrag = appState.selectedCardPlaces.includes(place) && appState.selectedCardPlaces.length > 1;
-
-    // For group drag: store initial positions for all selected markers
-    let groupData = [];
-    if (isGroupDrag) {
-        groupData = appState.selectedCardPlaces.map(p => {
-            const markerW = p.isCommunityZone ? (p.czWidth || 300) * scaleX : CARD_WIDTH;
-            const markerH = p.isCommunityZone ? (p.czHeight || 120) * scaleY : CARD_HEIGHT;
-            const markerEl = document.querySelector(`.card-place-marker[data-place-id="${p.id}"]`);
-            return {
-                place: p,
-                marker: markerEl,
-                startLeft: offsetX + p.x * scaleX - markerW / 2,
-                startTop: offsetY + p.y * scaleY - markerH / 2,
-                markerW,
-                markerH
-            };
-        });
-    } else {
-        // Single drag
-        const markerW = place.isCommunityZone ? (place.czWidth || 300) * scaleX : CARD_WIDTH;
-        const markerH = place.isCommunityZone ? (place.czHeight || 120) * scaleY : CARD_HEIGHT;
-        groupData = [{
-            place,
-            marker,
-            startLeft: offsetX + place.x * scaleX - markerW / 2,
-            startTop: offsetY + place.y * scaleY - markerH / 2,
-            markerW,
-            markerH
-        }];
-    }
-
-    function onMouseMove(moveE) {
-        hasMoved = true;
-        const dx = moveE.clientX - startX;
-        const dy = moveE.clientY - startY;
-
-        groupData.forEach(item => {
-            // New position in container coordinates
-            let newLeft = item.startLeft + dx;
-            let newTop = item.startTop + dy;
-
-            // Constrain to game container bounds
-            newLeft = Math.max(0, Math.min(containerRect.width - item.markerW, newLeft));
-            newTop = Math.max(0, Math.min(containerRect.height - item.markerH, newTop));
-
-            // Update marker position
-            if (item.marker) {
-                item.marker.style.left = `${newLeft}px`;
-                item.marker.style.top = `${newTop}px`;
-            }
-
-            // Convert DOM pixels back to UI coordinates for storage (center point)
-            item.place.x = (newLeft - offsetX + item.markerW / 2) / scaleX;
-            item.place.y = (newTop - offsetY + item.markerH / 2) / scaleY;
-        });
-
-        // Update cloner preview if cloner is active and source is being dragged
-        if (typeof clonerState !== 'undefined' && clonerState.active && clonerState.sourcePlace) {
-            clonerState.sourceX = clonerState.sourcePlace.x;
-            clonerState.sourceY = clonerState.sourcePlace.y;
-            if (typeof updateClonerPreview === 'function') updateClonerPreview();
-        }
-    }
-
-    function onMouseUp() {
-        marker.classList.remove('dragging');
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-        // Push undo snapshot only if marker actually moved
-        if (hasMoved) {
-            appState.markerUndoStack.push(undoSnapshot);
-            if (appState.markerUndoStack.length > 50) appState.markerUndoStack.shift();
-        }
-        if (isGroupDrag) {
-            debugLog(`[GroupDrag] Moved ${groupData.length} markers`);
-        } else {
-            debugLog(`[DragMarker] Place ${place.id} → UI(${Math.round(place.x)}, ${Math.round(place.y)})`);
-        }
-        updateCardPlacesList();
-    }
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-}
-
-/**
- * Start rotating a card place marker by dragging the rotation handle
- * Calculates angle from mouse position relative to marker center
- * Shift = snap to 15° increments
- */
-function startRotateMarker(e, place, marker) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    marker.classList.add('rotating');
-
-    // Get marker center in viewport coordinates
-    const markerRect = marker.getBoundingClientRect();
-    const centerX = markerRect.left + markerRect.width / 2;
-    const centerY = markerRect.top + markerRect.height / 2;
-
-    // Calculate initial angle offset so rotation starts from current angle
-    const startMouseAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180 / Math.PI;
-    const startRotation = place.rotation || 0;
-
-    // Save undo snapshot
-    const undoSnapshot = appState.boardLayout.cardPlaces.map(p => ({ id: p.id, x: p.x, y: p.y, rotation: p.rotation || 0 }));
-    let hasRotated = false;
-
-    function onMouseMove(moveE) {
-        hasRotated = true;
-        const mouseAngle = Math.atan2(moveE.clientY - centerY, moveE.clientX - centerX) * 180 / Math.PI;
-        let newRotation = startRotation + (mouseAngle - startMouseAngle);
-
-        // Normalize to -180..180
-        while (newRotation > 180) newRotation -= 360;
-        while (newRotation < -180) newRotation += 360;
-
-        // Shift = snap to 15° increments
-        if (moveE.shiftKey) {
-            newRotation = Math.round(newRotation / 15) * 15;
-        }
-
-        place.rotation = Math.round(newRotation);
-        marker.style.transform = `rotate(${place.rotation}deg)`;
-    }
-
-    function onMouseUp() {
-        marker.classList.remove('rotating');
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-        if (hasRotated) {
-            appState.markerUndoStack.push(undoSnapshot);
-            if (appState.markerUndoStack.length > 50) appState.markerUndoStack.shift();
-        }
-        debugLog(`[RotateMarker] Place ${place.id} → ${place.rotation}°`);
-        updateCardPlacesList();
-    }
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-}
-
-/**
- * Start resizing a community zone marker
- * Resizes from CENTER (anchor at center, not top-left)
- */
-function startResizeCommunityZone(e, place, marker, scaleX, scaleY) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const startW = (place.czWidth || 300) * scaleX;
-    const startH = (place.czHeight || 120) * scaleY;
-    const startLeft = parseFloat(marker.style.left);
-    const startTop = parseFloat(marker.style.top);
-
-    // Push undo snapshot before resize (includes CZ dimensions)
-    const undoSnapshot = appState.boardLayout.cardPlaces.map(p => ({
-        id: p.id, x: p.x, y: p.y, rotation: p.rotation || 0,
-        czWidth: p.czWidth, czHeight: p.czHeight
-    }));
-    let hasResized = false;
-
-    marker.classList.add('resizing');
-
-    function onMouseMove(moveE) {
-        const dx = moveE.clientX - startX;
-        const dy = moveE.clientY - startY;
-
-        const newW = Math.max(CARD_WIDTH * 2, startW + dx);
-        const newH = Math.max(CARD_HEIGHT, startH + dy);
-        hasResized = true;
-
-        // Adjust left/top to keep center fixed (grow from center, not top-left)
-        const deltaW = newW - startW;
-        const deltaH = newH - startH;
-        marker.style.left = `${startLeft - deltaW / 2}px`;
-        marker.style.top = `${startTop - deltaH / 2}px`;
-        marker.style.width = `${newW}px`;
-        marker.style.height = `${newH}px`;
-
-        // Store back in UI coordinates
-        place.czWidth = Math.round(newW / scaleX);
-        place.czHeight = Math.round(newH / scaleY);
-    }
-
-    function onMouseUp() {
-        marker.classList.remove('resizing');
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-        if (hasResized) {
-            appState.markerUndoStack.push(undoSnapshot);
-            if (appState.markerUndoStack.length > 50) appState.markerUndoStack.shift();
-        }
-        debugLog(`[CommunityZone] ${place.id} resized → ${place.czWidth}×${place.czHeight} UI px`);
-        // Re-render to apply final state
-        renderCardPlaceMarkers();
-    }
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-}
-
-/**
- * Update the card places list in the director panel
- */
-function updateCardPlacesList() {
-    if (!cardPlacesList) return;
-
-    const count = appState.boardLayout.cardPlaces.length;
-    cardPlacesList.innerHTML = `<div class="list-header">Card Places (${count})</div>`;
-
-    appState.boardLayout.cardPlaces.forEach((place, index) => {
-        const item = document.createElement('div');
-        item.className = 'card-place-item';
-        const isCZ = place.isCommunityZone;
-        const labelText = isCZ
-            ? `📦 ${place.label || 'CZ'} (${(place.czMode || 'row').toUpperCase()})`
-            : (place.label || index + 1);
-        item.innerHTML = `
-            <span class="place-label">${labelText}</span>
-            <span class="place-coords">(${Math.round(place.x)}, ${Math.round(place.y)})${isCZ ? ` ${place.czWidth}×${place.czHeight}` : ''}</span>
-            <button class="delete-place-btn" data-place-id="${place.id}">✕</button>
-        `;
-
-        // Delete button handler
-        item.querySelector('.delete-place-btn').addEventListener('click', () => {
-            deleteCardPlace(place.id);
-        });
-
-        cardPlacesList.appendChild(item);
-    });
-}
-
-/**
- * Toggle visibility between cardPlacesList and slotGroupPanel
- * Panel is ALWAYS visible (for createGroupBtn access) — BUG #1 fix
- * Card places list hidden when groups exist, shown otherwise
- */
-function updateGroupPanelVisibility() {
-    var groupPanel = document.getElementById('slotGroupPanel');
-    var placesList = document.getElementById('cardPlacesList');
-    if (!groupPanel || !placesList) return;
-
-    // Panel always visible in board-setting mode
-    groupPanel.classList.remove('hidden');
-
-    var hasGroups = appState.boardLayout.slotGroups && appState.boardLayout.slotGroups.length > 0;
-    if (hasGroups) {
-        placesList.classList.add('hidden');
-        renderGroupPanel();
-    } else {
-        placesList.classList.remove('hidden');
-        // Show empty hint in group list
-        var groupList = document.getElementById('groupList');
-        if (groupList) {
-            groupList.innerHTML = '<div class="group-ungrouped">No groups yet — select 2+ markers then click + Group</div>';
-        }
-    }
-    updateCreateGroupBtnState();
-}
-
-/**
- * Render the group panel with drag-to-reorder support
- * Groups displayed in reverse order: top item = highest groupOrder = front/closest to camera
- */
-function renderGroupPanel() {
-    var groupList = document.getElementById('groupList');
-    if (!groupList) return;
-    groupList.innerHTML = '';
-
-    var groups = appState.boardLayout.slotGroups || [];
-    if (groups.length === 0) return;
-
-    // Display in reverse: highest groupOrder at top (= "front" like Photoshop)
-    var sorted = groups.slice().sort(function (a, b) { return b.groupOrder - a.groupOrder; });
-
-    sorted.forEach(function (group, displayIdx) {
-        var item = document.createElement('div');
-        item.className = 'group-item';
-        item.dataset.groupId = group.id;
-        item.dataset.groupIndex = String(groups.indexOf(group));
-        item.draggable = true;
-        item.style.borderLeftColor = group.color;
-
-        // Color dot
-        var dot = document.createElement('span');
-        dot.className = 'group-color-dot';
-        dot.style.backgroundColor = group.color;
-        item.appendChild(dot);
-
-        // Editable name
-        var name = document.createElement('span');
-        name.className = 'group-name';
-        name.textContent = group.name;
-        name.addEventListener('dblclick', function () {
-            name.contentEditable = 'true';
-            name.focus();
-            // Select all text
-            var range = document.createRange();
-            range.selectNodeContents(name);
-            var sel = window.getSelection();
-            sel.removeAllRanges();
-            sel.addRange(range);
-        });
-        name.addEventListener('blur', function () {
-            name.contentEditable = 'false';
-            var newName = name.textContent.trim();
-            if (newName && newName !== group.name) {
-                renameSlotGroup(group.id, newName);
-            } else {
-                name.textContent = group.name;
-            }
-        });
-        name.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                name.blur();
-            }
-        });
-        item.appendChild(name);
-
-        // Slot count
-        var count = document.createElement('span');
-        count.className = 'group-slot-count';
-        count.textContent = '(' + group.slotIds.length + ')';
-        item.appendChild(count);
-
-        // Actions
-        var actions = document.createElement('div');
-        actions.className = 'group-actions';
-
-        // Edit button for cloner groups
-        if (group.clonerConfig) {
-            var editBtn = document.createElement('button');
-            editBtn.className = 'edit-group';
-            editBtn.textContent = '✏️';
-            editBtn.title = 'Edit cloner settings';
-            editBtn.addEventListener('click', function (e) {
-                e.stopPropagation();
-                editCloner(group.id);
-            });
-            actions.appendChild(editBtn);
-        }
-
-        var deleteBtn = document.createElement('button');
-        deleteBtn.className = 'delete-group';
-        deleteBtn.textContent = '✕';
-        deleteBtn.title = group.clonerConfig ? 'Delete cloner group & all slots' : 'Delete group';
-        deleteBtn.addEventListener('click', function (e) {
-            e.stopPropagation();
-            if (group.clonerConfig) {
-                deleteClonerGroup(group.id);
-            } else {
-                deleteSlotGroup(group.id);
-            }
-            renderGroupPanel();
-            renderCardPlaceMarkers();
-        });
-        actions.appendChild(deleteBtn);
-        item.appendChild(actions);
-
-        // Hover: highlight markers on board
-        item.addEventListener('mouseenter', function () {
-            highlightGroupMarkers(group.id, true);
-        });
-        item.addEventListener('mouseleave', function () {
-            highlightGroupMarkers(group.id, false);
-        });
-
-        // Click: toggle-select all markers in this group
-        item.addEventListener('click', function (e) {
-            // Don't trigger on delete button or name editing
-            if (e.target.closest('.group-actions') || e.target.closest('.group-name[contenteditable="true"]')) return;
-
-            // Check if this group's slots are already fully selected
-            var allSelected = group.slotIds.length > 0 && group.slotIds.every(function (sid) {
-                return appState.selectedCardPlaces.some(function (p) { return p.id === sid; });
-            });
-
-            if (allSelected) {
-                // Unselect: remove this group's slots from selection
-                appState.selectedCardPlaces = appState.selectedCardPlaces.filter(function (p) {
-                    return group.slotIds.indexOf(p.id) < 0;
-                });
-                item.classList.remove('selected');
-            } else {
-                // Select: add all group's slots (avoid duplicates)
-                group.slotIds.forEach(function (sid) {
-                    var alreadyIn = appState.selectedCardPlaces.some(function (p) { return p.id === sid; });
-                    if (!alreadyIn) {
-                        var place = appState.boardLayout.cardPlaces.find(function (p) { return p.id === sid; });
-                        if (place) appState.selectedCardPlaces.push(place);
-                    }
-                });
-                item.classList.add('selected');
-            }
-
-            // Update marker visual state on board
-            document.querySelectorAll('.card-place-marker').forEach(function (m) {
-                var pid = m.dataset.placeId;
-                if (appState.selectedCardPlaces.some(function (p) { return p.id === pid; })) {
-                    m.classList.add('multi-selected');
-                } else {
-                    m.classList.remove('multi-selected');
-                }
-            });
-
-            // Sync other group items' selected state
-            groupList.querySelectorAll('.group-item').forEach(function (gi) {
-                var gid = gi.dataset.groupId;
-                var grp = groups.find(function (g) { return g.id === gid; });
-                if (!grp) return;
-                var grpAllSelected = grp.slotIds.length > 0 && grp.slotIds.every(function (sid) {
-                    return appState.selectedCardPlaces.some(function (p) { return p.id === sid; });
-                });
-                if (grpAllSelected) {
-                    gi.classList.add('selected');
-                } else {
-                    gi.classList.remove('selected');
-                }
-            });
-
-            updateCreateGroupBtnState();
-            debugLog('[GroupPanel] Click ' + group.name + ' → ' + appState.selectedCardPlaces.length + ' selected');
-        });
-
-        // HTML5 Drag-to-reorder
-        item.addEventListener('dragstart', function (e) {
-            e.dataTransfer.setData('text/plain', String(groups.indexOf(group)));
-            e.dataTransfer.effectAllowed = 'move';
-            item.classList.add('dragging');
-        });
-        item.addEventListener('dragend', function () {
-            item.classList.remove('dragging');
-            // Remove all drag-over states
-            groupList.querySelectorAll('.drag-over').forEach(function (el) {
-                el.classList.remove('drag-over');
-            });
-        });
-        item.addEventListener('dragover', function (e) {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            item.classList.add('drag-over');
-        });
-        item.addEventListener('dragleave', function () {
-            item.classList.remove('drag-over');
-        });
-        item.addEventListener('drop', function (e) {
-            e.preventDefault();
-            item.classList.remove('drag-over');
-            var fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
-            var toIndex = groups.indexOf(group);
-            if (fromIndex !== toIndex && !isNaN(fromIndex)) {
-                reorderSlotGroups(fromIndex, toIndex);
-                renderGroupPanel();
-                renderCardPlaceMarkers();
-            }
-        });
-
-        groupList.appendChild(item);
-    });
-
-    // Show ungrouped count
-    var allSlotIds = [];
-    groups.forEach(function (g) {
-        allSlotIds = allSlotIds.concat(g.slotIds);
-    });
-    var ungroupedCount = (appState.boardLayout.cardPlaces || []).filter(function (p) {
-        return allSlotIds.indexOf(p.id) < 0;
-    }).length;
-    if (ungroupedCount > 0) {
-        var ungroupedDiv = document.createElement('div');
-        ungroupedDiv.className = 'group-ungrouped';
-        ungroupedDiv.textContent = ungroupedCount + ' ungrouped slot' + (ungroupedCount > 1 ? 's' : '');
-        groupList.appendChild(ungroupedDiv);
-    }
-
-    updateCreateGroupBtnState();
-}
-
-/**
- * Update the create group button enabled/disabled state
- * Called from shift-click handler, renderGroupPanel, and updateGroupPanelVisibility
- */
-function updateCreateGroupBtnState() {
-    var createBtn = document.getElementById('createGroupBtn');
-    if (createBtn) {
-        createBtn.disabled = !appState.selectedCardPlaces || appState.selectedCardPlaces.length < 2;
-    }
-}
-
-/**
- * Highlight or unhighlight markers belonging to a group on the board
- * @param {string} groupId
- * @param {boolean} highlight
- */
-function highlightGroupMarkers(groupId, highlight) {
-    var groups = appState.boardLayout.slotGroups || [];
-    var group = groups.find(function (g) { return g.id === groupId; });
-    if (!group) return;
-
-    group.slotIds.forEach(function (slotId) {
-        var marker = document.querySelector('.card-place-marker[data-place-id="' + slotId + '"]');
-        if (marker) {
-            if (highlight) {
-                marker.classList.add('group-highlight');
-            } else {
-                marker.classList.remove('group-highlight');
-            }
-        }
-    });
-}
-
-/**
- * Show/hide the group order section in Record phase
- */
-function updateGroupOrderSectionVisibility() {
-    var section = document.getElementById('groupOrderSection');
-    if (!section) return;
-    var hasGroups = appState.boardLayout.slotGroups && appState.boardLayout.slotGroups.length > 0;
-    if (hasGroups) {
-        section.classList.remove('hidden');
-        renderGroupOrderStrip();
-    } else {
-        section.classList.add('hidden');
-    }
-}
-
-/**
- * Render group order chips in Record mode — drag to reorder for this step
- * Order: left = back (lowest groupOrder), right = front (highest)
- */
-function renderGroupOrderStrip() {
-    var strip = document.getElementById('groupOrderStrip');
-    if (!strip) return;
-    strip.innerHTML = '';
-
-    var groups = appState.boardLayout.slotGroups || [];
-    if (groups.length === 0) return;
-
-    // Build working order: start from current order, apply pending overrides
-    var workingGroups = groups.map(function (g) {
-        var order = g.groupOrder;
-        if (appState.pendingGroupOrderOverrides && appState.pendingGroupOrderOverrides[g.id] !== undefined) {
-            order = appState.pendingGroupOrderOverrides[g.id];
-        }
-        return { id: g.id, name: g.name, color: g.color, workingOrder: order };
-    });
-    workingGroups.sort(function (a, b) { return a.workingOrder - b.workingOrder; });
-
-    workingGroups.forEach(function (wg, displayIdx) {
-        var chip = document.createElement('div');
-        chip.className = 'group-order-chip';
-        chip.style.backgroundColor = wg.color;
-        chip.dataset.groupId = wg.id;
-        chip.dataset.displayIdx = String(displayIdx);
-        chip.draggable = true;
-
-        // Order number
-        var orderSpan = document.createElement('span');
-        orderSpan.className = 'chip-order';
-        orderSpan.textContent = String(displayIdx);
-        chip.appendChild(orderSpan);
-
-        // Name
-        var nameSpan = document.createElement('span');
-        nameSpan.textContent = wg.name;
-        chip.appendChild(nameSpan);
-
-        // Drag handlers
-        chip.addEventListener('dragstart', function (e) {
-            e.dataTransfer.setData('text/plain', String(displayIdx));
-            e.dataTransfer.effectAllowed = 'move';
-            chip.classList.add('dragging');
-        });
-        chip.addEventListener('dragend', function () {
-            chip.classList.remove('dragging');
-            strip.querySelectorAll('.drag-over').forEach(function (el) { el.classList.remove('drag-over'); });
-        });
-        chip.addEventListener('dragover', function (e) {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            chip.classList.add('drag-over');
-        });
-        chip.addEventListener('dragleave', function () {
-            chip.classList.remove('drag-over');
-        });
-        chip.addEventListener('drop', function (e) {
-            e.preventDefault();
-            chip.classList.remove('drag-over');
-            var fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
-            var toIdx = displayIdx;
-            if (fromIdx !== toIdx && !isNaN(fromIdx)) {
-                // Reorder workingGroups locally
-                var moved = workingGroups.splice(fromIdx, 1)[0];
-                workingGroups.splice(toIdx, 0, moved);
-                // Build overrides map
-                var overrides = {};
-                workingGroups.forEach(function (wg2, i) {
-                    overrides[wg2.id] = i;
-                });
-
-                if (appState.isEditingStep) {
-                    // During active step edit: store as pending, attach on finish
-                    appState.pendingGroupOrderOverrides = overrides;
-                } else {
-                    // Not editing: auto-create standalone group-reorder step
-                    var reorderStep = {
-                        stepId: scenarioData.scenario.length + 1,
-                        duration: stepDuration ? parseFloat(stepDuration.value) : 1.0,
-                        actions: [],
-                        groupOrderOverrides: JSON.parse(JSON.stringify(overrides))
-                    };
-
-                    // Apply overrides to actual group.groupOrder
-                    var groups2 = appState.boardLayout.slotGroups || [];
-                    groups2.forEach(function (g) {
-                        if (overrides[g.id] !== undefined) {
-                            g.groupOrder = overrides[g.id];
-                        }
-                    });
-
-                    // Take snapshot for replay
-                    var snap = takeSnapshot();
-                    scenarioData.scenario.push(reorderStep);
-                    stepSnapshots.push(JSON.parse(JSON.stringify(snap)));
-
-                    totalSteps.textContent = scenarioData.scenario.length;
-                    renderTimeline();
-                    updateUI();
-                    setStatus('Step ' + reorderStep.stepId + ' auto-created: group order changed', 'success');
-                }
-                renderGroupOrderStrip();
-            }
-        });
-
-        strip.appendChild(chip);
-    });
-}
-
-// ============================================
-// TIMELINE MODULES INTEGRATION
-// ============================================
-
-// Module instances (lazy init)
-let timelineModules = null;
-let timelineUI = null;
-
-/**
- * Initialize timeline modules integration
- * This is called from init() and sets up all new timeline functionality
- */
-function initTimelineModulesIntegration() {
-    // Check if modules are available
-    if (typeof TIMELINE_FEATURE_FLAGS === 'undefined') {
-        console.log('[Timeline] Modules not loaded - skipping initialization');
-        return;
-    }
-
-    if (!TIMELINE_FEATURE_FLAGS.ENABLED) {
-        console.log('[Timeline] Modules disabled via feature flag');
-        return;
-    }
-
-    console.log('[Timeline] Initializing modules integration...');
-
-    try {
-        // Initialize core modules
-        timelineModules = initTimelineModules(
-            scenarioData,
-            stepSnapshots,
-            restoreFromSnapshot
-        );
-
-        if (!timelineModules) {
-            console.warn('[Timeline] Module initialization returned null');
-            return;
-        }
-
-        // Initialize Timeline UI if container exists
-        const timelineBar = document.getElementById('timelineBar');
-        if (timelineBar && TIMELINE_FEATURE_FLAGS.TIMELINE_UI) {
-            timelineUI = new TimelineUI(timelineBar, {
-                timelineManager: timelineModules.timelineManager,
-                playbackController: timelineModules.playbackController,
-                onStepSelect: handleTimelineStepSelect,
-                onStepEdit: handleTimelineStepEdit,
-                onStepMove: handleTimelineStepMove
-            });
-
-            // Handle clear timeline
-            timelineUI.on('clearTimeline', function () {
-                scenarioData.scenario = [];
-                stepSnapshots = [];
-                pendingChangeSnapshot = null; // Clear stale snapshot to prevent ghost steps
-                if (timelineModules.timelineManager) {
-                    timelineModules.timelineManager.clearSteps();
-                }
-                timelineUI.render();
-                totalSteps.textContent = '0';
-                if (typeof restoreToInitialState === 'function') {
-                    restoreToInitialState();
-                }
-                // Re-save initial state so new recordings start fresh
-                if (typeof saveInitialStateForExport === 'function') {
-                    saveInitialStateForExport();
-                }
-                // Save a fresh snapshot[0] for the new recording session
-                stepSnapshots.push(JSON.parse(JSON.stringify(scenarioData.initialState)));
-                setStatus('Timeline cleared');
-                console.log('[Timeline] All steps cleared');
-            });
-
-            // Initial render
-            timelineUI.render();
-            console.log('[Timeline] UI initialized');
-        }
-
-        // Hook into existing functions to sync with timeline modules
-        hookTimelineFunctions();
-
-        // Run tests in development
-        if (typeof TIMELINE_FEATURE_FLAGS !== 'undefined' && location.hostname === 'localhost') {
-            // Uncomment to run tests automatically
-            // timelineModules.runTests();
-        }
-
-        console.log('[Timeline] Integration complete');
-
-    } catch (error) {
-        console.error('[Timeline] Error initializing modules:', error);
-    }
-}
-
-/**
- * Hook into existing functions to sync timeline modules
- */
-function hookTimelineFunctions() {
-    if (!timelineModules) return;
-
-    const { timelineManager, snapshotManager, stepPropertyManager } = timelineModules;
-
-    // Hook handleFinishStep to sync with timeline manager
-    const originalHandleFinishStep = handleFinishStep;
-    handleFinishStep = function () {
-        // Call original implementation
-        originalHandleFinishStep();
-
-        // Sync with timeline modules after step is created
-        syncTimelineModulesWithSteps();
-    };
-
-    // Hook property changes for per-step property storage
-    if (TIMELINE_FEATURE_FLAGS.PER_STEP_PROPS) {
-        const originalHandlePropertyChange = handlePropertyChange;
-        handlePropertyChange = function () {
-            // Store in per-step manager during editing
-            if (appState.isEditingStep && appState.selectedCard) {
-                const cardId = appState.selectedCard.id;
-                const stepIndex = appState.currentStepIndex;
-
-                stepPropertyManager.setPendingProperty(cardId, 'flip', {
-                    enabled: flipCardCheck.checked,
-                    toFaceUp: appState.selectedCard.isFaceUp
-                });
-
-                stepPropertyManager.setPendingProperty(cardId, 'slam', {
-                    enabled: slamEffectCheck.checked
-                });
-
-                stepPropertyManager.setPendingProperty(cardId, 'spin', {
-                    enabled: spinEffectCheck.checked
-                });
-            }
-
-            // Still call original to update card object
-            originalHandlePropertyChange();
-        };
-    }
-
-    // Hook handleAutoStepYes to sync with snapshotManager
-    const originalHandleAutoStepYes = handleAutoStepYes;
-    handleAutoStepYes = function () {
-        // Call original implementation
-        originalHandleAutoStepYes();
-
-        // Sync with timeline modules after step is created
-        syncTimelineModulesWithSteps();
-    };
-
-    // Hook handleFinishStep that we already defined above also needs to sync
-    // The handleFinishStep hook is already defined above, but let's make sure
-    // auto-step also triggers timeline UI update
-
-    console.log('[Timeline] Functions hooked');
-}
-
-/**
- * Get step color (cycling through palette)
- */
-function getStepColor(stepId) {
-    const colors = ['#4CAF50', '#2196F3', '#FF9800', '#E91E63', '#9C27B0', '#00BCD4', '#FF5722'];
-    return colors[(stepId - 1) % colors.length];
-}
-
-/**
- * Handle timeline step selection
- */
-function handleTimelineStepSelect(step, index) {
-    console.log('[Timeline] Step selected:', step.stepId);
-
-    // Jump playback to this step
-    if (timelineModules && timelineModules.playbackController) {
-        timelineModules.playbackController.jumpToStep(index);
-    }
-
-    // Highlight in existing timeline preview
-    const existingBlocks = document.querySelectorAll('.timeline-step');
-    existingBlocks.forEach(block => block.classList.remove('selected'));
-}
-
-/**
- * Handle timeline step edit request
- */
-function handleTimelineStepEdit(step, index) {
-    console.log('[Timeline] Edit requested for step:', step.stepId);
-
-    // Show warning if there are subsequent steps
-    if (index < scenarioData.scenario.length - 1) {
-        showWarningModal(`Editing Step ${step.stepId} may affect subsequent steps. Continue?`, () => {
-            startEditingStep(index);
-        });
-    } else {
-        startEditingStep(index);
-    }
-}
-
-/**
- * Start editing an existing step
- */
-function startEditingStep(stepIndex) {
-    if (appState.isEditingStep) {
-        setStatus('Finish current step first', 'error');
-        return;
-    }
-
-    // Restore to state before this step
-    const snapshot = stepSnapshots[stepIndex];
-    if (snapshot) {
-        restoreFromSnapshot(snapshot);
-    }
-
-    // Enter edit mode
-    appState.isEditingStep = true;
-    appState.currentStepIndex = stepIndex;
-
-    const step = scenarioData.scenario[stepIndex];
-    currentStep = JSON.parse(JSON.stringify(step));
-    startSnapshot = snapshot;
-
-    // Update UI
-    if (stepDuration) stepDuration.value = step.duration || 1.0;
-    if (finishStepBtn) {
-        finishStepBtn.disabled = false;
-        finishStepBtn.textContent = '✓ Update Step';
-    }
-    if (addStepBtn) addStepBtn.disabled = true;
-    if (recordingIndicator) recordingIndicator.classList.add('active');
-    if (currentStepNum) currentStepNum.textContent = step.stepId;
-
-    setStatus(`Editing Step ${step.stepId} - Move cards and click Update`, 'recording');
-}
-
-/**
- * Handle timeline step move (drag)
- */
-function handleTimelineStepMove(step) {
-    console.log('[Timeline] Step moved:', step.stepId, 'to', step.startTime);
-    // Timeline manager already updated the step
-    // Just need to re-render existing timeline if needed
-    renderTimeline();
-}
-
-// showWarningModal is defined earlier (line ~3575) using pendingWarningCallback.
-// A duplicate was here that stored callback on warningModal._onConfirm instead,
-// which broke confirmWarning(). Removed to fix all warning confirmation actions.
-
-/**
- * Refresh timeline UI
- */
-function refreshTimelineUI() {
-    if (timelineUI) {
-        timelineUI.render();
-    }
-}
-
-/**
- * Sync timeline modules with current step data
- * Called after any step is created or modified
- */
-function syncTimelineModulesWithSteps() {
-    if (!timelineModules) {
-        console.log('[Timeline] No modules to sync');
-        return;
-    }
-
-    const { snapshotManager, timelineManager } = timelineModules;
-
-    // Sync snapshots from stepSnapshots array to snapshotManager
-    if (stepSnapshots.length > 0) {
-        console.log('[Timeline] Syncing', stepSnapshots.length, 'snapshots');
-        snapshotManager.loadFromArray(stepSnapshots);
-    }
-
-    // Sync step timing
-    if (scenarioData.scenario.length > 0) {
-        let currentTime = 0;
-        scenarioData.scenario.forEach((step) => {
-            if (step.startTime === undefined) {
-                step.startTime = currentTime;
-            }
-            if (step.endTime === undefined) {
-                step.endTime = step.startTime + (step.duration || 1.0);
-            }
-            if (!step.label) step.label = `Step ${step.stepId}`;
-            if (!step.color) step.color = getStepColor(step.stepId);
-            currentTime = step.endTime;
-        });
-
-        // Update timeline total duration
-        if (scenarioData.timeline) {
-            scenarioData.timeline.totalDuration = currentTime;
-        }
-    }
-
-    // Update timeline UI
-    if (timelineUI) {
-        timelineUI.render();
-    }
-
-    console.log('[Timeline] Sync complete. Steps:', scenarioData.scenario.length, 'Snapshots:', snapshotManager.getSnapshotCount());
-}
-
-/**
- * Update timeline playhead position
- * @param {number} time - Current time in seconds
- */
-function updateTimelinePlayhead(time) {
-    // Update TimelineUI playhead
-    if (timelineUI && timelineUI._updatePlayhead) {
-        timelineUI._updatePlayhead(time);
-    }
-
-    // Also update the time display elements directly
-    const currentTimeEl = document.getElementById('tlCurrentTime');
-    if (currentTimeEl) {
-        currentTimeEl.textContent = time.toFixed(1);
-    }
-}
-
-// ============================================
-// GROUPING MODE
-// ============================================
-
-/**
- * Handle grouping mode toggle change
- */
-function handleGroupingModeChange(e) {
-    appState.groupingMode = e.target.checked;
-
-    // Clear grouped cards when disabling
-    if (!appState.groupingMode) {
-        clearGroupedCards();
-        cancelAutoRecordCountdown();
-    }
-
-    // Update body class for CSS styling
-    document.body.classList.toggle('grouping-mode-active', appState.groupingMode);
-
-    setStatus(appState.groupingMode ? 'Grouping Mode ON - Click cards to select' : 'Grouping Mode OFF');
-}
-
-/**
- * Handle auto-record toggle change
- */
-function handleAutoRecordChange(e) {
-    appState.autoRecord = e.target.checked;
-
-    // Cancel any running countdown when disabling
-    if (!appState.autoRecord) {
-        cancelAutoRecordCountdown();
-    }
-}
-
-/**
- * Handle auto-record delay slider change
- */
-function handleAutoRecordDelayChange(e) {
-    appState.autoRecordDelay = parseInt(e.target.value);
-    if (autoRecordDelayValue) {
-        autoRecordDelayValue.textContent = `${appState.autoRecordDelay}s`;
-    }
-}
-
-/**
- * Toggle card selection for grouping
- * Called when clicking a card in grouping mode
- * Each selection/deselection triggers auto-step popup to record as separate step
- */
-function toggleCardGroupSelection(card) {
-    console.log('[GroupSelect] Before - groupedCards:', appState.groupedCards.length);
-
-    // Take snapshot BEFORE the selection change (for recording)
-    const snapshotBeforeChange = takeSnapshot();
-
-    const index = appState.groupedCards.findIndex(c => c.id === card.id);
-
-    if (index === -1) {
-        // Add to group (SELECT)
-        appState.groupedCards.push(card);
-        card.element?.classList.add('grouped');
-        console.log('[GroupSelect] Added card:', card.id, 'groupedCards:', appState.groupedCards.length);
-    } else {
-        // Remove from group (DESELECT)
-        appState.groupedCards.splice(index, 1);
-        card.element?.classList.remove('grouped');
-        console.log('[GroupSelect] Removed card:', card.id, 'groupedCards:', appState.groupedCards.length);
-    }
-
-    // Update count display
-    updateGroupCount();
-
-    console.log('[GroupSelect] After - groupedCards:', appState.groupedCards.length);
-
-    // Trigger auto-step popup for this selection change (Record mode only)
-    if (appState.phase === 'record' && !appState.isEditingStep) {
-        showAutoStepPopup(card, snapshotBeforeChange);
-    }
-}
-
-
-/**
- * Clear all grouped cards
- */
-function clearGroupedCards() {
-    appState.groupedCards.forEach(card => {
-        card.element?.classList.remove('grouped');
-    });
-    appState.groupedCards = [];
-    updateGroupCount();
-}
-
-/**
- * Update the group count display
- */
-function updateGroupCount() {
-    if (groupCount) {
-        const count = appState.groupedCards.length;
-        groupCount.textContent = count > 0 ? `(${count})` : '';
-    }
-}
-
-/**
- * Start the auto-record countdown
- */
-function startAutoRecordCountdown() {
-    // Cancel any existing countdown
-    cancelAutoRecordCountdown();
-
-    appState.countdownValue = appState.autoRecordDelay;
-
-    // Show countdown display
-    if (countdownDisplay) countdownDisplay.classList.remove('hidden');
-    if (countdownTimer) countdownTimer.textContent = appState.countdownValue;
-    if (countdownBarFill) countdownBarFill.style.width = '100%';
-
-    // Start interval timer
-    appState.countdownTimer = setInterval(() => {
-        appState.countdownValue--;
-
-        // Update timer display
-        if (countdownTimer) countdownTimer.textContent = appState.countdownValue;
-
-        // Update progress bar
-        if (countdownBarFill) {
-            const progress = (appState.countdownValue / appState.autoRecordDelay) * 100;
-            countdownBarFill.style.width = `${progress}%`;
-        }
-
-        // Countdown finished — auto-accept step
-        if (appState.countdownValue <= 0) {
-            cancelAutoRecordCountdown();
-            handleAutoStepYes();
-        }
-    }, 1000);
-}
-
-/**
- * Cancel the auto-record countdown
- */
-function cancelAutoRecordCountdown() {
-    if (appState.countdownTimer) {
-        clearInterval(appState.countdownTimer);
-        appState.countdownTimer = null;
-    }
-    appState.countdownValue = 0;
-
-    // Hide countdown display
-    if (countdownDisplay) countdownDisplay.classList.add('hidden');
-}
-
-/**
- * Auto-save step with grouped cards
- */
-function autoSaveGroupedStep() {
-    if (appState.groupedCards.length === 0) {
-        setStatus('No cards selected', 'error');
-        return;
-    }
-
-    // Get the snapshot before changes
-    const startSnap = pendingChangeSnapshot || takeSnapshot();
-
-    // Take current snapshot (after selections)
-    const endSnap = takeSnapshot();
-
-    // Compute actions from start to end
-    const actions = computeActions(startSnap, endSnap);
-
-    // Create the step
-    const newStep = {
-        stepId: scenarioData.scenario.length + 1,
-        duration: stepDuration ? parseFloat(stepDuration.value) : 1.0,
-        actions: actions
-    };
-
-    // BUG #4 fix: attach pending group order overrides
-    if (appState.pendingGroupOrderOverrides) {
-        newStep.groupOrderOverrides = JSON.parse(JSON.stringify(appState.pendingGroupOrderOverrides));
-        var groups = appState.boardLayout.slotGroups || [];
-        groups.forEach(function (g) {
-            if (appState.pendingGroupOrderOverrides[g.id] !== undefined) {
-                g.groupOrder = appState.pendingGroupOrderOverrides[g.id];
-            }
-        });
-        appState.pendingGroupOrderOverrides = null;
-    }
-
-    // Add to scenario
-    scenarioData.scenario.push(newStep);
-
-    // Save snapshot for replay
-    stepSnapshots.push(JSON.parse(JSON.stringify(endSnap)));
-
-    // Update UI
-    totalSteps.textContent = scenarioData.scenario.length;
-    renderTimeline();
-
-    // Clear state
-    clearGroupedCards();
-    pendingChangeSnapshot = null;
-
-    setStatus(`Step ${newStep.stepId} saved with ${actions.length} actions (auto-recorded)`, 'success');
-    updateUI();
-}
-
-/**
- * Show/hide grouping section based on phase
- */
-function updateGroupingSectionVisibility() {
-    if (groupingSection) {
-        if (appState.phase === 'record') {
-            groupingSection.classList.remove('hidden');
-        } else {
-            groupingSection.classList.add('hidden');
-            // Disable grouping when leaving record phase
-            if (appState.groupingMode) {
-                appState.groupingMode = false;
-                if (groupingModeToggle) groupingModeToggle.checked = false;
-                document.body.classList.remove('grouping-mode-active');
-                clearGroupedCards();
-                cancelAutoRecordCountdown();
-            }
-        }
-    }
-}
-
-/**
- * Handle dropping all grouped cards to a zone
- * @param {HTMLElement} zone - Target zone element
- */
-function handleGroupedCardsDrop(zone) {
-    console.log('[GroupDrop] Called with zone:', zone?.dataset?.zone, 'groupedCards:', appState.groupedCards.length);
-    if (appState.groupedCards.length === 0) return;
-
-    // Use pendingChangeSnapshot if available (captured when first card was selected)
-    // Otherwise take a new snapshot
-    const snapshotBeforeMove = pendingChangeSnapshot || takeSnapshot();
-    console.log('[GroupDrop] snapshotBeforeMove exists:', !!snapshotBeforeMove);
-
-    const zoneName = zone.dataset.zone;
-    const rotation = parseInt(zone.dataset.rotation) || 0;
-
-    // Collect old zones for later re-render
-    const oldZones = new Set();
-
-    // Move each grouped card to the target zone
-    appState.groupedCards.forEach(card => {
-        if (card.zone && card.zone !== zoneName) {
-            oldZones.add(card.zone);
-        }
-        if (card.element) {
-            card.element.remove();
-        }
-        card.zone = zoneName;
-        card.rotation = rotation;
-
-        const flipCheckbox = document.querySelector(`#flip${zoneName.charAt(0).toUpperCase() + zoneName.slice(1)}`);
-        if (flipCheckbox) {
-            card.isFaceUp = flipCheckbox.checked;
-        }
-    });
-
-    // Recalculate positions for old zones
-    oldZones.forEach(oldZoneName => {
-        const oldZoneCards = appState.tableCards.filter(c => c.zone === oldZoneName);
-        oldZoneCards.forEach((c, idx) => {
-            c.zonePosition = idx;
-        });
-        const oldZoneElement = document.querySelector(
-            `.player-zone[data-zone="${oldZoneName}"], .community-zone[data-zone="${oldZoneName}"], .card-drop-zone[data-zone="${oldZoneName}"]`
-        );
-        if (oldZoneElement) {
-            rerenderZoneCards(oldZoneName, oldZoneElement);
-        }
-    });
-
-    // Assign consecutive positions in new zone
-    const existingCardsInZone = appState.tableCards.filter(
-        c => c.zone === zoneName && !appState.groupedCards.some(gc => gc.id === c.id)
-    );
-    let nextPos = existingCardsInZone.length;
-
-    appState.groupedCards.forEach(card => {
-        card.zonePosition = nextPos++;
-        createZoneCardElement(card, zone);
-    });
-
-    const movedCount = appState.groupedCards.length;
-    updateUI();
-    setStatus(`Moved ${movedCount} cards to ${zoneName} zone`);
-    console.log('[GroupDrop] Moved', movedCount, 'cards to', zoneName);
-
-    // Clear grouped cards after move
-    clearGroupedCards();
-
-    // Show auto-step popup if in record mode
-    console.log('[GroupDrop] phase:', appState.phase, 'isEditingStep:', appState.isEditingStep, 'autoStepPopup:', !!autoStepPopup);
-    if (appState.phase === 'record' && !appState.isEditingStep) {
-        console.log('[GroupDrop] Calling showAutoStepPopup');
-        showAutoStepPopup(null, snapshotBeforeMove);
-    }
-}
-
-
-
-// ============================================
-// AI LAYOUT GENERATOR
-// ============================================
-
-/**
- * Enable the AI button once a deck is loaded
- */
-function enableAIButton() {
-    if (aiPhaseBtn) {
-        aiPhaseBtn.disabled = false;
-        aiPhaseBtn.title = 'AI Layout Generator';
-    }
-}
-
-/**
- * Toggle the AI panel visibility
- */
-function toggleAIPanel() {
-    if (!aiSection) return;
-
-    const isVisible = !aiSection.classList.contains('hidden');
-    if (isVisible) {
-        aiSection.classList.add('hidden');
-        if (aiPhaseBtn) aiPhaseBtn.classList.remove('active');
-    } else {
-        aiSection.classList.remove('hidden');
-        if (aiPhaseBtn) aiPhaseBtn.classList.add('active');
-        if (aiPresetSelect && appState.boardLayout) {
-            aiPresetSelect.value = appState.boardLayout.boardStyle || 'current';
-        }
-    }
-}
-
-// ============================================
-// AI REFERENCE ATTACHMENTS
-// ============================================
-
-/**
- * Handle ref image file selection
- */
-function handleRefImageAttach(e) {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-
-    // Limit to 3 images
-    const maxImages = 3;
-    const remaining = maxImages - aiRefImages.length;
-    const toAdd = files.slice(0, remaining);
-
-    for (const file of toAdd) {
-        const reader = new FileReader();
-        reader.onload = function (evt) {
-            const base64 = evt.target.result.split(',')[1]; // Remove data:image/...;base64, prefix
-            const mimeType = file.type || 'image/jpeg';
-            aiRefImages.push({ data: base64, mimeType: mimeType, name: file.name });
-            renderAttachPreview();
-        };
-        reader.readAsDataURL(file);
-    }
-
-    // Reset input so same file can be re-selected
-    e.target.value = '';
-}
-
-/**
- * Handle ref video file selection
- */
-function handleRefVideoAttach(e) {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-
-    aiVideoFile = file;
-    aiVideoFrames = [];
-    renderAttachPreview();
-
-    // Extract frames from video
-    extractVideoFrames(file).then(function (frames) {
-        aiVideoFrames = frames;
-        renderAttachPreview();
-        debugLog('[AI] Extracted ' + frames.length + ' frames from video: ' + file.name);
-    }).catch(function (err) {
-        console.error('[AI] Video frame extraction failed:', err);
-        debugLog('[AI] Video frame extraction failed: ' + err.message);
-    });
-
-    e.target.value = '';
-}
-
-/**
- * Extract frames from a video file using HTML5 canvas
- */
-function extractVideoFrames(file, maxFrames) {
-    maxFrames = maxFrames || 10;
-    return new Promise(function (resolve, reject) {
-        const url = URL.createObjectURL(file);
-        const video = document.createElement('video');
-        video.muted = true;
-        video.preload = 'auto';
-
-        video.onloadedmetadata = function () {
-            const duration = video.duration;
-            if (!duration || duration <= 0) {
-                URL.revokeObjectURL(url);
-                return reject(new Error('Invalid video duration'));
-            }
-
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-
-            // Scale down for smaller payload (max 640px wide)
-            const scale = Math.min(1, 640 / video.videoWidth);
-            canvas.width = Math.round(video.videoWidth * scale);
-            canvas.height = Math.round(video.videoHeight * scale);
-
-            const frameCount = Math.min(maxFrames, Math.floor(duration));
-            const interval = duration / (frameCount + 1);
-            const frames = [];
-            let currentFrame = 0;
-
-            function captureFrame() {
-                if (currentFrame >= frameCount) {
-                    URL.revokeObjectURL(url);
-                    resolve(frames);
-                    return;
-                }
-
-                const seekTime = interval * (currentFrame + 1);
-                video.currentTime = seekTime;
-            }
-
-            video.onseeked = function () {
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-                const base64 = dataUrl.split(',')[1];
-                frames.push({ data: base64, mimeType: 'image/jpeg' });
-                currentFrame++;
-                captureFrame();
-            };
-
-            captureFrame();
-        };
-
-        video.onerror = function () {
-            URL.revokeObjectURL(url);
-            reject(new Error('Failed to load video'));
-        };
-
-        video.src = url;
-    });
-}
-
-/**
- * Render attachment preview area
- */
-function renderAttachPreview() {
-    if (!aiAttachPreview) return;
-
-    var html = '';
-
-    for (var i = 0; i < aiRefImages.length; i++) {
-        var img = aiRefImages[i];
-        html += '<div class="ai-attach-item">' +
-            '<img src="data:' + img.mimeType + ';base64,' + img.data + '" alt="ref">' +
-            '<span>' + (img.name || 'Image ' + (i + 1)) + '</span>' +
-            '<button class="ai-attach-remove" data-type="image" data-index="' + i + '" title="Remove">×</button>' +
-            '</div>';
-    }
-
-    if (aiVideoFile) {
-        var frameInfo = aiVideoFrames.length > 0 ? ' (' + aiVideoFrames.length + ' frames)' : ' (extracting...)';
-        html += '<div class="ai-attach-item">' +
-            '<span>🎬 ' + aiVideoFile.name + frameInfo + '</span>' +
-            '<button class="ai-attach-remove" data-type="video" data-index="0" title="Remove">×</button>' +
-            '</div>';
-    }
-
-    if (html) {
-        aiAttachPreview.innerHTML = html;
-        aiAttachPreview.classList.remove('hidden');
-
-        aiAttachPreview.querySelectorAll('.ai-attach-remove').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                var type = this.getAttribute('data-type');
-                var idx = parseInt(this.getAttribute('data-index'));
-                if (type === 'image') aiRefImages.splice(idx, 1);
-                else { aiVideoFile = null; aiVideoFrames = []; }
-                renderAttachPreview();
-            });
-        });
-    } else {
-        aiAttachPreview.innerHTML = '';
-        aiAttachPreview.classList.add('hidden');
-    }
-}
-
-/**
- * Get the API base URL from config
- */
-function getAPIBaseUrl() {
-    if (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) {
-        return API_BASE_URL;
-    }
-    return 'https://banner-generator-ai.vercel.app';
-}
-
-/**
- * Handle AI Generate button click
- */
-async function handleAIGenerate() {
-    var brief = aiBriefInput ? aiBriefInput.value.trim() : '';
-    if (!brief) {
-        showAIError('Please describe your desired card layout.');
-        return;
-    }
-
-    var availableCards = (appState.trayCards || []).filter(function (c) { return c.inTray !== false; });
-    if (availableCards.length === 0) {
-        showAIError('No cards available. Load a deck first.');
-        return;
-    }
-
-    // BUG FIX: Read target layout from dropdown and load it BEFORE collecting slot IDs.
-    // Without this, selecting "Pusoy" while board is "Poker" sends Poker slot IDs to AI,
-    // causing all card placements to fail (slot IDs don't exist in the response layout).
-    var targetPreset = aiPresetSelect ? aiPresetSelect.value : 'current';
-    if (targetPreset !== 'current') {
-        var psEl = document.getElementById('presetSelect');
-        if (psEl) {
-            psEl.value = targetPreset;
-            handleLoadPreset();
-            debugLog('[AI] Switched board to target layout: ' + targetPreset);
-        }
-    }
-
-    var slots = appState.boardLayout.cardPlaces || [];
-    if (slots.length === 0) {
-        showAIError('No card slots on the board. Load a preset first.');
-        return;
-    }
-
-    var availableCardNames = availableCards.map(function (c) { return c.name; });
-    var availableSlotIds = slots.map(function (s) { return s.id; });
-    debugLog('[AI] Target preset: ' + targetPreset + ', slot IDs: ' + availableSlotIds.join(', '));
-
-    // Check mode toggle
-    var aiModeRadio = document.querySelector('input[name="aiMode"]:checked');
-    var aiMode = aiModeRadio ? aiModeRadio.value : 'setup';
-    var isScenarioMode = aiMode === 'scenario';
-
-    if (aiGenerateBtn) {
-        aiGenerateBtn.disabled = true;
-        aiGenerateBtn.classList.add('loading');
-    }
-    var attachInfo = '';
-    if (aiRefImages.length > 0) attachInfo += ' + ' + aiRefImages.length + ' ref image(s)';
-    if (aiVideoFrames.length > 0) attachInfo += ' + ' + aiVideoFrames.length + ' video frames';
-    showAIStatus(isScenarioMode ? '🎬 Generating scenario with AI...' + attachInfo : '🤖 Generating layout with AI...' + attachInfo);
-    hideAIError();
-
-    try {
-        var token = typeof getToken === 'function' ? getToken() : localStorage.getItem('autonim_poker_token');
-
-        var apiBase = getAPIBaseUrl();
-        var endpoint = isScenarioMode ? '/api/poker/ai-generate-scenario' : '/api/poker/ai-generate';
-        var response = await fetch(apiBase + endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + token
-            },
-            body: JSON.stringify({
-                brief: brief,
-                availableCards: availableCardNames,
-                availableSlotIds: availableSlotIds,
-                targetPreset: targetPreset,
-                refImages: aiRefImages.length > 0 ? aiRefImages : undefined,
-                videoFrames: aiVideoFrames.length > 0 ? aiVideoFrames : undefined
-            })
-        });
-
-        if (!response.ok) {
-            var errData = await response.json().catch(function () { return {}; });
-            throw new Error(errData.error || 'Server error (' + response.status + ')');
-        }
-
-        var result = await response.json();
-        console.log('[AI] Full response:', JSON.stringify(result, null, 2));
-
-        if (isScenarioMode) {
-            // === SCENARIO MODE ===
-            if ((!result.initialSetup || result.initialSetup.length === 0) && (!result.steps || result.steps.length === 0)) {
-                showAIError('AI returned no setup or steps. Try a more detailed brief.');
-                return;
-            }
-
-            showAIStatus('🎬 Applying scenario: ' + (result.initialSetup?.length || 0) + ' cards + ' + (result.steps?.length || 0) + ' steps...');
-            await applyAIScenario(result);
-
-            // Build status
-            var statusParts = ['✅ Scenario applied! ' + (result.initialSetup?.length || 0) + ' cards, ' + (result.steps?.length || 0) + ' steps.'];
-            if (result.reasoning) statusParts.push('💭 AI: ' + result.reasoning);
-            if (result.debug) {
-                var d = result.debug;
-                var debugParts = ['Model: ' + d.model];
-                if (d.warnings && d.warnings.length > 0) debugParts.push('⚠ ' + d.warnings.length + ' warnings');
-                if (d.invalidCardRefs && d.invalidCardRefs.length > 0) debugParts.push('⚠ Invalid cards: ' + d.invalidCardRefs.join(', '));
-                statusParts.push('📊 ' + debugParts.join(' | '));
-            }
-            showAIStatus(statusParts.join('\n'));
-
-        } else {
-            // === SETUP MODE (existing behavior) ===
-            if (!result.cardAssignments || result.cardAssignments.length === 0) {
-                showAIError('AI returned no card assignments. Try a different brief.');
-                return;
-            }
-
-            showAIStatus('✅ AI generated ' + result.cardAssignments.length + ' card placements. Applying...');
-            await applyAILayout(result);
-
-            var statusParts = ['✅ Done! ' + result.cardAssignments.length + ' cards placed.'];
-            if (result.reasoning) statusParts.push('💭 AI: ' + result.reasoning);
-            if (result.debug) {
-                var d = result.debug;
-                var debugParts = ['Model: ' + d.model];
-                if (d.invalidCards && d.invalidCards.length > 0) debugParts.push('⚠ Invalid cards: ' + d.invalidCards.join(', '));
-                if (d.invalidSlots && d.invalidSlots.length > 0) debugParts.push('⚠ Invalid slots: ' + d.invalidSlots.join(', '));
-                if (d.duplicatesRemoved > 0) debugParts.push('⚠ ' + d.duplicatesRemoved + ' duplicates removed');
-                statusParts.push('📊 ' + debugParts.join(' | '));
-            }
-            showAIStatus(statusParts.join('\n'));
-            debugLog('[AI] Reasoning: ' + (result.reasoning || 'none'));
-        }
-
-    } catch (error) {
-        console.error('[AI] Generate error:', error);
-        showAIError(error.message || 'AI generation failed. Please try again.');
-    } finally {
-        if (aiGenerateBtn) {
-            aiGenerateBtn.disabled = false;
-            aiGenerateBtn.classList.remove('loading');
-        }
-    }
-}
-
-/**
- * Apply AI-generated layout to the board
- */
-async function applyAILayout(result) {
-    // NOTE: Do NOT re-load preset here. handleAIGenerate() already loaded the
-    // correct preset BEFORE collecting slot IDs and sending them to the API.
-    // Re-loading a different preset (e.g. server returning "pusoy" when user
-    // selected "poker") would cause slot ID mismatch and cards flying off-grid.
-
-    handleResetTable();
-    await new Promise(function (r) { setTimeout(r, 100); });
-
-    var placedCount = 0;
-    var errors = [];
-
-    for (var i = 0; i < result.cardAssignments.length; i++) {
-        var assignment = result.cardAssignments[i];
-        var slotId = assignment.slotId;
-        var cardName = assignment.cardName;
-        var faceUp = assignment.faceUp;
-
-        var card = null;
-        if (typeof resolveCardName === 'function') {
-            card = resolveCardName(cardName, appState.trayCards.filter(function (c) { return c.inTray !== false; }));
-        }
-        if (!card) {
-            card = appState.trayCards.find(function (c) {
-                return c.inTray !== false && c.name === cardName;
-            });
-        }
-        if (!card) {
-            errors.push('Card not found: ' + cardName);
-            continue;
-        }
-
-        var place = (appState.boardLayout.cardPlaces || []).find(function (p) { return p.id === slotId; });
-        if (!place) {
-            errors.push('Slot not found: ' + slotId);
-            continue;
-        }
-
-        var zoneName = 'grid-' + slotId;
-        var zoneElement = document.querySelector('.card-drop-zone[data-zone="' + zoneName + '"]');
-
-        if (zoneElement) {
-            card.isFaceUp = faceUp === true;
-            placeCardInZone(card, zoneName, place.rotation || 0, zoneElement);
-        } else {
-            card.isFaceUp = faceUp === true;
-            placeCardOnTable(card, place.x || 640, place.y || 360);
-        }
-        placedCount++;
-    }
-
-    if (errors.length > 0) {
-        debugLog('[AI] Placement errors:', errors);
-        console.warn('[AI] Some cards could not be placed:', errors);
-    }
-
-    debugLog('[AI] Applied layout: ' + placedCount + ' cards placed, ' + errors.length + ' errors');
-    setStatus('AI placed ' + placedCount + ' cards on the board', 'success');
-}
-
-/**
- * Find a card in the tray by name (supports fuzzy matching via resolveCardName)
- */
-function findTrayCardByName(cardName) {
-    var card = null;
-    if (typeof resolveCardName === 'function') {
-        card = resolveCardName(cardName, appState.trayCards.filter(function (c) { return c.inTray !== false; }));
-    }
-    if (!card) {
-        card = appState.trayCards.find(function (c) {
-            return c.inTray !== false && c.name === cardName;
-        });
-    }
-    return card;
-}
-
-/**
- * Find a card on the table by name
- */
-function findTableCardByName(cardName) {
-    return appState.tableCards.find(function (c) {
-        return c.name === cardName;
-    });
-}
-
-/**
- * Place a card silently into a slot (no popups, no status messages)
- */
-function silentPlaceCard(cardName, slotId, faceUp) {
-    var card = findTrayCardByName(cardName);
-    if (!card) {
-        console.warn('[AI Scenario] Card not in tray: ' + cardName);
-        return false;
-    }
-
-    var place = (appState.boardLayout.cardPlaces || []).find(function (p) { return p.id === slotId; });
-    if (!place) {
-        console.warn('[AI Scenario] Slot not found: ' + slotId);
-        return false;
-    }
-
-    var zoneName = 'grid-' + slotId;
-    var zoneElement = document.querySelector('.card-drop-zone[data-zone="' + zoneName + '"]');
-
-    var desiredFaceUp = faceUp === true;
-    card.isFaceUp = desiredFaceUp;
-
-    if (zoneElement) {
-        placeCardInZone(card, zoneName, place.rotation || 0, zoneElement);
-    } else {
-        debugLog('[AI Scenario] Zone element NOT found for: ' + zoneName + ', falling back to placeCardOnTable(' + (place.x || 640) + ',' + (place.y || 360) + ')');
-        placeCardOnTable(card, place.x || 640, place.y || 360);
-    }
-
-    // Re-set isFaceUp because placeCardInZone overrides it from UI checkboxes
-    card.isFaceUp = desiredFaceUp;
-    if (card.element) {
-        var img = card.element.querySelector('img');
-        if (img) {
-            img.src = desiredFaceUp ? (card.frontImageUrl || '') : (card.backImageUrl || '');
-        }
-        card.element.classList.toggle('face-up', desiredFaceUp);
-        card.element.classList.toggle('face-down', !desiredFaceUp);
-    }
-    return true;
-}
-
-/**
- * Apply AI-generated multi-step scenario to the board
- * Creates initial setup + recording steps with proper snapshots
- */
-async function applyAIScenario(result) {
-    // Save state for rollback on error
-    var savedScenario = JSON.parse(JSON.stringify(scenarioData.scenario));
-    var savedSnapshots = JSON.parse(JSON.stringify(stepSnapshots));
-    var wasRecordPhase = appState.phase === 'record';
-
-    try {
-        // Suppress auto-step popups during bulk apply
-        appState._bulkApplying = true;
-
-        // === STEP 0: Reset and apply initial setup ===
-        // NOTE: Do NOT re-load preset here. handleAIGenerate() already loaded
-        // the correct preset BEFORE collecting slot IDs. Re-loading a different
-        // preset from the server response would cause slot ID mismatch.
-
-        handleResetTable();
-        await new Promise(function (r) { setTimeout(r, 100); });
-
-        // Ensure grid drop zones are rendered before placement
-        if (appState.boardLayout.type === 'grid') {
-            renderCardDropZones();
-        }
-
-        // Apply initial card placements
-        var setupCount = 0;
-        var setupErrors = [];
-        if (result.initialSetup && result.initialSetup.length > 0) {
-            for (var i = 0; i < result.initialSetup.length; i++) {
-                var entry = result.initialSetup[i];
-                if (silentPlaceCard(entry.card, entry.slot, entry.faceUp)) {
-                    setupCount++;
-                } else {
-                    setupErrors.push(entry.card + ' → ' + entry.slot);
-                }
-            }
-        }
-
-        debugLog('[AI Scenario] Initial setup: ' + setupCount + ' cards placed, ' + setupErrors.length + ' errors');
-        if (setupErrors.length > 0) {
-            console.warn('[AI Scenario] Setup errors:', setupErrors);
-        }
-
-        // Batch UI update after all cards placed
-        renderCardTray();
-        updateUI();
-
-        // Switch to record phase (saveInitialState is SKIPPED due to _bulkApplying)
-        setPhase('record');
-        await new Promise(function (r) { setTimeout(r, 50); });
-
-        // === Manually build scenarioData.initialState (since saveInitialState was skipped) ===
-        scenarioData.initialState = {};
-        appState.tableCards.forEach(function (card) {
-            scenarioData.initialState[card.id] = {
-                x: card.x || 0,
-                y: card.y || 0,
-                rotation: card.rotation || 0,
-                isFaceUp: card.isFaceUp,
-                zone: card.zone,
-                zonePosition: card.zonePosition || 0,
-                zOrder: typeof computeZOrderForCard === 'function' ? computeZOrderForCard(card) : 0,
-                flipAction: card.flipAction || false,
-                slamEffect: card.slamEffect || false,
-                isSelected: false
-            };
-        });
-        debugLog('[AI Scenario] Manual initialState built: ' + Object.keys(scenarioData.initialState).length + ' cards');
-
-        // === Manually build snapshot management (since saveInitialState was skipped) ===
-        scenarioData.scenario = [];
-        stepSnapshots = [];
-
-        // Build initial snapshot from current board state
-        var initialSnap = takeSnapshot();
-        stepSnapshots.push(JSON.parse(JSON.stringify(initialSnap)));
-
-        debugLog('[AI Scenario] Manual initial snapshot. tableCards=' + appState.tableCards.length + ', snapshot keys=' + Object.keys(initialSnap).length + ', stepSnapshots.length=' + stepSnapshots.length);
-
-        // === APPLY STEPS SEQUENTIALLY ===
-        if (result.steps && result.steps.length > 0) {
-            for (var si = 0; si < result.steps.length; si++) {
-                var step = result.steps[si];
-                debugLog('[AI Scenario] Processing step ' + (si + 1) + ': "' + step.label + '"');
-
-                // Take snapshot BEFORE this step's changes
-                var beforeSnapshot = takeSnapshot();
-
-                // Apply each action in this step
-                for (var ai = 0; ai < step.actions.length; ai++) {
-                    var act = step.actions[ai];
-                    applyScenarioAction(act);
-                }
-
-                // Wait for DOM updates
-                await new Promise(function (r) { setTimeout(r, 30); });
-
-                // Take snapshot AFTER this step's changes
-                var afterSnapshot = takeSnapshot();
-
-                // Compute internal actions from the diff
-                var internalActions = computeActions(beforeSnapshot, afterSnapshot);
-
-                // Build the step object
-                var stepObj = {
-                    stepId: si + 1,
-                    duration: step.duration || 1.0,
-                    actions: internalActions,
-                    label: step.label || ('Step ' + (si + 1))
-                };
-
-                // Push to scenario
-                scenarioData.scenario.push(stepObj);
-                stepSnapshots.push(JSON.parse(JSON.stringify(afterSnapshot)));
-
-                debugLog('[AI Scenario] Step ' + (si + 1) + ': ' + internalActions.length + ' internal actions | snapshots=' + stepSnapshots.length + ' scenario=' + scenarioData.scenario.length);
-            }
-        }
-
-        // === VERIFY SNAPSHOT INVARIANT ===
-        debugLog('[AI Scenario] Pre-check: snapshots=' + stepSnapshots.length + ', scenario=' + scenarioData.scenario.length + ', expected=' + (scenarioData.scenario.length + 1));
-        if (stepSnapshots.length !== scenarioData.scenario.length + 1) {
-            console.error('[AI Scenario] INVARIANT VIOLATION: snapshots=' + stepSnapshots.length + ', steps=' + scenarioData.scenario.length + ', expected snapshots=' + (scenarioData.scenario.length + 1));
-            // Log stack trace for debugging
-            console.trace('[AI Scenario] Invariant violation trace');
-            throw new Error('Snapshot invariant violated');
-        }
-
-        debugLog('[AI Scenario] ✓ Complete: ' + setupCount + ' cards, ' + scenarioData.scenario.length + ' steps. Snapshots: ' + stepSnapshots.length);
-
-        // Reset editing state
-        appState.isEditingStep = false;
-        currentStep = null;
-        startSnapshot = null;
-
-        // Update UI
-        if (typeof totalSteps !== 'undefined' && totalSteps) {
-            totalSteps.textContent = scenarioData.scenario.length;
-        }
-        if (typeof currentStepNum !== 'undefined' && currentStepNum) {
-            currentStepNum.textContent = '-';
-        }
-        if (typeof addStepBtn !== 'undefined' && addStepBtn) {
-            addStepBtn.disabled = false;
-        }
-
-        renderTimeline();
-        renderGroupOrderStrip();
-        updateUI();
-
-        setStatus('AI scenario: ' + setupCount + ' cards, ' + scenarioData.scenario.length + ' steps created', 'success');
-
-    } catch (err) {
-        console.error('[AI Scenario] Apply failed:', err);
-        // Rollback
-        scenarioData.scenario = savedScenario;
-        stepSnapshots = savedSnapshots;
-        handleResetTable();
-        throw new Error('Scenario apply failed: ' + err.message);
-    } finally {
-        appState._bulkApplying = false;
-    }
-}
-
-/**
- * Apply a single AI scenario action to the current board state
- */
-function applyScenarioAction(act) {
-    switch (act.action) {
-        case 'place': {
-            // Place a card from tray to a slot
-            var card = findTrayCardByName(act.card);
-            if (!card) {
-                console.warn('[AI Scenario] Cannot place - card not in tray: ' + act.card);
-                return;
-            }
-            var place = (appState.boardLayout.cardPlaces || []).find(function (p) { return p.id === act.to; });
-            if (!place) {
-                console.warn('[AI Scenario] Cannot place - slot not found: ' + act.to);
-                return;
-            }
-            var zoneName = 'grid-' + act.to;
-            var zoneElement = document.querySelector('.card-drop-zone[data-zone="' + zoneName + '"]');
-            card.isFaceUp = act.faceUp === true;
-            if (zoneElement) {
-                placeCardInZone(card, zoneName, place.rotation || 0, zoneElement);
-            } else {
-                placeCardOnTable(card, place.x || 640, place.y || 360);
-            }
-            // Re-set isFaceUp because placeCardInZone overrides it from UI checkboxes
-            card.isFaceUp = act.faceUp === true;
-            if (card.element) {
-                var img = card.element.querySelector('img');
-                if (img) {
-                    img.src = card.isFaceUp ? (card.frontImageUrl || '') : (card.backImageUrl || '');
-                }
-                card.element.classList.toggle('face-up', card.isFaceUp);
-                card.element.classList.toggle('face-down', !card.isFaceUp);
-            }
-            break;
-        }
-
-        case 'flip': {
-            // Flip a card in-place
-            var card = findTableCardByName(act.card);
-            if (!card) {
-                console.warn('[AI Scenario] Cannot flip - card not on table: ' + act.card);
-                return;
-            }
-            card.isFaceUp = act.faceUp === true;
-            // Re-render the card element
-            if (card.element) {
-                if (card.isFaceUp) {
-                    card.element.classList.remove('face-down');
-                    card.element.classList.add('face-up');
-                } else {
-                    card.element.classList.remove('face-up');
-                    card.element.classList.add('face-down');
-                }
-                // Update the image
-                var img = card.element.querySelector('img');
-                if (img) {
-                    img.src = card.isFaceUp ? (card.frontImageUrl || '') : (card.backImageUrl || '');
-                }
-            }
-            break;
-        }
-
-        case 'move': {
-            // Move card from current zone to new zone
-            var card = findTableCardByName(act.card);
-            if (!card) {
-                console.warn('[AI Scenario] Cannot move - card not on table: ' + act.card);
-                return;
-            }
-            var oldZone = card.zone;
-
-            // Remove from current zone visually
-            if (card.element) {
-                card.element.remove();
-                card.element = null;
-            }
-
-            // Remove from tableCards
-            var idx = appState.tableCards.indexOf(card);
-            if (idx > -1) appState.tableCards.splice(idx, 1);
-
-            // Re-index remaining cards in old zone
-            if (oldZone) {
-                appState.tableCards.filter(function (c) { return c.zone === oldZone; })
-                    .sort(function (a, b) { return (a.zonePosition || 0) - (b.zonePosition || 0); })
-                    .forEach(function (c, i) { c.zonePosition = i; });
-            }
-
-            // Place in new zone
-            var targetSlotId = act.to;
-            var place = (appState.boardLayout.cardPlaces || []).find(function (p) { return p.id === targetSlotId; });
-            if (!place) {
-                console.warn('[AI Scenario] Cannot move - target slot not found: ' + targetSlotId);
-                return;
-            }
-
-            if (act.faceUp !== undefined) card.isFaceUp = act.faceUp === true;
-            card.rotation = place.rotation || 0;
-            card.zone = 'grid-' + targetSlotId;
-            card.zonePosition = appState.tableCards.filter(function (c) { return c.zone === card.zone; }).length;
-
-            appState.tableCards.push(card);
-            var zoneElement = document.querySelector('.card-drop-zone[data-zone="' + card.zone + '"]');
-            if (zoneElement) {
-                createZoneCardElement(card, zoneElement);
-            }
-            break;
-        }
-
-        case 'remove': {
-            // Remove card from board (return to tray)
-            var card = findTableCardByName(act.card);
-            if (!card) {
-                console.warn('[AI Scenario] Cannot remove - card not on table: ' + act.card);
-                return;
-            }
-            var oldZone = card.zone;
-
-            // Remove element
-            if (card.element) {
-                card.element.remove();
-                card.element = null;
-            }
-
-            // Remove from tableCards
-            var idx = appState.tableCards.indexOf(card);
-            if (idx > -1) appState.tableCards.splice(idx, 1);
-
-            // Re-index remaining cards in old zone
-            if (oldZone) {
-                appState.tableCards.filter(function (c) { return c.zone === oldZone; })
-                    .sort(function (a, b) { return (a.zonePosition || 0) - (b.zonePosition || 0); })
-                    .forEach(function (c, i) { c.zonePosition = i; });
-            }
-
-            // Return to tray
-            card.inTray = true;
-            card.zone = null;
-            card.zonePosition = 0;
-            break;
-        }
-
-        default:
-            console.warn('[AI Scenario] Unknown action: ' + act.action + ' for ' + act.card);
-    }
-}
-
-function showAIStatus(msg) {
-    if (aiStatus) {
-        aiStatus.textContent = msg;
-        aiStatus.classList.remove('hidden');
-    }
-}
-
-function hideAIStatus() {
-    if (aiStatus) aiStatus.classList.add('hidden');
-}
-
-function showAIError(msg) {
-    if (aiError) {
-        aiError.textContent = '❌ ' + msg;
-        aiError.classList.remove('hidden');
-    }
-    hideAIStatus();
-}
-
-function hideAIError() {
-    if (aiError) aiError.classList.add('hidden');
-}
+/**
+ * Autonim-Poker - Director Tool v2.0
+ * Card Tray, Player Zones, Face States, Flip Animation
+ */
+
+// ============================================
+// GLOBAL VARIABLES
+// ============================================
+
+// CSInterface for AE communication
+let csInterface;
+try {
+    csInterface = new CSInterface();
+} catch (e) {
+    console.warn('CSInterface not available - running outside CEP');
+    csInterface = null;
+}
+
+// Node.js modules (available in CEP with Node.js enabled)
+let fs, nodePath;
+try {
+    fs = require('fs');
+    nodePath = require('path');
+} catch (e) {
+    console.warn('Node.js modules not available');
+    fs = null;
+    nodePath = null;
+}
+
+// Project Constants
+const PROJECT_INFO = {
+    width: 1920,
+    height: 1080,
+    fps: 30
+};
+
+// Coordinate System: UI (1280x720) → AE (1920x1080)
+const UI_WIDTH = 1280;
+const UI_HEIGHT = 720;
+const AE_WIDTH = 1920;
+const AE_HEIGHT = 1080;
+const COORD_SCALE = AE_WIDTH / UI_WIDTH; // 1.5x scale factor
+
+// Card dimensions (in UI pixels)
+const CARD_WIDTH = 60;
+const CARD_HEIGHT = 84;
+const CARD_SPACING_UI = 68; // Spacing between cards in zones (slightly more than card width)
+
+
+// Standard 52-card deck
+const RANKS = ['ace', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'jack', 'queen', 'king'];
+const SUITS = ['spades', 'hearts', 'diamonds', 'clubs'];
+
+// Application State
+const appState = {
+    phase: 'board-setting',       // 'board-setting', 'setup' or 'record'
+    deckPath: null,               // Path to deck folder
+    assetsRootPath: null,         // Assets folder for AE
+    backImagePath: null,          // Path to back.png
+
+    // Card Tray
+    trayCards: [],                // Cards in tray (not yet on table)
+
+    // Table Cards
+    tableCards: [],               // Cards placed on table
+    selectedCard: null,           // Currently selected card
+
+    // Recording
+    isEditingStep: false,
+    currentStepIndex: -1,
+
+    // Settings
+    cardOverlap: 25,              // Overlap in pixels
+    stepBlending: 0,              // Step blending % for AE export (0-50)
+    dealSpeed: 3,                  // Deal stagger frames per card (1=fast, 5=slow)
+
+    // Board Layout
+    boardLayout: {
+        type: 'poker',            // 'poker' or 'grid'
+        name: 'Poker (4 Players)',
+        gridCols: 4,
+        gridRows: 3,
+        cardPlaces: [],           // For grid mode: [{id, x, y, label}, ...]
+        slotGroups: []            // Layer groups for z-order management
+    },
+    selectedCardPlace: null,      // Currently selected card place marker (for CZ panel)
+    selectedCardPlaces: [],       // Multi-selected card place markers
+    markerUndoStack: [],          // Undo stack for marker positions (Ctrl+Z)
+    groupUndoStack: [],           // Undo stack for group operations
+    pendingGroupOrderOverrides: null, // Pending group reorder for next step commit
+
+    // Slot Fill (multi-select drop zones)
+    selectedDropZones: [],            // Array of placeIds for multi-selected zones
+
+    // Grouping Mode
+    groupingMode: false,          // Whether grouping mode is enabled
+    groupedCards: [],             // Cards selected for grouping
+    autoRecord: false,            // Auto-record after countdown
+    autoRecordDelay: 3,           // Countdown seconds (1-10)
+    countdownTimer: null,         // Interval timer ID
+    countdownValue: 0,            // Current countdown value
+
+    // Dealing Card
+    dealingCard: {
+        enabled: false,
+        x: 640,                   // UI coordinate (center)
+        y: 360                    // UI coordinate (center)
+    }
+};
+
+// Scenario Data (for export)
+const scenarioData = {
+    projectInfo: PROJECT_INFO,
+    initialState: {},
+    scenario: []
+};
+
+// Recording state
+let currentStep = null;
+let startSnapshot = null;
+
+// ============================================
+// DOM ELEMENTS
+// ============================================
+
+// Tray Panel
+let cardTrayList, trayCardCount, deckSelect, loadDeckBtn, cardSearch;
+let suitFilterBtns;
+
+// Main Content
+let gameContainer, cardArea, tableInstructions;
+let boardSettingBtn, setupPhaseBtn, recordPhaseBtn, recordingIndicator, modeBadge;
+let flipAllBtn, resetTableBtn, tableCardCount, stepCount;
+
+// Board Setting Controls
+let boardSettingSection, presetSelect, loadPresetBtn;
+let gridCols, gridRows, applyGridBtn;
+let addCardPlaceBtn, clearBoardBtn;
+let presetName, savePresetBtn, cardPlacesList;
+
+// Board Layout Info (for setup/record phases)
+let boardLayoutInfo, currentLayoutName, editLayoutBtn;
+
+// Flip Controls
+let pokerFlipControls, gridFlipControls;
+let flipAllFaceUp, flipAllFaceDown, gridDefaultFaceUp;
+let overlapSlider, overlapValue;
+
+// Player Zones
+let zoneTop, zoneBottom, zoneLeft, zoneRight, communityZone;
+let playerZones = [];
+
+// Director Panel
+let directorPanel, stepControlsSection;
+let selectAssetsFolderBtn, assetsPathDisplay;
+let addStepBtn, finishStepBtn, stepDuration;
+let currentStepNum, totalSteps, timelinePreview;
+let noCardSelected, cardProperties, selectedCardName, cardFaceState;
+let flipCardCheck, slamEffectCheck, spinEffectCheck;
+let cardPosX, cardPosY, cardRot;
+let exportJsonBtn, exportToAEBtn;
+
+// Replay Elements
+let replayBtn, replayControls, replayProgress, stopReplayBtn;
+
+// Modal Elements
+let warningModal, warningMessage, confirmWarningBtn, cancelWarningBtn;
+
+// Auto-Step Popup Elements
+let autoStepPopup, autoStepYes, autoStepNo;
+
+// Context Menu Elements
+let cardContextMenu, ctxFlipBtn, ctxFlipAniBtn, ctxSlamBtn, ctxSpinBtn;
+let ctxFlipAllBtn, ctxSlamAllBtn, ctxSpinAllBtn, ctxGroupDivider;
+let _ctxMenuPinnedPos = null; // {left, top} - saved pinned position (persisted in localStorage)
+
+// Slot Fill Elements
+let slotContextMenu, slotFillAutoBtn, slotFillManualBtn;
+let manualFillOverlay, manualFillInput, manualFillError, manualFillConfirm, manualFillCancel, manualFillSlotCount;
+
+// Grouping Mode Elements
+let groupingSection, groupingModeToggle, autoRecordToggle, autoRecordDelay, autoRecordDelayValue;
+let countdownDisplay, countdownTimer, countdownBarFill, cancelCountdownBtn, groupCount;
+
+// Dealing Card Elements
+let dealingCardToggle;
+
+// Status
+let statusMessage;
+
+// Help Modal Elements
+let helpModal, closeHelpBtn, helpModalOverlay;
+
+// Step snapshots for replay and restore
+let stepSnapshots = [];
+
+// Pending change for auto-step (stores snapshot before change)
+let pendingChangeSnapshot = null;
+let pendingChangeCard = null;
+
+// AI Layout Generator Elements
+let aiPhaseBtn, aiSection, aiBriefInput, aiPresetSelect, aiGenerateBtn, aiStatus, aiError;
+let aiRefImageInput, aiRefVideoInput, aiAttachPreview;
+let aiRefImages = [];   // [{data: base64, mimeType: 'image/jpeg', name: 'ref.jpg'}, ...]
+let aiVideoFrames = []; // [{data: base64, mimeType: 'image/jpeg'}, ...]
+let aiVideoFile = null; // File reference for video
+
+// Debug logging system
+let debugLogs = [];
+let debugOverlay, debugContent, toggleDebugBtn, copyDebugBtn, clearDebugBtn, closeDebugBtn;
+
+// Custom debug log function
+function debugLog(...args) {
+    const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ');
+    const timestamp = new Date().toLocaleTimeString();
+    debugLogs.push(`[${timestamp}] ${msg}`);
+    if (debugContent) {
+        debugContent.textContent = debugLogs.join('\n');
+        debugContent.scrollTop = debugContent.scrollHeight;
+    }
+    console.log(...args);
+}
+
+function debugWarn(...args) {
+    const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ');
+    const timestamp = new Date().toLocaleTimeString();
+    debugLogs.push(`[${timestamp}] ⚠️ ${msg}`);
+    if (debugContent) {
+        debugContent.textContent = debugLogs.join('\n');
+        debugContent.scrollTop = debugContent.scrollHeight;
+    }
+    console.warn(...args);
+}
+
+// Fallback copy function for CEP environment
+function fallbackCopyText(text) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.top = '0';
+    textarea.style.left = '0';
+    textarea.style.width = '2em';
+    textarea.style.height = '2em';
+    textarea.style.padding = '0';
+    textarea.style.border = 'none';
+    textarea.style.outline = 'none';
+    textarea.style.boxShadow = 'none';
+    textarea.style.background = 'transparent';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+            setStatus('Debug log copied to clipboard!', 'success');
+        } else {
+            setStatus('Copy failed - please select text manually', 'error');
+        }
+    } catch (err) {
+        setStatus('Copy failed - please select text manually', 'error');
+    }
+    document.body.removeChild(textarea);
+}
+
+
+
+// ============================================
+// INITIALIZATION
+// ============================================
+
+document.addEventListener('DOMContentLoaded', authBoot);
+
+/**
+ * Auth-aware boot: checks authentication before initializing app
+ */
+async function authBoot() {
+    // Load API config
+    await loadAuthConfig();
+
+    // Initialize login UI handlers
+    initLoginUI();
+
+    // Check if already authenticated
+    if (isAuthenticated()) {
+        hideLoginScreen();
+        await bootApp();
+    } else {
+        showLoginScreen();
+    }
+}
+
+/**
+ * Boot the application (called after successful auth)
+ */
+async function bootApp() {
+    try {
+        // Update user display
+        updateUserDisplay();
+
+        // Load core ExtendScript from backend (OTA) — skip if local JSX already loaded via ScriptPath
+        const localScriptLoaded = csInterface && await new Promise(resolve => {
+            csInterface.evalScript('typeof generateSequence', result => resolve(result === 'function'));
+        }).catch(() => false);
+
+        if (localScriptLoaded) {
+            console.log('[Boot] Local ExtendScript already loaded via ScriptPath, skipping OTA');
+        } else {
+            try {
+                const scriptResult = await loadCoreScript();
+                console.log('[Boot] Core script loaded via OTA:', scriptResult);
+            } catch (scriptErr) {
+                if (scriptErr.name === 'AuthError') {
+                    showLoginScreen();
+                    return;
+                }
+                console.warn('[Boot] Core script load failed, continuing anyway:', scriptErr.message);
+            }
+        }
+
+        // Check for asset updates (non-blocking)
+        checkAssetUpdates().catch(err => {
+            if (err.name === 'AuthError') {
+                showLoginScreen();
+                return;
+            }
+            console.warn('[Boot] Asset update check failed:', err.message);
+        });
+
+        // Initialize updater UI and auto-check for updates (non-blocking)
+        if (typeof initUpdaterUI === 'function') {
+            initUpdaterUI();
+            autoCheckUpdate().catch(err => {
+                console.warn('[Boot] Auto update check failed:', err.message);
+            });
+        }
+
+        // Initialize the main app
+        init();
+
+        // Start Claude Bridge server (local HTTP for skill communication)
+        if (typeof startBridgeServer === 'function') {
+            startBridgeServer();
+        }
+    } catch (error) {
+        console.error('[Boot] Failed to boot app:', error);
+    }
+}
+
+function init() {
+    getDOMElements();
+    bindEvents();
+    initBriefModal();
+
+    // Removed autoRestoreBoardLayout() to prevent loading old conflicting 4-hand data on restart
+    loadPokerLayout();
+
+    // Start in Board Setting mode with poker layout visible
+    setPhase('board-setting');
+
+    // Scan and populate deck dropdown, then auto-load first deck
+    scanAndPopulateDecks();
+
+    // Initialize Timeline Modules (Phase 1)
+    initTimelineModulesIntegration();
+
+    updateUI();
+    setStatus('Ready - Load a deck and setup your cards');
+
+    const user = getUser();
+    console.log(`Autonim-Poker v2.0 initialized (user: ${user ? user.username : 'unknown'})`);
+}
+
+function initBriefModal() {
+    if (quangBriefBtn) quangBriefBtn.addEventListener('click', () => {
+        if (briefModal) briefModal.classList.remove('hidden');
+    });
+
+    const closeDialog = () => {
+        if (briefModal) briefModal.classList.add('hidden');
+    };
+
+    if (closeBriefModalBtn) closeBriefModalBtn.addEventListener('click', closeDialog);
+    if (cancelBriefBtn) cancelBriefBtn.addEventListener('click', closeDialog);
+    if (closeBriefOverlay) closeBriefOverlay.addEventListener('click', closeDialog);
+    
+    if (applyBriefBtn) applyBriefBtn.addEventListener('click', () => {
+        console.log("Applying Brief...", briefInput ? briefInput.value : "");
+        // Logic will go here
+        closeDialog();
+    });
+}
+
+var quangBriefBtn, briefModal, closeBriefOverlay, closeBriefModalBtn, cancelBriefBtn, applyBriefBtn, briefInput, briefOutputPreview;
+
+function getDOMElements() {
+    // Tray Panel
+    cardTrayList = document.getElementById('cardTrayList');
+    trayCardCount = document.getElementById('trayCardCount');
+    deckSelect = document.getElementById('deckSelect');
+    loadDeckBtn = document.getElementById('loadDeckBtn');
+    cardSearch = document.getElementById('cardSearch');
+    suitFilterBtns = document.querySelectorAll('.suit-btn');
+
+    // Main Content
+    gameContainer = document.getElementById('gameContainer');
+    cardArea = document.getElementById('cardArea');
+    tableInstructions = document.getElementById('tableInstructions');
+    boardSettingBtn = document.getElementById('boardSettingBtn');
+    setupPhaseBtn = document.getElementById('setupPhaseBtn');
+    recordPhaseBtn = document.getElementById('recordPhaseBtn');
+    recordingIndicator = document.getElementById('recordingIndicator');
+    modeBadge = document.getElementById('modeBadge');
+    flipAllBtn = document.getElementById('flipAllBtn');
+    resetTableBtn = document.getElementById('resetTableBtn');
+    quangBriefBtn = document.getElementById('quangBriefBtn');
+    tableCardCount = document.getElementById('tableCardCount');
+
+    // Brief Modal
+    briefModal = document.getElementById('briefModal');
+    closeBriefOverlay = document.getElementById('closeBriefOverlay');
+    closeBriefModalBtn = document.getElementById('closeBriefModalBtn');
+    cancelBriefBtn = document.getElementById('cancelBriefBtn');
+    applyBriefBtn = document.getElementById('applyBriefBtn');
+    briefInput = document.getElementById('briefInput');
+    briefOutputPreview = document.getElementById('briefOutputPreview');
+    stepCount = document.getElementById('stepCount');
+    overlapSlider = document.getElementById('overlapSlider');
+    overlapValue = document.getElementById('overlapValue');
+
+    // Board Setting Controls
+    boardSettingSection = document.getElementById('boardSettingSection');
+    presetSelect = document.getElementById('presetSelect');
+    loadPresetBtn = document.getElementById('loadPresetBtn');
+    gridCols = document.getElementById('gridCols');
+    gridRows = document.getElementById('gridRows');
+    applyGridBtn = document.getElementById('applyGridBtn');
+    addCardPlaceBtn = document.getElementById('addCardPlaceBtn');
+    clearBoardBtn = document.getElementById('clearBoardBtn');
+    presetName = document.getElementById('presetName');
+    savePresetBtn = document.getElementById('savePresetBtn');
+    cardPlacesList = document.getElementById('cardPlacesList');
+
+    // Board Layout Info
+    boardLayoutInfo = document.getElementById('boardLayoutInfo');
+    currentLayoutName = document.getElementById('currentLayoutName');
+    editLayoutBtn = document.getElementById('editLayoutBtn');
+
+    // Flip Controls
+    pokerFlipControls = document.getElementById('pokerFlipControls');
+    gridFlipControls = document.getElementById('gridFlipControls');
+    flipAllFaceUp = document.getElementById('flipAllFaceUp');
+    flipAllFaceDown = document.getElementById('flipAllFaceDown');
+    gridDefaultFaceUp = document.getElementById('gridDefaultFaceUp');
+
+    // Player Zones
+    zoneTop = document.getElementById('zoneTop');
+    zoneBottom = document.getElementById('zoneBottom');
+    zoneLeft = document.getElementById('zoneLeft');
+    zoneRight = document.getElementById('zoneRight');
+    communityZone = document.getElementById('communityZone');
+    playerZones = [zoneTop, zoneBottom, zoneLeft, zoneRight, communityZone];
+
+    // Director Panel
+    directorPanel = document.getElementById('directorPanel');
+    stepControlsSection = document.getElementById('stepControlsSection');
+    selectAssetsFolderBtn = document.getElementById('selectAssetsFolderBtn');
+    assetsPathDisplay = document.getElementById('assetsPathDisplay');
+    addStepBtn = document.getElementById('addStepBtn');
+    finishStepBtn = document.getElementById('finishStepBtn');
+    stepDuration = document.getElementById('stepDuration');
+    currentStepNum = document.getElementById('currentStepNum');
+    totalSteps = document.getElementById('totalSteps');
+    timelinePreview = document.getElementById('timelinePreview');
+    noCardSelected = document.getElementById('noCardSelected');
+    cardProperties = document.getElementById('cardProperties');
+    selectedCardName = document.getElementById('selectedCardName');
+    cardFaceState = document.getElementById('cardFaceState');
+    flipCardCheck = document.getElementById('flipCardCheck');
+    slamEffectCheck = document.getElementById('slamEffectCheck');
+    spinEffectCheck = document.getElementById('spinEffectCheck');
+    cardPosX = document.getElementById('cardPosX');
+    cardPosY = document.getElementById('cardPosY');
+    cardRot = document.getElementById('cardRot');
+    exportJsonBtn = document.getElementById('exportJsonBtn');
+    exportToAEBtn = document.getElementById('exportToAEBtn');
+
+    // Replay Elements
+    replayBtn = document.getElementById('replayBtn');
+    replayControls = document.getElementById('replayControls');
+    replayProgress = document.getElementById('replayProgress');
+    stopReplayBtn = document.getElementById('stopReplayBtn');
+
+    // Modal Elements
+    warningModal = document.getElementById('warningModal');
+    warningMessage = document.getElementById('warningMessage');
+    confirmWarningBtn = document.getElementById('confirmWarningBtn');
+    cancelWarningBtn = document.getElementById('cancelWarningBtn');
+
+    // Auto-Step Popup Elements
+    autoStepPopup = document.getElementById('autoStepPopup');
+    autoStepYes = document.getElementById('autoStepYes');
+    autoStepNo = document.getElementById('autoStepNo');
+
+    // Context Menu Elements
+    cardContextMenu = document.getElementById('cardContextMenu');
+    ctxFlipBtn = document.getElementById('ctxFlipBtn');
+    ctxFlipAniBtn = document.getElementById('ctxFlipAniBtn');
+    ctxSlamBtn = document.getElementById('ctxSlamBtn');
+    ctxSpinBtn = document.getElementById('ctxSpinBtn');
+    ctxFlipAllBtn = document.getElementById('ctxFlipAllBtn');
+    ctxSlamAllBtn = document.getElementById('ctxSlamAllBtn');
+    ctxSpinAllBtn = document.getElementById('ctxSpinAllBtn');
+    ctxGroupDivider = document.getElementById('ctxGroupDivider');
+
+    // Slot Fill Elements
+    slotContextMenu = document.getElementById('slotContextMenu');
+    slotFillAutoBtn = document.getElementById('slotFillAutoBtn');
+    slotFillManualBtn = document.getElementById('slotFillManualBtn');
+    manualFillOverlay = document.getElementById('manualFillOverlay');
+    manualFillInput = document.getElementById('manualFillInput');
+    manualFillError = document.getElementById('manualFillError');
+    manualFillConfirm = document.getElementById('manualFillConfirm');
+    manualFillCancel = document.getElementById('manualFillCancel');
+    manualFillSlotCount = document.getElementById('manualFillSlotCount');
+
+    // Status
+    statusMessage = document.getElementById('statusMessage');
+
+    // Debug Overlay Elements
+    debugOverlay = document.getElementById('debugOverlay');
+    debugContent = document.getElementById('debugContent');
+    toggleDebugBtn = document.getElementById('toggleDebugBtn');
+    copyDebugBtn = document.getElementById('copyDebugBtn');
+    clearDebugBtn = document.getElementById('clearDebugBtn');
+    closeDebugBtn = document.getElementById('closeDebugBtn');
+
+    // Grouping Mode Elements
+    groupingSection = document.getElementById('groupingSection');
+    groupingModeToggle = document.getElementById('groupingModeToggle');
+    autoRecordToggle = document.getElementById('autoRecordToggle');
+    autoRecordDelay = document.getElementById('autoRecordDelay');
+    autoRecordDelayValue = document.getElementById('autoRecordDelayValue');
+    countdownDisplay = document.getElementById('countdownDisplay');
+    countdownTimer = document.getElementById('countdownTimer');
+    countdownBarFill = document.getElementById('countdownBarFill');
+    cancelCountdownBtn = document.getElementById('cancelCountdownBtn');
+    groupCount = document.getElementById('groupCount');
+
+    // Dealing Card
+    dealingCardToggle = document.getElementById('dealingCardToggle');
+}
+
+
+function bindEvents() {
+    // Deck loading
+    loadDeckBtn.addEventListener('click', handleLoadDeck);
+    deckSelect.addEventListener('change', handleDeckSelectChange);
+
+    // Search and filter
+    cardSearch.addEventListener('input', filterTrayCards);
+    suitFilterBtns.forEach(btn => {
+        btn.addEventListener('click', () => handleSuitFilter(btn));
+    });
+
+    // Phase switching
+    boardSettingBtn.addEventListener('click', () => setPhase('board-setting'));
+    setupPhaseBtn.addEventListener('click', () => setPhase('setup'));
+
+    // AI Phase Button
+    aiPhaseBtn = document.getElementById('aiPhaseBtn');
+    aiSection = document.getElementById('aiSection');
+    aiBriefInput = document.getElementById('aiBriefInput');
+    aiPresetSelect = document.getElementById('aiPresetSelect');
+    aiGenerateBtn = document.getElementById('aiGenerateBtn');
+    aiStatus = document.getElementById('aiStatus');
+    aiError = document.getElementById('aiError');
+    aiRefImageInput = document.getElementById('aiRefImageInput');
+    aiRefVideoInput = document.getElementById('aiRefVideoInput');
+    aiAttachPreview = document.getElementById('aiAttachPreview');
+    if (aiPhaseBtn) {
+        aiPhaseBtn.addEventListener('click', () => toggleAIPanel());
+    }
+    if (aiGenerateBtn) {
+        aiGenerateBtn.addEventListener('click', () => handleAIGenerate());
+    }
+    if (aiRefImageInput) {
+        aiRefImageInput.addEventListener('change', handleRefImageAttach);
+    }
+    if (aiRefVideoInput) {
+        aiRefVideoInput.addEventListener('change', handleRefVideoAttach);
+    }
+    // AI Example buttons
+    document.querySelectorAll('.ai-example-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (aiBriefInput) aiBriefInput.value = btn.dataset.brief;
+        });
+    });
+    recordPhaseBtn.addEventListener('click', () => setPhase('record'));
+
+    // Board Setting Controls
+    if (loadPresetBtn) loadPresetBtn.addEventListener('click', handleLoadPreset);
+    
+    // Live Preview using Actual Board
+        let confirmPresetClick = false;
+
+    // Mini Preview Window Logic
+    const miniPreviewOverlay = document.getElementById('miniPreviewOverlay');
+    const miniPreviewTable = document.getElementById('miniPreviewTable');
+    const miniPreviewTitle = document.getElementById('miniPreviewTitle');
+
+    let miniPreviewTimeout = null;
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.addEventListener('mouseenter', () => {
+            if (miniPreviewTimeout) {
+                clearTimeout(miniPreviewTimeout);
+                miniPreviewTimeout = null;
+            }
+            const presetId = btn.getAttribute('data-preset');
+            const presetLabel = btn.querySelector('.preset-label')?.textContent || presetId;
+            
+            if (miniPreviewOverlay && miniPreviewTable) {
+                // Backup
+                const backupState = JSON.stringify(appState.boardLayout);
+                appState.boardLayout.cardPlaces = [];
+                appState.boardLayout.slotGroups = [];
+                
+                // Gen
+                if (presetId === 'poker') loadPokerLayout();
+                else if (presetId === 'pusoy') loadPusoyMultiLayout(4);
+                else if (presetId.startsWith('pusoy-')) loadPusoyMultiLayout(parseInt(presetId.split('-')[1]));
+                else if (presetId === 'omaha') loadOmahaLayout();
+                else if (presetId === 'array-2') {
+                    appState.boardLayout.cardPlaces = [...generateArrayHand('bottom', 0), ...generateArrayHand('top', 1)];
+                }
+                else if (presetId.startsWith('saved:')) {
+                    const savedJSON = localStorage.getItem('autonim_poker_layout_' + presetId.substring(6));
+                    if (savedJSON) { try { appState.boardLayout = JSON.parse(savedJSON); } catch(e){} }
+                }
+                else loadPokerLayout();
+
+                // Render
+                miniPreviewTable.innerHTML = '';
+                const wrapper = document.createElement('div');
+                wrapper.style.position = 'absolute';
+                wrapper.style.top = '0';
+                wrapper.style.left = '0';
+                wrapper.style.width = '1280px';
+                wrapper.style.height = '720px';
+                // Increase scale to make the preview nicely fit inside
+                wrapper.style.transform = `translate(-50%, -50%) scale(0.5)`;
+                wrapper.style.left = '50%';
+                wrapper.style.top = '50%';
+                wrapper.style.transformOrigin = 'center';
+
+                const places = appState.boardLayout.cardPlaces || [];
+                const groups = appState.boardLayout.slotGroups || [];
+                places.forEach(p => {
+                    const el = document.createElement('div');
+                    el.className = 'mini-preview-marker';
+                    el.style.left = p.x + 'px';
+                    el.style.top = p.y + 'px';
+                    let w = 124, h = 172;
+                    if (p.isCommunityZone) { w = p.czWidth || 300; h = p.czHeight || 120; }
+                    el.style.width = w + 'px'; el.style.height = h + 'px';
+                    el.style.transform = `translate(-50%, -50%) rotate(${p.rotation || 0}deg)`;
+                    el.style.border = '2px dashed rgba(255, 255, 255, 0.4)';
+                    el.style.background = 'transparent';
+
+                    const g = groups.find(x => x.slotIds && x.slotIds.includes(p.id));
+                    if (g) {
+                        el.style.borderColor = `color-mix(in srgb, ${g.color} 80%, black)`;
+                        el.style.background = `color-mix(in srgb, ${g.color} 20%, transparent)`;
+                    }
+                    wrapper.appendChild(el);
+                });
+                
+                miniPreviewTable.appendChild(wrapper);
+
+                // Restore instantly
+                appState.boardLayout = JSON.parse(backupState);
+                
+                if (miniPreviewTitle) miniPreviewTitle.textContent = `${presetLabel} Preview`;
+                miniPreviewOverlay.classList.remove('hidden');
+                miniPreviewOverlay.classList.add('visible');
+            }
+        });
+
+        btn.addEventListener('mouseleave', () => {
+            if (miniPreviewOverlay) {
+                miniPreviewOverlay.classList.remove('visible');
+                miniPreviewTimeout = setTimeout(() => miniPreviewOverlay.classList.add('hidden'), 200);
+            }
+        });
+
+        btn.addEventListener('click', () => {
+            btn.classList.add('pop-effect');
+            setTimeout(() => btn.classList.remove('pop-effect'), 300);
+            if (miniPreviewOverlay) {
+                miniPreviewOverlay.classList.remove('visible');
+                miniPreviewOverlay.classList.add('hidden');
+            }
+            const preset = btn.getAttribute('data-preset');
+            if (preset && presetSelect) {
+                presetSelect.value = preset;
+                presetSelect.dispatchEvent(new Event('change'));
+                if (loadPresetBtn) loadPresetBtn.click();
+            }
+        });
+    });
+// Sync button active state with dropdown change
+    if (presetSelect) {
+        presetSelect.addEventListener('change', () => {
+            if (!document.body.classList.contains('previewing-preset')) {
+                const val = presetSelect.value;
+                document.querySelectorAll('.preset-btn').forEach(b => {
+                    b.classList.toggle('active', b.getAttribute('data-preset') === val);
+                });
+            }
+        });
+    }
+    if (applyGridBtn) applyGridBtn.addEventListener('click', handleApplyGrid);
+    if (addCardPlaceBtn) addCardPlaceBtn.addEventListener('click', handleAddCardPlace);
+    var addCommunityZoneBtn = document.getElementById('addCommunityZoneBtn');
+    if (addCommunityZoneBtn) addCommunityZoneBtn.addEventListener('click', handleAddCommunityZone);
+    var addDealingSlotBtn = document.getElementById('addDealingSlotBtn');
+    if (addDealingSlotBtn) addDealingSlotBtn.addEventListener('click', () => {
+        if (appState.dealingCard.enabled) return; // Max 1
+        appState.dealingCard.enabled = true;
+        if (dealingCardToggle) dealingCardToggle.checked = true; // Sync AE toggle
+        renderDealingSlot();
+        updateDealingSlotButton();
+        setStatus('Dealing Card added — drag to reposition');
+    });
+    if (clearBoardBtn) clearBoardBtn.addEventListener('click', handleClearBoard);
+    if (savePresetBtn) savePresetBtn.addEventListener('click', handleSavePreset);
+
+    // Delete saved layout button
+    const deletePresetBtn = document.getElementById('deletePresetBtn');
+    if (deletePresetBtn) {
+        deletePresetBtn.addEventListener('click', () => {
+            const val = presetSelect.value;
+            if (!val.startsWith('saved:')) return;
+            const layoutName = val.substring(6);
+            if (!confirm(`Delete saved layout "${layoutName}"?`)) return;
+            deleteSavedLayout(layoutName);
+            presetSelect.value = 'poker'; // Reset to default
+            deletePresetBtn.classList.add('hidden');
+            refreshSavedLayoutsDropdown();
+            setStatus(`Deleted layout: ${layoutName}`);
+        });
+    }
+
+    // Show/hide delete button based on dropdown selection
+    if (presetSelect) {
+        presetSelect.addEventListener('change', () => {
+            const btn = document.getElementById('deletePresetBtn');
+            if (btn) btn.classList.toggle('hidden', !presetSelect.value.startsWith('saved:'));
+        });
+    }
+
+    // Populate saved layouts dropdown from localStorage on init
+    refreshSavedLayoutsDropdown();
+
+    // Initialize CZ settings panel
+    initCZSettingsPanel();
+
+    // Edit Layout button (in setup/record mode)
+    if (editLayoutBtn) editLayoutBtn.addEventListener('click', () => setPhase('board-setting'));
+
+    // Table controls
+    resetTableBtn.addEventListener('click', handleResetTable);
+    overlapSlider.addEventListener('input', handleOverlapChange);
+
+    // Per-zone flip controls (Poker layout)
+    document.querySelectorAll('#pokerFlipControls input[type="checkbox"]').forEach(checkbox => {
+        checkbox.addEventListener('change', handleZoneFlipChange);
+    });
+
+    // Grid flip controls
+    if (flipAllFaceUp) flipAllFaceUp.addEventListener('click', () => handleFlipAllCards(true));
+    if (flipAllFaceDown) flipAllFaceDown.addEventListener('click', () => handleFlipAllCards(false));
+
+    // Assets folder
+    selectAssetsFolderBtn.addEventListener('click', handleSelectAssetsFolder);
+
+    // Recording controls
+    addStepBtn.addEventListener('click', handleAddStep);
+    if (finishStepBtn) finishStepBtn.addEventListener('click', handleFinishStep);
+
+    // Card properties
+    flipCardCheck.addEventListener('change', handlePropertyChange);
+    slamEffectCheck.addEventListener('change', handlePropertyChange);
+    spinEffectCheck.addEventListener('change', handlePropertyChange);
+
+    // Export
+    if (exportJsonBtn) exportJsonBtn.addEventListener('click', handleExportJSON);
+    exportToAEBtn.addEventListener('click', handleExportToAE);
+
+    // Replay
+    if (replayBtn) replayBtn.addEventListener('click', handleReplay);
+    if (stopReplayBtn) stopReplayBtn.addEventListener('click', stopReplay);
+
+    // Speed slider
+    const stepSpeedSlider = document.getElementById('stepSpeedSlider');
+    const stepSpeedValue = document.getElementById('stepSpeedValue');
+    if (stepSpeedSlider) {
+        stepSpeedSlider.addEventListener('input', () => {
+            replaySpeed = parseFloat(stepSpeedSlider.value);
+            if (stepSpeedValue) stepSpeedValue.textContent = replaySpeed + 'x';
+        });
+    }
+
+    // Blending slider
+    const stepBlendingSlider = document.getElementById('stepBlendingSlider');
+    const stepBlendingValue = document.getElementById('stepBlendingValue');
+    if (stepBlendingSlider) {
+        stepBlendingSlider.addEventListener('input', () => {
+            appState.stepBlending = parseInt(stepBlendingSlider.value);
+            if (stepBlendingValue) stepBlendingValue.textContent = appState.stepBlending + '%';
+        });
+    }
+
+    // Deal Speed slider
+    const dealSpeedSlider = document.getElementById('dealSpeedSlider');
+    const dealSpeedValue = document.getElementById('dealSpeedValue');
+    const dealTimeEstimate = document.getElementById('dealTimeEstimate');
+    if (dealSpeedSlider) {
+        dealSpeedSlider.addEventListener('input', () => {
+            appState.dealSpeed = parseInt(dealSpeedSlider.value);
+            if (dealSpeedValue) dealSpeedValue.textContent = appState.dealSpeed + 'f/card';
+            updateDealTimeEstimate();
+        });
+    }
+
+    // Project Save/Load
+    const saveProjectBtn = document.getElementById('saveProjectBtn');
+    const loadProjectBtn = document.getElementById('loadProjectBtn');
+    const loadProjectInput = document.getElementById('loadProjectInput');
+    if (saveProjectBtn) saveProjectBtn.addEventListener('click', handleSaveProject);
+    if (loadProjectBtn) loadProjectBtn.addEventListener('click', () => loadProjectInput.click());
+    if (loadProjectInput) loadProjectInput.addEventListener('change', handleLoadProject);
+
+    // Create Group Button
+    var createGroupBtn = document.getElementById('createGroupBtn');
+    if (createGroupBtn) {
+        createGroupBtn.addEventListener('click', function () {
+            if (appState.selectedCardPlaces && appState.selectedCardPlaces.length >= 2) {
+                var slotIds = appState.selectedCardPlaces.map(function (p) { return p.id; });
+                var groupNum = (appState.boardLayout.slotGroups || []).length + 1;
+                createSlotGroup('Group ' + groupNum, slotIds);
+                appState.selectedCardPlaces = [];
+                renderCardPlaceMarkers();
+                updateGroupPanelVisibility();
+            }
+        });
+    }
+
+    // Modal
+    if (confirmWarningBtn) confirmWarningBtn.addEventListener('click', confirmWarning);
+    if (cancelWarningBtn) cancelWarningBtn.addEventListener('click', hideWarningModal);
+
+    // Help Modal
+    helpModal = document.getElementById('helpModal');
+    closeHelpBtn = document.getElementById('closeHelpBtn');
+    helpModalOverlay = helpModal ? helpModal.querySelector('.help-modal-overlay') : null;
+    const btnHelp = document.getElementById('btn-help');
+    if (btnHelp) btnHelp.addEventListener('click', showHelpModal);
+    if (closeHelpBtn) closeHelpBtn.addEventListener('click', hideHelpModal);
+    if (helpModalOverlay) helpModalOverlay.addEventListener('click', hideHelpModal);
+    initHelpVideoLinks();
+
+    // Auto-Step Popup
+    if (autoStepYes) autoStepYes.addEventListener('click', handleAutoStepYes);
+    if (autoStepNo) autoStepNo.addEventListener('click', handleAutoStepNo);
+
+    // Context Menu
+    if (ctxFlipBtn) ctxFlipBtn.addEventListener('click', toggleCtxFlip);
+    if (ctxFlipAniBtn) ctxFlipAniBtn.addEventListener('click', handleFlipAni);
+    if (ctxSlamBtn) ctxSlamBtn.addEventListener('click', toggleCtxSlam);
+    if (ctxSpinBtn) ctxSpinBtn.addEventListener('click', toggleCtxSpin);
+    if (ctxFlipAllBtn) ctxFlipAllBtn.addEventListener('click', toggleCtxFlipAll);
+    if (ctxSlamAllBtn) ctxSlamAllBtn.addEventListener('click', toggleCtxSlamAll);
+    if (ctxSpinAllBtn) ctxSpinAllBtn.addEventListener('click', toggleCtxSpinAll);
+    setupCtxMenuDrag();
+
+    // Context menu popup toggle
+    var showCtxToggle = document.getElementById('showContextMenuToggle');
+    if (showCtxToggle) {
+        showCtxToggle.addEventListener('change', function () {
+            if (!this.checked) {
+                hideCardContextMenu();
+            } else if (appState.selectedCard) {
+                showCardContextMenu(appState.selectedCard);
+            }
+        });
+    }
+
+    // Zone drop targets
+    setupZoneDropTargets();
+
+    // Card tray as drop target (for returning cards in Setup phase)
+    setupTrayDropTarget();
+
+    // Click on table to deselect
+    cardArea.addEventListener('click', (e) => {
+        if (e.target === cardArea) {
+            deselectCard();
+        }
+    });
+
+    // Slot Fill Events
+    if (slotFillAutoBtn) slotFillAutoBtn.addEventListener('click', fillSlotsAuto);
+    if (slotFillManualBtn) slotFillManualBtn.addEventListener('click', showManualFillOverlay);
+    if (manualFillConfirm) manualFillConfirm.addEventListener('click', executeManualFill);
+    if (manualFillCancel) manualFillCancel.addEventListener('click', hideManualFillOverlay);
+    if (manualFillInput) {
+        manualFillInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); executeManualFill(); }
+            if (e.key === 'Escape') { e.preventDefault(); hideManualFillOverlay(); }
+        });
+    }
+    // Click outside slot context menu to close it
+    document.addEventListener('click', (e) => {
+        if (slotContextMenu && !slotContextMenu.classList.contains('hidden')) {
+            if (!slotContextMenu.contains(e.target)) {
+                hideSlotContextMenu();
+            }
+        }
+    });
+    // Click on overlay background to close manual fill
+    if (manualFillOverlay) {
+        manualFillOverlay.addEventListener('click', (e) => {
+            if (e.target === manualFillOverlay) hideManualFillOverlay();
+        });
+    }
+    // Escape key to close all slot fill UI
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            if (manualFillOverlay && !manualFillOverlay.classList.contains('hidden')) {
+                hideManualFillOverlay();
+            } else if (slotContextMenu && !slotContextMenu.classList.contains('hidden')) {
+                hideSlotContextMenu();
+                clearDropZoneSelection();
+            }
+        }
+    });
+
+    // Debug Overlay
+    if (toggleDebugBtn) toggleDebugBtn.addEventListener('click', () => {
+        debugOverlay.classList.toggle('hidden');
+    });
+    if (copyDebugBtn) copyDebugBtn.addEventListener('click', () => {
+        const textToCopy = debugLogs.join('\n');
+        // Try modern clipboard API first
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                setStatus('Debug log copied to clipboard!', 'success');
+            }).catch(() => {
+                // Fallback: use textarea method
+                fallbackCopyText(textToCopy);
+            });
+        } else {
+            // Fallback for CEP environment
+            fallbackCopyText(textToCopy);
+        }
+    });
+
+    if (clearDebugBtn) clearDebugBtn.addEventListener('click', () => {
+        debugLogs = [];
+        if (debugContent) debugContent.textContent = '';
+    });
+    if (closeDebugBtn) closeDebugBtn.addEventListener('click', () => {
+        debugOverlay.classList.add('hidden');
+    });
+
+    // Grouping Mode Events
+    if (groupingModeToggle) groupingModeToggle.addEventListener('change', handleGroupingModeChange);
+    if (autoRecordToggle) autoRecordToggle.addEventListener('change', handleAutoRecordChange);
+    if (autoRecordDelay) autoRecordDelay.addEventListener('input', handleAutoRecordDelayChange);
+    if (cancelCountdownBtn) cancelCountdownBtn.addEventListener('click', cancelAutoRecordCountdown);
+
+    // Pusoy Layout Slider Controls
+    setupPusoySliderControls();
+
+    // Card Sorting Grid Slider Controls
+    setupCardSortingSliderControls();
+
+    // Dealing Card Controls
+    setupDealingCardControls();
+
+    // Board Tools (Align, Distribute, Cloner, Pusoy Pack)
+    if (typeof initBoardTools === 'function') initBoardTools();
+}
+
+
+// ============================================
+// PHASE MANAGEMENT
+// ============================================
+
+function setPhase(phase) {
+    appState.phase = phase;
+
+    // Reset all phase button states
+    boardSettingBtn.classList.remove('active');
+    setupPhaseBtn.classList.remove('active');
+    recordPhaseBtn.classList.remove('active');
+    modeBadge.classList.remove('recording', 'board-setting');
+
+    // Hide all phase-specific sections
+    if (boardSettingSection) boardSettingSection.classList.remove('visible');
+    if (boardLayoutInfo) boardLayoutInfo.classList.remove('visible');
+    if (stepControlsSection) stepControlsSection.classList.add('hidden');
+    gameContainer.classList.remove('board-setting-mode');
+    // Auto-save board layout when leaving board-setting phase
+    if (document.body.classList.contains('phase-board-setting')) {
+        autoSaveBoardLayout();
+    }
+    document.body.classList.remove('phase-board-setting');
+    document.body.classList.remove('phase-setup');
+    clearCardDropZones(); // Clear drop zones when switching phases
+    clearDropZoneSelection();
+    hideSlotContextMenu();
+    hideManualFillOverlay();
+
+    // Toggle card tray disabled state
+    var cardTrayPanel = document.getElementById('cardTrayPanel');
+    if (cardTrayPanel) {
+        if (phase === 'board-setting') {
+            cardTrayPanel.classList.add('tray-disabled');
+        } else {
+            cardTrayPanel.classList.remove('tray-disabled');
+        }
+    }
+    // Hide recording indicator and border
+    const recIndicator = document.getElementById('recordingIndicator');
+    if (recIndicator) recIndicator.classList.add('hidden');
+    const gameWrapper = document.querySelector('.game-container-wrapper');
+    if (gameWrapper) gameWrapper.classList.remove('recording-mode');
+    // Note: Don't remove grid-mode here - preserve it across phases
+
+    if (phase === 'board-setting') {
+        boardSettingBtn.classList.add('active');
+        modeBadge.textContent = 'BOARD';
+        modeBadge.classList.add('board-setting');
+        if (boardSettingSection) boardSettingSection.classList.add('visible');
+        gameContainer.classList.add('board-setting-mode');
+        document.body.classList.add('phase-board-setting');
+
+        // Add grid-mode if layout type is grid
+        if (appState.boardLayout.type === 'grid') {
+            gameContainer.classList.add('grid-mode');
+        } else {
+            gameContainer.classList.remove('grid-mode');
+        }
+
+        // Render card place markers
+        renderCardPlaceMarkers();
+        
+        // Restore visual cards
+        appState.tableCards.forEach(card => {
+            if (card.zone && card.zone.startsWith('grid-')) {
+                const placeId = card.zone.replace('grid-', '');
+                const zoneElement = document.querySelector(`.card-place-marker[data-place-id="${placeId}"]`);
+                if (zoneElement) createZoneCardElement(card, zoneElement);
+            }
+        });
+
+        updateDealingSlotButton();
+        updateGroupPanelVisibility();
+        setStatus('Board Setting - Customize card positions');
+    } else if (phase === 'setup') {
+        setupPhaseBtn.classList.add('active');
+        modeBadge.textContent = 'SETUP';
+        document.body.classList.add('phase-setup');
+
+        // Show board layout info (remove record-mode to show Edit button)
+        if (boardLayoutInfo) {
+            boardLayoutInfo.classList.add('visible');
+            boardLayoutInfo.classList.remove('record-mode');
+        }
+        updateLayoutInfoDisplay();
+
+        // Clear editable markers, render drop zones instead
+        clearCardPlaceMarkers();
+
+        // Render card drop zones universally in setup
+        if (appState.boardLayout.type === 'grid') {
+            gameContainer.classList.add('grid-mode');
+        } else {
+            gameContainer.classList.remove('grid-mode');
+        }
+        
+        renderCardDropZones();
+        // Restore visual cards
+        appState.tableCards.forEach(card => {
+            const zoneElement = document.querySelector(`.card-drop-zone[data-zone="${card.zone}"]`);
+            if (zoneElement) createZoneCardElement(card, zoneElement);
+        });
+        
+        if (typeof hideTransformIndicator === 'function') hideTransformIndicator();
+
+        setStatus('Setup - Drag cards to the table');
+    } else if (phase === 'record') {
+        recordPhaseBtn.classList.add('active');
+        modeBadge.textContent = 'RECORD';
+        modeBadge.classList.add('recording');
+        if (stepControlsSection) stepControlsSection.classList.remove('hidden');
+
+        // Show board layout info (add record-mode to hide Edit button)
+        if (boardLayoutInfo) {
+            boardLayoutInfo.classList.add('visible');
+            boardLayoutInfo.classList.add('record-mode');
+        }
+        updateLayoutInfoDisplay();
+
+        // Clear card place markers
+        clearCardPlaceMarkers();
+
+        // Render card drop zones universally in record mode
+        if (appState.boardLayout.type === 'grid') {
+            gameContainer.classList.add('grid-mode');
+        } else {
+            gameContainer.classList.remove('grid-mode');
+        }
+        
+        renderCardDropZones();
+        // Restore visual cards
+        appState.tableCards.forEach(card => {
+            const zoneElement = document.querySelector(`.card-drop-zone[data-zone="${card.zone}"]`);
+            if (zoneElement) createZoneCardElement(card, zoneElement);
+        });
+
+        // Save initial state when entering record phase
+        saveInitialState();
+
+        // Show recording indicator and border
+        const recIndicator = document.getElementById('recordingIndicator');
+        if (recIndicator) recIndicator.classList.remove('hidden');
+        const gameWrapper = document.querySelector('.game-container-wrapper');
+        if (gameWrapper) gameWrapper.classList.add('recording-mode');
+
+        setStatus('Record - Create animation steps');
+        updateGroupOrderSectionVisibility();
+    }
+
+    // Update grouping section visibility
+    updateGroupingSectionVisibility();
+
+    updateUI();
+}
+
+/**
+ * Update the layout info display in setup/record modes
+ */
+function updateLayoutInfoDisplay() {
+    if (currentLayoutName) {
+        currentLayoutName.textContent = appState.boardLayout.name || 'Poker (4 Players)';
+    }
+
+    // Toggle flip controls visibility based on layout type
+    updateFlipControlsVisibility();
+}
+
+/**
+ * Update flip controls visibility based on board layout type
+ */
+function updateFlipControlsVisibility() {
+    if (appState.boardLayout.type === 'grid' && appState.boardLayout.boardStyle !== 'poker') {
+        // Non-poker grid (Pusoy, card-sorting): show grid controls, hide poker controls
+        if (pokerFlipControls) pokerFlipControls.classList.add('hidden');
+        if (gridFlipControls) gridFlipControls.classList.remove('hidden');
+    } else {
+        // Poker (including poker-grid) or legacy: show poker controls, hide grid controls
+        if (pokerFlipControls) pokerFlipControls.classList.remove('hidden');
+        if (gridFlipControls) gridFlipControls.classList.add('hidden');
+    }
+}
+
+/**
+ * Flip all table cards face up or face down
+ */
+function handleFlipAllCards(faceUp) {
+    appState.tableCards.forEach(card => {
+        card.isFaceUp = faceUp;
+        // Update visual representation
+        const cardEl = document.querySelector(`.card[data-card-id="${card.id}"]`);
+        if (cardEl) {
+            if (faceUp) {
+                cardEl.classList.add('face-up');
+            } else {
+                cardEl.classList.remove('face-up');
+            }
+            // Update card image
+            const img = cardEl.querySelector('img');
+            if (img) {
+                img.src = faceUp ? (card.frontImageUrl || '') : (card.backImageUrl || '');
+            }
+        }
+    });
+
+    setStatus(faceUp ? 'All cards flipped face up' : 'All cards flipped face down');
+    updateUI();
+}
+
+// ============================================
+// DECK LOADING
+// ============================================
+
+/**
+ * Scan the assets/decks folder and populate the deck dropdown
+ */
+function scanAndPopulateDecks() {
+    // Browser mode - create placeholder cards
+    if (!csInterface) {
+        createPlaceholderDeck();
+        return;
+    }
+
+    // CEP mode - get extension path
+    const extPath = csInterface.getSystemPath(SystemPath.EXTENSION);
+    const decksFolder = extPath + '/assets/decks';
+
+    if (!fs || !fs.existsSync(decksFolder)) {
+        setStatus('Decks folder not found. Use Load button to select a deck folder.');
+        createPlaceholderDeck();
+        return;
+    }
+
+    try {
+        // Scan for subdirectories in decks folder
+        const items = fs.readdirSync(decksFolder);
+        const deckFolders = items.filter(item => {
+            const itemPath = decksFolder + '/' + item;
+            // Check if it's a directory and not a file like README.md
+            return fs.statSync(itemPath).isDirectory();
+        });
+
+        if (deckFolders.length === 0) {
+            setStatus('No deck folders found in assets/decks/');
+            createPlaceholderDeck();
+            return;
+        }
+
+        // Clear and populate dropdown
+        deckSelect.innerHTML = '';
+        deckFolders.forEach((folder, index) => {
+            const option = document.createElement('option');
+            option.value = decksFolder + '/' + folder;
+            // Capitalize folder name for display
+            option.textContent = folder.charAt(0).toUpperCase() + folder.slice(1);
+            deckSelect.appendChild(option);
+        });
+
+        // Store decks folder path for later use
+        appState.decksFolder = decksFolder;
+
+        // Auto-load the first deck
+        const firstDeckPath = decksFolder + '/' + deckFolders[0];
+        loadDeckFromPath(firstDeckPath);
+
+        console.log(`Found ${deckFolders.length} deck(s): ${deckFolders.join(', ')}`);
+
+    } catch (e) {
+        console.error('Error scanning decks folder:', e);
+        setStatus('Error scanning decks: ' + e.message, 'error');
+        createPlaceholderDeck();
+    }
+}
+
+/**
+ * Handle deck selection change from dropdown
+ */
+function handleDeckSelectChange() {
+    const selectedPath = deckSelect.value;
+    if (selectedPath) {
+        // Reset table before loading new deck
+        handleResetTable();
+        loadDeckFromPath(selectedPath);
+    }
+}
+
+
+function handleLoadDeck() {
+    // Use CEP folder dialog if available
+    if (typeof window.cep !== 'undefined' && window.cep.fs) {
+        try {
+            const result = window.cep.fs.showOpenDialogEx(
+                false,    // allowMultipleSelection
+                true,     // chooseDirectory
+                'Select Deck Folder',
+                '',       // initialPath
+                []        // fileTypes
+            );
+
+            if (result.err === 0 && result.data && result.data.length > 0) {
+                loadDeckFromPath(result.data[0]);
+            }
+        } catch (e) {
+            console.error('Error opening folder dialog:', e);
+            setStatus('Error selecting folder', 'error');
+        }
+    } else {
+        // Browser fallback - use file input
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.webkitdirectory = true;
+        input.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                loadDeckFromFiles(e.target.files);
+            }
+        });
+        input.click();
+    }
+}
+
+function loadDeckFromPath(folderPath) {
+    if (!fs) {
+        setStatus('File system not available', 'error');
+        return;
+    }
+
+    try {
+        const files = fs.readdirSync(folderPath);
+        const imageFiles = files.filter(f => /\.(png|jpg|jpeg|gif|webp)$/i.test(f));
+
+        if (imageFiles.length === 0) {
+            setStatus('No image files found in folder', 'error');
+            return;
+        }
+
+        // Find back.png
+        const backFile = imageFiles.find(f => f.toLowerCase() === 'back.png');
+        if (backFile) {
+            appState.backImagePath = folderPath + '/' + backFile;
+        }
+
+        // Store deck path
+        appState.deckPath = folderPath;
+        appState.assetsRootPath = folderPath + '/';
+
+        // Create card data for each image (except back.png)
+        const cardFiles = imageFiles.filter(f => f.toLowerCase() !== 'back.png');
+
+        appState.trayCards = cardFiles.map((filename, index) => {
+            const baseName = filename.replace(/\.[^.]+$/, '');
+            return createCardData(index, filename, baseName, folderPath);
+        });
+
+        renderCardTray();
+        updateAssetsDisplay();
+        setStatus(`Loaded ${appState.trayCards.length} cards from deck`, 'success');
+        // Enable AI button once deck is loaded
+        enableAIButton();
+
+    } catch (e) {
+        console.error('Error loading deck:', e);
+        setStatus('Error loading deck: ' + e.message, 'error');
+    }
+}
+
+function loadDeckFromFiles(files) {
+    const imageFiles = Array.from(files).filter(f =>
+        /\.(png|jpg|jpeg|gif|webp)$/i.test(f.name)
+    );
+
+    if (imageFiles.length === 0) {
+        setStatus('No image files found', 'error');
+        return;
+    }
+
+    // Find back.png
+    const backFile = imageFiles.find(f => f.name.toLowerCase() === 'back.png');
+    if (backFile) {
+        appState.backImagePath = URL.createObjectURL(backFile);
+    }
+
+    // Get folder path from first file
+    if (nodePath && imageFiles[0].path) {
+        appState.deckPath = nodePath.dirname(imageFiles[0].path);
+        appState.assetsRootPath = appState.deckPath + '/';
+    }
+
+    // Create card data
+    const cardFiles = imageFiles.filter(f => f.name.toLowerCase() !== 'back.png');
+
+    appState.trayCards = cardFiles.map((file, index) => {
+        const baseName = file.name.replace(/\.[^.]+$/, '');
+        return {
+            id: `card-${index}-${baseName.replace(/\s+/g, '_')}`,
+            name: baseName,
+            filename: file.name,
+            frontImageUrl: URL.createObjectURL(file),
+            backImageUrl: appState.backImagePath || '',
+            isFaceUp: false,
+            inTray: true
+        };
+    });
+
+    renderCardTray();
+    updateAssetsDisplay();
+    setStatus(`Loaded ${appState.trayCards.length} cards`, 'success');
+    enableAIButton();
+}
+
+function createPlaceholderDeck() {
+    // Create 52 placeholder cards for browser testing
+    appState.trayCards = [];
+    let index = 0;
+
+    for (const suit of SUITS) {
+        for (const rank of RANKS) {
+            const name = `${rank}_${suit}`;
+            appState.trayCards.push({
+                id: `card-${index}-${name}`,
+                name: name,
+                displayName: `${rank.charAt(0).toUpperCase() + rank.slice(1)} of ${suit}`,
+                filename: `${name}.png`,
+                frontImageUrl: '',  // Will show placeholder
+                backImageUrl: '',
+                suit: suit,
+                rank: rank,
+                isFaceUp: false,
+                inTray: true
+            });
+            index++;
+        }
+    }
+
+    // Add Joker cards
+    const jokers = [
+        { name: 'joker_black', displayName: 'Black Joker', color: 'black' },
+        { name: 'joker_red', displayName: 'Red Joker', color: 'red' }
+    ];
+    for (const j of jokers) {
+        appState.trayCards.push({
+            id: `card-${index}-${j.name}`,
+            name: j.name,
+            displayName: j.displayName,
+            filename: `${j.name}.png`,
+            frontImageUrl: '',
+            backImageUrl: '',
+            suit: 'joker',
+            rank: 'joker',
+            jokerColor: j.color,
+            isFaceUp: false,
+            inTray: true
+        });
+        index++;
+    }
+
+    renderCardTray();
+    enableAIButton();
+}
+
+function createCardData(index, filename, baseName, folderPath) {
+    // Check if this is a Joker card
+    const lowerName = baseName.toLowerCase();
+    if (lowerName.includes('joker')) {
+        const isRed = lowerName.includes('red');
+        return {
+            id: `card-${index}-${baseName.replace(/\s+/g, '_')}`,
+            name: baseName,
+            displayName: isRed ? 'Red Joker' : 'Black Joker',
+            filename: filename,
+            frontImageUrl: `file://${folderPath}/${filename}`,
+            backImageUrl: appState.backImagePath ? `file://${appState.backImagePath}` : '',
+            suit: 'joker',
+            rank: 'joker',
+            jokerColor: isRed ? 'red' : 'black',
+            isFaceUp: false,
+            inTray: true
+        };
+    }
+
+    // Try to parse suit from filename
+    let suit = 'unknown';
+    let rank = baseName;
+
+    for (const s of SUITS) {
+        if (baseName.toLowerCase().includes(s)) {
+            suit = s;
+            rank = baseName.toLowerCase().replace(s, '').replace(/[_-]/g, '').trim();
+            break;
+        }
+    }
+
+    return {
+        id: `card-${index}-${baseName.replace(/\s+/g, '_')}`,
+        name: baseName,
+        displayName: baseName.replace(/[_-]/g, ' '),
+        filename: filename,
+        frontImageUrl: `file://${folderPath}/${filename}`,
+        backImageUrl: appState.backImagePath ? `file://${appState.backImagePath}` : '',
+        suit: suit,
+        rank: rank,
+        isFaceUp: false,
+        inTray: true
+    };
+}
+
+// ============================================
+// CARD TRAY
+// ============================================
+
+function renderCardTray() {
+    cardTrayList.innerHTML = '';
+
+    const cardsToShow = getFilteredTrayCards();
+
+    if (cardsToShow.length === 0) {
+        cardTrayList.innerHTML = '<div class="tray-loading"><p>No cards match filter</p></div>';
+        return;
+    }
+
+    cardsToShow.forEach(card => {
+        const cardEl = createTrayCardElement(card);
+        cardTrayList.appendChild(cardEl);
+    });
+
+    trayCardCount.textContent = appState.trayCards.filter(c => c.inTray).length;
+}
+
+function createTrayCardElement(card) {
+    const el = document.createElement('div');
+    el.className = 'tray-card';
+    el.dataset.cardId = card.id;
+    el.draggable = true;
+
+    // Card image
+    const img = document.createElement('img');
+    if (card.frontImageUrl) {
+        img.src = card.frontImageUrl;
+    } else {
+        // Placeholder with suit symbol
+        img.src = createPlaceholderCardImage(card);
+    }
+    img.alt = card.name;
+    el.appendChild(img);
+
+    // Card name
+    const nameEl = document.createElement('div');
+    nameEl.className = 'card-name';
+    nameEl.textContent = card.displayName || card.name;
+    el.appendChild(nameEl);
+
+    // Drag events
+    el.addEventListener('dragstart', (e) => handleTrayCardDragStart(e, card));
+    el.addEventListener('dragend', handleTrayCardDragEnd);
+
+    return el;
+}
+
+function createPlaceholderCardImage(card) {
+    // Create simple SVG placeholder
+    const suitSymbols = {
+        spades: '♠',
+        hearts: '♥',
+        diamonds: '♦',
+        clubs: '♣',
+        joker: '🃏',
+        unknown: '?'
+    };
+    const suitColors = {
+        spades: '#2c3e50',
+        hearts: '#e74c3c',
+        diamonds: '#e74c3c',
+        clubs: '#2c3e50',
+        joker: card.jokerColor === 'red' ? '#e74c3c' : '#2c3e50',
+        unknown: '#666'
+    };
+
+    const symbol = suitSymbols[card.suit] || '?';
+    const color = suitColors[card.suit] || '#666';
+    const rankDisplay = card.suit === 'joker' ? 'J' : (card.rank ? card.rank.charAt(0).toUpperCase() : '?');
+
+    const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="56" viewBox="0 0 40 56">
+            <rect width="40" height="56" fill="white" rx="3"/>
+            <text x="5" y="15" font-size="12" fill="${color}">${rankDisplay}</text>
+            <text x="20" y="35" font-size="18" text-anchor="middle" fill="${color}">${symbol}</text>
+        </svg>
+    `;
+    return 'data:image/svg+xml,' + encodeURIComponent(svg);
+}
+
+function getFilteredTrayCards() {
+    const searchTerm = cardSearch.value.toLowerCase();
+    const activeFilter = document.querySelector('.suit-btn.active');
+    const suitFilter = activeFilter ? activeFilter.dataset.suit : 'all';
+
+    return appState.trayCards.filter(card => {
+        if (!card.inTray) return false;
+
+        // Search filter — supports comma-separated terms (e.g. "10,ace,king")
+        if (searchTerm) {
+            var searchTerms = searchTerm.split(',').map(function (t) { return t.trim(); }).filter(function (t) { return t.length > 0; });
+            var matchesAny = searchTerms.some(function (term) {
+                return card.name.toLowerCase().includes(term);
+            });
+            if (!matchesAny) return false;
+        }
+
+        // Suit filter
+        if (suitFilter !== 'all' && card.suit !== suitFilter) {
+            return false;
+        }
+
+        return true;
+    });
+}
+
+function filterTrayCards() {
+    renderCardTray();
+}
+
+function handleSuitFilter(btn) {
+    suitFilterBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderCardTray();
+}
+
+// ============================================
+// DRAG & DROP FROM TRAY
+// ============================================
+
+function handleTrayCardDragStart(e, card) {
+    // Block dragging from tray during board-setting phase
+    if (appState.phase === 'board-setting') {
+        e.preventDefault();
+        return;
+    }
+    e.dataTransfer.setData('text/plain', card.id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.target.classList.add('dragging');
+
+    // Highlight drop zones (both player zones and grid drop zones)
+    playerZones.forEach(zone => zone.classList.add('drag-target'));
+    document.querySelectorAll('.card-drop-zone').forEach(zone => zone.classList.add('drag-target'));
+}
+
+function handleTrayCardDragEnd(e) {
+    e.target.classList.remove('dragging');
+    playerZones.forEach(zone => zone.classList.remove('drag-target', 'drag-over'));
+    document.querySelectorAll('.card-drop-zone').forEach(zone => zone.classList.remove('drag-target', 'drag-over'));
+}
+
+function setupZoneDropTargets() {
+    // Setup player zones (for poker layout)
+    playerZones.forEach(zone => {
+        zone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            zone.classList.add('drag-over');
+        });
+
+        zone.addEventListener('dragleave', () => {
+            zone.classList.remove('drag-over');
+        });
+
+        zone.addEventListener('drop', (e) => handleZoneDrop(e, zone));
+    });
+
+    // Setup grid drop zones (for grid layout) - handled dynamically in renderCardDropZones
+    // Note: Grid zones are created dynamically when entering setup mode
+}
+
+function handleZoneDrop(e, zone) {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+
+    const cardId = e.dataTransfer.getData('text/plain');
+    console.log('[ZoneDrop] cardId:', cardId, 'groupingMode:', appState.groupingMode, 'groupedCards:', appState.groupedCards.map(c => c.id));
+
+    // Check if the dragged card is part of a group - move all grouped cards
+    const droppedCard = appState.tableCards.find(c => c.id === cardId);
+    const isInGroup = droppedCard && appState.groupedCards.some(c => c.id === cardId);
+    console.log('[ZoneDrop] droppedCard found:', !!droppedCard, 'isInGroup:', isInGroup);
+
+    if (droppedCard && appState.groupingMode && isInGroup) {
+        console.log('[ZoneDrop] Routing to handleGroupedCardsDrop');
+        handleGroupedCardsDrop(zone);
+        return;
+    }
+
+    // Try to find card in tray first
+    let card = appState.trayCards.find(c => c.id === cardId);
+    const fromTray = card && card.inTray;
+
+    // If not in tray, look for it in table cards (for moving between zones)
+    if (!fromTray) {
+        card = appState.tableCards.find(c => c.id === cardId);
+        if (!card) return;
+    }
+
+    // Get zone info
+    const zoneName = zone.dataset.zone;
+    const rotation = parseInt(zone.dataset.rotation) || 0;
+
+    // Check if this is a grid zone with existing cards (for swap/stack logic)
+    // Community zones always accept multi-card, skip swap/stack popup
+    if (zoneName.startsWith('grid-') && appState.phase === 'record') {
+        const placeId = zoneName.replace('grid-', '');
+        const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
+        const isCZ = place && place.isCommunityZone;
+
+        if (!isCZ) {
+            const existingCards = appState.tableCards.filter(c => c.zone === zoneName && c.id !== cardId);
+            if (existingCards.length > 0 && !fromTray) {
+                // Show swap/stack popup for grid zones with existing cards
+                showSwapStackPopup(card, existingCards[0], zoneName, rotation, zone);
+                return;
+            }
+        }
+    }
+
+    if (fromTray) {
+        // From tray - place new card in zone
+        placeCardInZone(card, zoneName, rotation, zone);
+    } else {
+        // Moving card between zones (Record mode)
+        moveCardToZone(card, zoneName, rotation, zone);
+    }
+}
+
+/**
+ * Show popup to choose between swap or stack when dropping card on occupied grid zone
+ */
+function showSwapStackPopup(movingCard, existingCard, zoneName, rotation, zoneElement) {
+    // Remove any existing popup
+    const oldPopup = document.querySelector('.swap-stack-popup');
+    if (oldPopup) oldPopup.remove();
+
+    const popup = document.createElement('div');
+    popup.className = 'swap-stack-popup';
+    popup.innerHTML = `
+        <div class="popup-title">Zone has a card</div>
+        <div class="popup-buttons">
+            <button class="btn btn-sm btn-swap" title="Swap positions with existing card">🔄 Swap</button>
+            <button class="btn btn-sm btn-stack" title="Stack on top of existing card">📚 Stack</button>
+            <button class="btn btn-sm btn-cancel">✕</button>
+        </div>
+    `;
+
+    // Position near the zone — use fixed coords (popup appended to body)
+    const zoneRect = zoneElement.getBoundingClientRect();
+    popup.style.left = `${zoneRect.left + zoneRect.width / 2}px`;
+    popup.style.top = `${zoneRect.top - 50}px`;
+
+    // Event handlers
+    popup.querySelector('.btn-swap').addEventListener('click', () => {
+        popup.remove();
+        swapCards(movingCard, existingCard);
+    });
+
+    popup.querySelector('.btn-stack').addEventListener('click', () => {
+        popup.remove();
+        moveCardToZone(movingCard, zoneName, rotation, zoneElement);
+    });
+
+    popup.querySelector('.btn-cancel').addEventListener('click', () => {
+        popup.remove();
+    });
+
+    document.body.appendChild(popup);
+}
+
+/**
+ * Swap two cards between their zones (used in Record mode for grid)
+ */
+function swapCards(card1, card2) {
+    // Take snapshot BEFORE the swap
+    const snapshotBeforeSwap = (appState.phase === 'record' && !appState.isEditingStep) ? takeSnapshot() : null;
+
+    // Store original positions
+    const zone1 = card1.zone;
+    const zone2 = card2.zone;
+    const pos1 = card1.zonePosition;
+    const pos2 = card2.zonePosition;
+
+    // Remove card elements
+    if (card1.element) card1.element.remove();
+    if (card2.element) card2.element.remove();
+
+    // Find zone elements and get their rotation values
+    const zone1Element = document.querySelector(`.card-drop-zone[data-zone="${zone1}"], .player-zone[data-zone="${zone1}"]`);
+    const zone2Element = document.querySelector(`.card-drop-zone[data-zone="${zone2}"], .player-zone[data-zone="${zone2}"]`);
+
+    // Get rotation from zone data attributes (for Pusoy and other rotated layouts)
+    const rotation1 = parseInt(zone1Element?.dataset?.rotation) || 0;
+    const rotation2 = parseInt(zone2Element?.dataset?.rotation) || 0;
+
+    // Swap zone assignments AND update rotation to match destination zone
+    card1.zone = zone2;
+    card1.zonePosition = pos2;
+    card1.rotation = rotation2;  // Card1 inherits rotation of zone2
+
+    card2.zone = zone1;
+    card2.zonePosition = pos1;
+    card2.rotation = rotation1;  // Card2 inherits rotation of zone1
+
+    if (zone1Element) createZoneCardElement(card2, zone1Element);
+    if (zone2Element) createZoneCardElement(card1, zone2Element);
+
+    // Mark as having changes for recording
+    card1.hasChanges = true;
+    card2.hasChanges = true;
+
+    updateUI();
+    setStatus(`Swapped ${card1.displayName || card1.name} with ${card2.displayName || card2.name}`);
+
+    // Show auto-step popup if in Record mode
+    if (snapshotBeforeSwap && appState.phase === 'record' && !appState.isEditingStep) {
+        selectCard(card1);
+        showAutoStepPopup(card1, snapshotBeforeSwap);
+    }
+}
+
+/**
+ * Move a card from one zone to another (used in Record mode)
+ */
+function moveCardToZone(card, newZoneName, newRotation, newZoneElement) {
+    // Take snapshot BEFORE the move for auto-step feature
+    const snapshotBeforeMove = (appState.phase === 'record' && !appState.isEditingStep) ? takeSnapshot() : null;
+
+    // Remove card element from old zone
+    if (card.element) {
+        card.element.remove();
+    }
+
+    // Update card properties
+    const oldZone = card.zone;
+    card.zone = newZoneName;
+    card.rotation = newRotation;
+
+    // In Record mode with flipAction: start face-down, then animate flip
+    if (appState.phase === 'record' && card.flipAction) {
+        card.isFaceUp = false; // Start face-down for animation
+    }
+    // When moving cards between zones, PRESERVE the card's current face state.
+    // Face state is only set from zone flip checkbox during initial placement (placeCardInZone).
+    // Users control flipping explicitly via right-click > flip or the flip checkbox.
+
+    // Recalculate zone positions for old zone (fill gaps)
+    if (oldZone && oldZone !== newZoneName) {
+        const oldZoneCards = appState.tableCards.filter(c => c.zone === oldZone && c.id !== card.id);
+        oldZoneCards.forEach((c, idx) => {
+            c.zonePosition = idx;
+        });
+        // Re-render old zone cards
+        const oldZoneElement = document.querySelector(`.player-zone[data-zone="${oldZone}"], .community-zone[data-zone="${oldZone}"]`);
+        if (oldZoneElement) {
+            rerenderZoneCards(oldZone, oldZoneElement);
+        }
+    }
+
+    // Get new position in target zone
+    const newZoneCards = appState.tableCards.filter(c => c.zone === newZoneName && c.id !== card.id);
+    card.zonePosition = newZoneCards.length;
+
+    // Community zone rotation is handled by createZoneCardElement for CZ slots
+    // Legacy poker community zone (HTML-based) random rotation:
+    if (appState.boardLayout.boardStyle === 'poker' && newZoneName === 'community' && !newZoneName.startsWith('grid-')) {
+        const randomCheckbox = document.getElementById('communityRandomRotation');
+        if (randomCheckbox && randomCheckbox.checked) {
+            card.rotation = Math.round((Math.random() - 0.5) * 30); // ±15°
+        }
+    }
+
+    // Create visual card in new zone
+    createZoneCardElement(card, newZoneElement);
+
+    // Animate flip after element is created (Record mode with flipAction)
+    if (appState.phase === 'record' && card.flipAction) {
+        setTimeout(() => {
+            flipCard(card);
+        }, 150); // Small delay for visual effect
+    }
+
+    // Mark as having changes for recording
+    if (appState.phase === 'record') {
+        card.hasChanges = true;
+    }
+
+    updateUI();
+    setStatus(`Moved ${card.displayName || card.name} to ${newZoneName} zone`);
+
+    // Show auto-step popup in Record mode (if not manually editing a step)
+    if (snapshotBeforeMove && appState.phase === 'record' && !appState.isEditingStep) {
+        // Select the card so context menu appears next to it
+        selectCard(card);
+        showAutoStepPopup(card, snapshotBeforeMove);
+    }
+}
+
+/**
+ * Re-render all cards in a zone (used after moving cards)
+ */
+function rerenderZoneCards(zoneName, zoneElement) {
+    const zoneCardsContainer = zoneElement.querySelector('.zone-cards');
+    if (!zoneCardsContainer) return;
+
+    // Clear zone cards container
+    zoneCardsContainer.innerHTML = '';
+
+    // Get all cards in this zone and re-create elements
+    const zoneCards = appState.tableCards.filter(c => c.zone === zoneName);
+    zoneCards.forEach(card => {
+        createZoneCardElement(card, zoneElement);
+    });
+}
+
+
+function placeCardInZone(card, zoneName, rotation, zoneElement) {
+    // Take snapshot BEFORE placing card (for auto-step feature)
+    const snapshotBeforePlace = (appState.phase === 'record' && !appState.isEditingStep && !appState._bulkApplying) ? takeSnapshot() : null;
+
+    // Mark as not in tray
+    card.inTray = false;
+    card.zone = zoneName;
+    card.rotation = rotation;
+
+    // Determine face up/down state based on layout type
+    if (zoneName.startsWith('grid-')) {
+        // Grid layout: check if poker-style (has parent zone flip controls)
+        if (appState.boardLayout.boardStyle === 'poker' && appState.boardLayout.cardPlaces) {
+            const placeId = zoneName.replace('grid-', '');
+            const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
+            if (place && place.zone) {
+                // Use the parent zone's flip checkbox (e.g. flipTop, flipBottom)
+                const parentZone = place.zone;
+                const flipCheckbox = document.querySelector(`#flip${parentZone.charAt(0).toUpperCase() + parentZone.slice(1)}`);
+                card.isFaceUp = flipCheckbox ? flipCheckbox.checked : false;
+            } else {
+                card.isFaceUp = gridDefaultFaceUp ? gridDefaultFaceUp.checked : false;
+            }
+        } else {
+            // Non-poker grid (Pusoy, etc): use gridDefaultFaceUp checkbox
+            card.isFaceUp = gridDefaultFaceUp ? gridDefaultFaceUp.checked : false;
+        }
+    } else {
+        // Legacy poker layout: use zone-specific checkbox
+        const flipCheckbox = document.querySelector(`#flip${zoneName.charAt(0).toUpperCase() + zoneName.slice(1)}`);
+        card.isFaceUp = flipCheckbox ? flipCheckbox.checked : false;
+    }
+
+    // Get existing cards in zone
+    const zoneCards = appState.tableCards.filter(c => c.zone === zoneName);
+    const position = zoneCards.length;
+
+    // Calculate overlap position
+    card.zonePosition = position;
+
+    // Community zone rotation is handled by createZoneCardElement for CZ slots
+    // Legacy poker community zone (HTML-based) random rotation:
+    if (appState.boardLayout.boardStyle === 'poker' && zoneName === 'community' && !zoneName.startsWith('grid-')) {
+        const randomCheckbox = document.getElementById('communityRandomRotation');
+        if (randomCheckbox && randomCheckbox.checked) {
+            card.rotation = Math.round((Math.random() - 0.5) * 30); // ±15°
+        }
+    }
+
+    // Add to table cards
+    appState.tableCards.push(card);
+
+    // Create visual card in zone
+    createZoneCardElement(card, zoneElement);
+
+    // Mark as having changes for recording
+    if (appState.phase === 'record') {
+        card.hasChanges = true;
+    }
+
+    // Update tray (skip during bulk AI apply for performance)
+    if (!appState._bulkApplying) {
+        renderCardTray();
+        hideInstructions();
+        updateUI();
+        setStatus(`Placed ${card.displayName || card.name} in ${zoneName} zone`);
+    }
+
+    // Show auto-step popup in Record mode (if not manually editing a step)
+    if (snapshotBeforePlace && appState.phase === 'record' && !appState.isEditingStep) {
+        selectCard(card);
+        showAutoStepPopup(card, snapshotBeforePlace);
+    }
+}
+
+
+function placeCardOnTable(card, x, y) {
+    card.inTray = false;
+    card.zone = 'table';
+    card.x = x;
+    card.y = y;
+    card.rotation = 0;
+
+    appState.tableCards.push(card);
+
+    createTableCardElement(card);
+
+    renderCardTray();
+    hideInstructions();
+    updateUI();
+
+    setStatus(`Placed ${card.displayName || card.name} on table`);
+}
+
+/**
+ * Move an existing card to a new position on the table
+ * Used in Record mode to reposition cards from zones to free table area
+ */
+function moveCardToPosition(card, x, y) {
+    // Remove existing element
+    if (card.element) {
+        card.element.remove();
+    }
+
+    // Update card state
+    const wasInZone = card.zone !== 'table';
+    card.zone = 'table';
+    card.x = x;
+    card.y = y;
+    card.rotation = 0;
+    card.zonePosition = 0;
+
+    // Create new table card element
+    createTableCardElement(card);
+
+    // Mark as having changes for recording
+    if (appState.phase === 'record') {
+        card.hasChanges = true;
+    }
+
+    updateUI();
+    setStatus(`Moved ${card.displayName || card.name} to table`);
+}
+
+// ============================================
+// CARD ELEMENTS ON TABLE
+// ============================================
+
+function createZoneCardElement(card, zoneElement) {
+    const zoneCardsContainer = zoneElement.querySelector('.zone-cards');
+
+    // Safety check - if container not found, log and skip
+    if (!zoneCardsContainer) {
+        debugWarn(`Zone container not found! zone: ${zoneElement?.dataset?.zone}, id: ${zoneElement?.id}`);
+        return;
+    }
+
+    const zoneName = zoneElement.dataset.zone;
+
+
+    const cardEl = document.createElement('div');
+    cardEl.className = `zone-card ${card.isFaceUp ? 'face-up' : 'face-down'}`;
+    if (appState.groupedCards.some(c => c.id === card.id)) {
+        cardEl.classList.add('grouped');
+    }
+    cardEl.id = card.id;
+    cardEl.dataset.cardId = card.id;
+
+    // Different overlap direction based on zone
+    // Check if this is a community zone grid-slot
+    let isCZSlot = false;
+    if (zoneName && zoneName.startsWith('grid-')) {
+        const placeId = zoneName.replace('grid-', '');
+        const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
+        if (place && place.isCommunityZone) {
+            isCZSlot = true;
+            const czMode = place.czMode || 'row';
+            cardEl.style.position = 'absolute';
+            cardEl.style.zIndex = 400 + (card.zonePosition || 0);
+
+            // Use actual DOM container dimensions for centering
+            // The zoneElement is already scaled to DOM pixels
+            const containerW = zoneElement.offsetWidth;
+            const containerH = zoneElement.offsetHeight;
+            // Get actual card size from CSS (zone-card uses var(--card-width) / var(--card-height))
+            const cardW = 70; // CSS --card-width default
+            const cardH = 100; // CSS --card-height default
+
+            // Center card within zone-cards container
+            cardEl.style.left = `${(containerW - cardW) / 2}px`;
+            cardEl.style.top = `${(containerH - cardH) / 2}px`;
+
+            if (czMode === 'pile') {
+                // Random offset + random rotation within zone bounds
+                const maxOffsetX = Math.max(0, (containerW - cardW) / 2 - 5);
+                const maxOffsetY = Math.max(0, (containerH - cardH) / 2 - 5);
+                const randX = (Math.random() - 0.5) * 2 * maxOffsetX;
+                const randY = (Math.random() - 0.5) * 2 * maxOffsetY;
+                const randRot = Math.round((Math.random() - 0.5) * 30); // ±15°
+                cardEl.style.transform = `translate(${randX}px, ${randY}px) rotate(${randRot}deg)`;
+                card.rotation = randRot; // Store for AE export
+            } else if (czMode === 'stack') {
+                // Perfect stack - all cards centered, no offset
+                cardEl.style.transform = 'none';
+                card.rotation = 0;
+            } else {
+                // 'row' mode - horizontal offset per card, centered
+                const totalCards = appState.tableCards.filter(c => c.zone === zoneName).length;
+                const spacing = Math.min(cardW * 0.7, (containerW - cardW) / Math.max(1, totalCards - 1));
+                const totalWidth = (totalCards - 1) * spacing;
+                const startOffset = -totalWidth / 2;
+                const offsetX = startOffset + (card.zonePosition || 0) * spacing;
+                cardEl.style.transform = `translateX(${offsetX}px) rotate(${card.rotation || 0}deg)`;
+            }
+        }
+    }
+
+    if (!isCZSlot && appState.boardLayout.boardStyle === 'poker' && zoneName === 'community') {
+        // Poker community: pile stacking — cards on top of each other
+        cardEl.style.position = 'absolute';
+        cardEl.style.zIndex = 400 + (card.zonePosition || 0);
+
+        // Apply optional random offset for natural look
+        const randomCheckbox = document.getElementById('communityRandomRotation');
+        if (randomCheckbox && randomCheckbox.checked) {
+            // Random offset slightly so cards don't perfectly overlap
+            const offsetX = (Math.random() - 0.5) * 20; // ±10px
+            const offsetY = (Math.random() - 0.5) * 15; // ±7.5px
+            cardEl.style.transform = `translate(${offsetX}px, ${offsetY}px) rotate(${card.rotation || 0}deg)`;
+        } else {
+            // Neat stack with slight horizontal offset per card
+            const offsetX = (card.zonePosition || 0) * 8; // 8px shift per card
+            cardEl.style.transform = `translateX(${offsetX}px) rotate(${card.rotation || 0}deg)`;
+        }
+    } else if (zoneName === 'left') {
+        // Left zone: cards stack top-to-bottom, later cards on top
+        cardEl.style.marginTop = card.zonePosition > 0 ? `-${CARD_HEIGHT - appState.cardOverlap}px` : '0';
+    } else if (zoneName === 'right') {
+        // Right zone: cards stack bottom-to-top (reverse), so upper cards overlay lower
+        cardEl.style.marginTop = card.zonePosition > 0 ? `-${CARD_HEIGHT - appState.cardOverlap}px` : '0';
+        // Use z-index to reverse stacking visually - higher position = lower z-index
+        cardEl.style.zIndex = 100 - card.zonePosition;
+    } else {
+        // Top/Bottom/Community: stack horizontally, use marginLeft
+        cardEl.style.marginLeft = card.zonePosition > 0 ? `-${CARD_WIDTH - appState.cardOverlap}px` : '0';
+    }
+
+    // Inner structure for flip
+    const inner = document.createElement('div');
+    inner.className = 'card-inner';
+
+    // Front face
+    const front = document.createElement('div');
+    front.className = 'card-face card-front';
+    const frontImg = document.createElement('img');
+    frontImg.src = card.frontImageUrl || createPlaceholderCardImage(card);
+    front.appendChild(frontImg);
+
+    // Back face
+    const back = document.createElement('div');
+    back.className = 'card-face card-back';
+    if (card.backImageUrl) {
+        const backImg = document.createElement('img');
+        backImg.src = card.backImageUrl;
+        back.appendChild(backImg);
+    }
+
+    inner.appendChild(front);
+    inner.appendChild(back);
+    cardEl.appendChild(inner);
+
+    // Click to flip/select
+    cardEl.addEventListener('click', () => handleCardClick(card, cardEl));
+
+    // Make draggable for Record mode (move cards between zones) and Setup mode (return to tray)
+    cardEl.draggable = true;
+    cardEl.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', card.id);
+        e.dataTransfer.effectAllowed = 'move';
+        cardEl.classList.add('dragging');
+        // Highlight all zones as potential drop targets
+        playerZones.forEach(zone => zone.classList.add('drag-target'));
+        document.querySelectorAll('.card-drop-zone').forEach(zone => zone.classList.add('drag-target'));
+        // Highlight card tray as return target in Setup phase
+        if (appState.phase === 'setup') {
+            const trayPanel = document.getElementById('cardTrayPanel');
+            if (trayPanel) trayPanel.classList.add('drag-target');
+        }
+    });
+    cardEl.addEventListener('dragend', () => {
+        cardEl.classList.remove('dragging');
+        // Remove highlight from all zones
+        playerZones.forEach(zone => zone.classList.remove('drag-target', 'drag-over'));
+        document.querySelectorAll('.card-drop-zone').forEach(zone => zone.classList.remove('drag-target', 'drag-over'));
+        // Remove tray highlight
+        const trayPanel = document.getElementById('cardTrayPanel');
+        if (trayPanel) trayPanel.classList.remove('drag-target', 'drag-over');
+    });
+
+    zoneCardsContainer.appendChild(cardEl);
+    card.element = cardEl;
+}
+
+function createTableCardElement(card) {
+    const cardEl = document.createElement('div');
+    cardEl.className = `card ${card.isFaceUp ? 'face-up' : 'face-down'}`;
+    if (appState.groupedCards.some(c => c.id === card.id)) {
+        cardEl.classList.add('grouped');
+    }
+    cardEl.id = card.id;
+    cardEl.dataset.cardId = card.id;
+
+    // Position
+    const scaleX = gameContainer.offsetWidth / PROJECT_INFO.width;
+    const scaleY = gameContainer.offsetHeight / PROJECT_INFO.height;
+
+    cardEl.style.left = '0';
+    cardEl.style.top = '0';
+    cardEl.style.transform = `translate(${card.x * scaleX}px, ${card.y * scaleY}px) rotate(${card.rotation}deg)`;
+
+    // Inner structure for flip
+    const inner = document.createElement('div');
+    inner.className = 'card-inner';
+
+    // Front face
+    const front = document.createElement('div');
+    front.className = 'card-face card-front';
+    const frontImg = document.createElement('img');
+    frontImg.src = card.frontImageUrl || createPlaceholderCardImage(card);
+    front.appendChild(frontImg);
+
+    // Back face
+    const back = document.createElement('div');
+    back.className = 'card-face card-back';
+    if (card.backImageUrl) {
+        const backImg = document.createElement('img');
+        backImg.src = card.backImageUrl;
+        back.appendChild(backImg);
+    }
+
+    inner.appendChild(front);
+    inner.appendChild(back);
+    cardEl.appendChild(inner);
+
+    // Label
+    const label = document.createElement('div');
+    label.className = 'card-label';
+    label.textContent = card.displayName || card.name;
+    cardEl.appendChild(label);
+
+    // Click to select/flip
+    cardEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleCardClick(card, cardEl);
+    });
+
+    // Make draggable
+    makeCardDraggable(cardEl, card);
+
+    cardArea.appendChild(cardEl);
+    card.element = cardEl;
+}
+
+// ============================================
+// CARD INTERACTIONS
+// ============================================
+
+function handleCardClick(card, element) {
+    // Check if grouping mode is active (Record phase only)
+    if (appState.groupingMode && appState.phase === 'record') {
+        toggleCardGroupSelection(card);
+
+        // If card is now in group, also select it to show context menu for flip/slam
+        const isInGroup = appState.groupedCards.some(c => c.id === card.id);
+        if (isInGroup) {
+            selectCard(card);
+        }
+        return;  // Don't proceed with normal selection flow
+    }
+
+    // Select the card
+    selectCard(card);
+
+    // If in setup phase, also flip the card
+    if (appState.phase === 'setup') {
+        flipCard(card);
+    }
+}
+
+function selectCard(card) {
+    // Deselect previous
+    if (appState.selectedCard && appState.selectedCard.element) {
+        appState.selectedCard.element.classList.remove('selected');
+    }
+
+    appState.selectedCard = card;
+
+    if (card.element) {
+        card.element.classList.add('selected');
+    }
+
+    // Update properties panel
+    noCardSelected.classList.add('hidden');
+    cardProperties.classList.remove('hidden');
+    selectedCardName.textContent = card.displayName || card.name;
+    cardFaceState.textContent = card.isFaceUp ? 'Up' : 'Down';
+
+    // Update card thumbnail
+    const thumbContainer = document.getElementById('selectedCardThumb');
+    thumbContainer.innerHTML = '';
+    if (card.frontImageUrl) {
+        const img = document.createElement('img');
+        img.src = card.frontImageUrl;
+        img.alt = card.displayName || card.name;
+        thumbContainer.appendChild(img);
+    }
+
+    flipCardCheck.checked = card.flipAction || false;
+    slamEffectCheck.checked = card.slamEffect || false;
+    spinEffectCheck.checked = card.spinEffect || false;
+
+    updateCardPosDisplay(card);
+
+    // Show inline context menu next to card (Record mode only)
+    showCardContextMenu(card);
+}
+
+function deselectCard() {
+    if (appState.selectedCard && appState.selectedCard.element) {
+        appState.selectedCard.element.classList.remove('selected');
+    }
+    appState.selectedCard = null;
+
+    noCardSelected.classList.remove('hidden');
+    cardProperties.classList.add('hidden');
+
+    // Hide context menu
+    hideCardContextMenu();
+}
+
+function flipCard(card) {
+    card.isFaceUp = !card.isFaceUp;
+
+    if (card.element) {
+        // Add flip animation
+        card.element.classList.add('flipping');
+
+        setTimeout(() => {
+            card.element.classList.remove('face-up', 'face-down');
+            card.element.classList.add(card.isFaceUp ? 'face-up' : 'face-down');
+            card.element.classList.remove('flipping');
+        }, 200); // Half of flip duration
+    }
+
+    // Update panel
+    if (appState.selectedCard === card) {
+        cardFaceState.textContent = card.isFaceUp ? 'Up' : 'Down';
+    }
+}
+
+function handleZoneFlipChange(e) {
+    const zoneName = e.target.dataset.zone;
+    const shouldFaceUp = e.target.checked;
+
+    // Find all cards in this zone and flip them accordingly
+    appState.tableCards
+        .filter(card => card.zone === zoneName)
+        .forEach(card => {
+            if (card.isFaceUp !== shouldFaceUp) {
+                flipCard(card);
+            }
+        });
+
+    setStatus(`${zoneName.charAt(0).toUpperCase() + zoneName.slice(1)} zone: ${shouldFaceUp ? 'Face up' : 'Face down'}`);
+}
+
+function updateCardPosDisplay(card) {
+    cardPosX.textContent = Math.round(card.x || 0);
+    cardPosY.textContent = Math.round(card.y || 0);
+    cardRot.textContent = `${Math.round(card.rotation || 0)}°`;
+}
+
+// ============================================
+// DRAGGABLE CARDS ON TABLE
+// ============================================
+
+function makeCardDraggable(element, card) {
+    let isDragging = false;
+    let offsetX, offsetY;
+
+    element.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+
+        isDragging = true;
+        element.classList.add('dragging');
+
+        const rect = cardArea.getBoundingClientRect();
+        const scaleX = PROJECT_INFO.width / rect.width;
+        const scaleY = PROJECT_INFO.height / rect.height;
+
+        const mouseX = (e.clientX - rect.left) * scaleX;
+        const mouseY = (e.clientY - rect.top) * scaleY;
+
+        offsetX = card.x - mouseX;
+        offsetY = card.y - mouseY;
+
+        element.style.zIndex = 1000;
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+
+        const rect = cardArea.getBoundingClientRect();
+        const scaleX = PROJECT_INFO.width / rect.width;
+        const scaleY = PROJECT_INFO.height / rect.height;
+
+        const mouseX = (e.clientX - rect.left) * scaleX;
+        const mouseY = (e.clientY - rect.top) * scaleY;
+
+        card.x = mouseX + offsetX;
+        card.y = mouseY + offsetY;
+
+        // Update visual position
+        const visualX = card.x / scaleX;
+        const visualY = card.y / scaleY;
+        element.style.transform = `translate(${visualX}px, ${visualY}px) rotate(${card.rotation}deg)`;
+
+        updateCardPosDisplay(card);
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (!isDragging) return;
+        isDragging = false;
+        element.classList.remove('dragging');
+        element.style.zIndex = '';
+    });
+}
+
+// ============================================
+// OVERLAP CONTROL
+// ============================================
+
+function handleOverlapChange() {
+    appState.cardOverlap = parseInt(overlapSlider.value);
+    overlapValue.textContent = `${appState.cardOverlap}px`;
+
+    // Re-render zone cards with new overlap
+    reRenderZoneCards();
+}
+
+function reRenderZoneCards() {
+    playerZones.forEach(zone => {
+        const zoneName = zone.dataset.zone;
+        const zoneCards = appState.tableCards.filter(c => c.zone === zoneName);
+
+        zoneCards.forEach((card, index) => {
+            if (card.element) {
+                card.element.style.marginLeft = index > 0 ? `-${CARD_WIDTH - appState.cardOverlap}px` : '0';
+            }
+        });
+    });
+}
+
+// ============================================
+// RESET TABLE
+// ============================================
+
+function handleResetTable() {
+    if (appState.tableCards.length === 0 && !appState._bulkApplying) return;
+
+    if (!appState._bulkApplying && !confirm('Return all cards to tray?')) return;
+
+    // Remove card elements
+    appState.tableCards.forEach(card => {
+        if (card.element) {
+            card.element.remove();
+        }
+        card.inTray = true;
+        card.zone = null;
+        card.element = null;
+        card.isFaceUp = false;
+    });
+
+    appState.tableCards = [];
+    appState.selectedCard = null;
+
+    renderCardTray();
+    showInstructions();
+    deselectCard();
+    updateUI();
+
+    setStatus('All cards returned to tray');
+}
+
+/**
+ * Return a single card from the table back to the tray
+ * Only allowed in Setup phase to avoid breaking recording snapshots
+ */
+function returnCardToTray(card) {
+    if (!card) return;
+
+    // Remove card element from DOM
+    if (card.element) {
+        card.element.remove();
+    }
+
+    // Reset card state
+    card.inTray = true;
+    card.zone = null;
+    card.element = null;
+    card.isFaceUp = false;
+    card.zonePosition = 0;
+    card.rotation = 0;
+
+    // Remove from tableCards array
+    appState.tableCards = appState.tableCards.filter(c => c.id !== card.id);
+
+    // Deselect if this was the selected card
+    if (appState.selectedCard && appState.selectedCard.id === card.id) {
+        appState.selectedCard = null;
+        deselectCard();
+    }
+
+    // Re-render tray and update UI
+    renderCardTray();
+    updateUI();
+
+    if (appState.tableCards.length === 0) {
+        showInstructions();
+    }
+
+    setStatus(`Returned ${card.displayName || card.name} to tray`);
+}
+
+/**
+ * Setup card tray panel as a drop target for returning cards
+ * Only accepts drops during Setup phase
+ */
+function setupTrayDropTarget() {
+    const trayPanel = document.getElementById('cardTrayPanel');
+    if (!trayPanel) return;
+
+    trayPanel.addEventListener('dragover', (e) => {
+        // Only accept drops in Setup phase
+        if (appState.phase !== 'setup') return;
+
+        // Only accept cards that are on the table (not from tray itself)
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        trayPanel.classList.add('drag-over');
+    });
+
+    trayPanel.addEventListener('dragleave', () => {
+        trayPanel.classList.remove('drag-over');
+    });
+
+    trayPanel.addEventListener('drop', (e) => {
+        e.preventDefault();
+        trayPanel.classList.remove('drag-over');
+
+        // Only accept drops in Setup phase
+        if (appState.phase !== 'setup') return;
+
+        const cardId = e.dataTransfer.getData('text/plain');
+        const card = appState.tableCards.find(c => c.id === cardId);
+
+        if (card) {
+            returnCardToTray(card);
+        }
+    });
+}
+
+// ============================================
+// RECORDING LOGIC
+// ============================================
+
+function handleAddStep() {
+    if (appState.isEditingStep) {
+        setStatus('Finish current step first', 'error');
+        return;
+    }
+
+    if (appState.tableCards.length === 0) {
+        setStatus('Place some cards on the table first', 'error');
+        return;
+    }
+
+    startSnapshot = takeSnapshot();
+
+    currentStep = {
+        stepId: scenarioData.scenario.length + 1,
+        duration: stepDuration ? parseFloat(stepDuration.value) : 1.0,
+        actions: []
+    };
+
+    appState.isEditingStep = true;
+    appState.currentStepIndex = currentStep.stepId;
+
+    if (finishStepBtn) finishStepBtn.disabled = false;
+    addStepBtn.disabled = true;
+    recordingIndicator.classList.add('active');
+    currentStepNum.textContent = currentStep.stepId;
+
+    setStatus(`Editing Step ${currentStep.stepId} - Move cards and set properties`);
+}
+
+function handleFinishStep() {
+    if (!appState.isEditingStep || !currentStep) return;
+
+    const endSnapshot = takeSnapshot();
+    const actions = computeActions(startSnapshot, endSnapshot);
+
+    currentStep.actions = actions;
+    currentStep.duration = stepDuration ? parseFloat(stepDuration.value) : 1.0;
+
+    // Attach group order overrides if user reordered groups during this step
+    if (appState.pendingGroupOrderOverrides) {
+        currentStep.groupOrderOverrides = JSON.parse(JSON.stringify(appState.pendingGroupOrderOverrides));
+        // Apply overrides to actual group.groupOrder for subsequent steps
+        var groups = appState.boardLayout.slotGroups || [];
+        groups.forEach(function (g) {
+            if (appState.pendingGroupOrderOverrides[g.id] !== undefined) {
+                g.groupOrder = appState.pendingGroupOrderOverrides[g.id];
+            }
+        });
+        appState.pendingGroupOrderOverrides = null;
+    }
+
+    scenarioData.scenario.push(currentStep);
+
+    // Save snapshot for replay and edit restore
+    stepSnapshots.push(JSON.parse(JSON.stringify(endSnapshot)));
+
+    appState.isEditingStep = false;
+    currentStep = null;
+    startSnapshot = null;
+
+    if (finishStepBtn) finishStepBtn.disabled = true;
+    addStepBtn.disabled = false;
+    recordingIndicator.classList.remove('active');
+    currentStepNum.textContent = '-';
+    totalSteps.textContent = scenarioData.scenario.length;
+
+    renderTimeline();
+    renderGroupOrderStrip();
+    setStatus(`Step ${scenarioData.scenario.length} saved with ${actions.length} actions`, 'success');
+    updateUI();
+}
+
+/**
+ * Save the initial state of all cards when entering Record mode
+ * This is used for replay and restore functionality
+ */
+function saveInitialState() {
+    // Skip during AI bulk apply — applyAIScenario manages its own snapshots
+    if (appState._bulkApplying) {
+        debugLog('[saveInitialState] Skipped — _bulkApplying is true');
+        return;
+    }
+
+    scenarioData.initialState = {};
+
+    appState.tableCards.forEach(card => {
+        scenarioData.initialState[card.id] = {
+            x: card.x || 0,
+            y: card.y || 0,
+            rotation: card.rotation || 0,
+            isFaceUp: card.isFaceUp,
+            zone: card.zone,
+            zonePosition: card.zonePosition || 0,
+            zOrder: computeZOrderForCard(card),
+            flipAction: card.flipAction || false,
+            slamEffect: card.slamEffect || false,
+            isSelected: appState.groupedCards.some(c => c.id === card.id)
+        };
+    });
+
+    // Reset step snapshots when entering record mode
+    stepSnapshots = [];
+
+    // Save initial state as stepSnapshots[0] - this is "step 0" (before any actions)
+    // This ensures replay can properly reset to initial positions on subsequent plays
+    stepSnapshots.push(JSON.parse(JSON.stringify(scenarioData.initialState)));
+
+    console.log('Initial state saved:', scenarioData.initialState);
+}
+
+function takeSnapshot() {
+    const snapshot = {};
+    appState.tableCards.forEach(card => {
+        snapshot[card.id] = {
+            x: card.x || 0,
+            y: card.y || 0,
+            rotation: card.rotation || 0,
+            isFaceUp: card.isFaceUp,
+            zone: card.zone,
+            zonePosition: card.zonePosition || 0,
+            zOrder: computeZOrderForCard(card),
+            flipAction: card.flipAction || false,
+            slamEffect: card.slamEffect || false,
+            isSelected: appState.groupedCards.some(c => c.id === card.id)
+        };
+    });
+    return snapshot;
+}
+
+function computeActions(startSnap, endSnap) {
+    const actions = [];
+
+    appState.tableCards.forEach(card => {
+        const start = startSnap[card.id];
+        const end = endSnap[card.id];
+
+        // Calculate AE positions for zones (since zone cards use x/y = 0 in UI)
+        const getAEPosition = (state) => {
+            if (state.zone && state.zone !== 'table') {
+                return getAEZonePosition(state.zone, state.zonePosition);
+            }
+            return { x: Math.round(state.x || 0), y: Math.round(state.y || 0) };
+        };
+
+        // New card placed from tray (not in start snapshot)
+        if (!start && end) {
+            const endPos = getAEPosition(end);
+            actions.push({
+                targetId: card.id,
+                type: 'PLACE',
+                startPosition: { x: -500, y: PROJECT_INFO.height / 2 }, // Start from far left
+                endPosition: endPos,
+                startRotation: 0,
+                endRotation: Math.round(end.rotation || 0),
+                zone: end.zone,
+                flip: card.flipAction,
+                flipToFaceUp: end.isFaceUp,
+                effect: card.slamEffect ? 'SLAM' : null,
+                spin: card.spinEffect
+            });
+            return;
+        }
+
+        if (!start || !end) return;
+
+        // Check for SELECT/DESELECT changes (grouping mode)
+        const startSelected = start.isSelected || false;
+        const endSelected = end.isSelected || false;
+
+        if (startSelected !== endSelected) {
+            // SELECT uses current/end position (card lifts at its current spot)
+            // DESELECT uses START position (card drops at its original spot before moving)
+            const pos = endSelected ? getAEPosition(end) : getAEPosition(start);
+            actions.push({
+                targetId: card.id,
+                type: endSelected ? 'SELECT' : 'DESELECT',
+                position: pos,
+                zone: endSelected ? end.zone : start.zone,
+                zonePosition: endSelected ? (end.zonePosition || 0) : (start.zonePosition || 0),
+                // SELECT moves Y up by SELECT_OFFSET_Y, DESELECT moves back down
+                selectOffset: endSelected ? -25 : 0
+            });
+            // If only selection changed, don't process as TRANSFORM
+            // (unless there are also position/zone changes)
+        }
+
+
+        const startPos = getAEPosition(start);
+        const endPos = getAEPosition(end);
+
+        // Only check position change if zone changed
+        // Cards staying in same zone should NOT get new keyframes just from rearrangement
+        const zoneChanged = end.zone !== start.zone;
+        const posChanged = zoneChanged && (
+            Math.abs(endPos.x - startPos.x) > 1 ||
+            Math.abs(endPos.y - startPos.y) > 1
+        );
+        const rotChanged = Math.abs((end.rotation || 0) - (start.rotation || 0)) > 0.5;
+        const flipChanged = end.isFaceUp !== start.isFaceUp;
+
+        // Standalone flip (face changed but no zone change) → FLIP action
+        if (flipChanged && !zoneChanged) {
+            const pos = getAEPosition(end);
+            actions.push({
+                targetId: card.id,
+                type: 'FLIP',
+                position: pos,
+                zone: end.zone,
+                zonePosition: end.zonePosition || 0,
+                flipToFaceUp: end.isFaceUp
+            });
+            // Don't fall through to TRANSFORM — this is a standalone flip
+            return;
+        }
+
+        // IMPORTANT: Only apply flipAction/slamEffect if card actually moves (zone changed)
+        // These flags are "sticky" on card objects, so we must NOT use them for stationary cards
+        const hasFlipAction = zoneChanged && card.flipAction;
+        const hasSlam = zoneChanged && card.slamEffect;
+        const hasSpin = zoneChanged && card.spinEffect;
+
+        if (posChanged || rotChanged || flipChanged || zoneChanged || hasFlipAction || hasSlam || hasSpin) {
+            // Get endZOrder using group-aware computation
+            var endZOrder = computeZOrderForCard(end);
+            actions.push({
+                targetId: card.id,
+                type: 'TRANSFORM',
+                startPosition: startPos,
+                endPosition: endPos,
+                startRotation: Math.round(start.rotation || 0),
+                endRotation: Math.round(end.rotation || 0),
+                startZone: start.zone,
+                endZone: end.zone,
+                endZOrder: endZOrder,
+                flip: hasFlipAction || flipChanged,
+                flipToFaceUp: end.isFaceUp,
+                effect: hasSlam ? 'SLAM' : null,
+                spin: hasSpin
+            });
+        }
+    });
+
+    // Detect REMOVED cards (in startSnap but not in endSnap / not in tableCards)
+    var currentCardIds = new Set(appState.tableCards.map(function (c) { return c.id; }));
+    Object.keys(startSnap).forEach(function (cardId) {
+        if (!endSnap[cardId] && !currentCardIds.has(cardId)) {
+            var start = startSnap[cardId];
+            var startPos = (start.zone && start.zone !== 'table')
+                ? getAEZonePosition(start.zone, start.zonePosition || 0)
+                : { x: Math.round(start.x || 0), y: Math.round(start.y || 0) };
+            actions.push({
+                targetId: cardId,
+                type: 'REMOVE',
+                startPosition: startPos,
+                endPosition: { x: PROJECT_INFO.width + 500, y: startPos.y },
+                startRotation: Math.round(start.rotation || 0),
+                endRotation: Math.round(start.rotation || 0),
+                zone: start.zone
+            });
+        }
+    });
+
+    return actions;
+}
+
+
+
+
+function handlePropertyChange() {
+    if (!appState.selectedCard) return;
+
+    appState.selectedCard.flipAction = flipCardCheck.checked;
+    appState.selectedCard.slamEffect = slamEffectCheck.checked;
+    appState.selectedCard.spinEffect = spinEffectCheck.checked;
+
+    // Sync popup menu button states
+    updateContextMenuState(appState.selectedCard);
+}
+
+// ============================================
+// COORDINATE TRANSFORMATION SYSTEM
+// UI (1280x720) ↔ AE (1920x1080)
+// ============================================
+
+/**
+ * Transform UI coordinates to AE coordinates
+ * @param {number} uiX - X position in UI (1280x720)
+ * @param {number} uiY - Y position in UI (1280x720)
+ * @returns {object} {x, y} position for AE (1920x1080)
+ */
+function uiToAEPosition(uiX, uiY) {
+    return {
+        x: Math.round(uiX * COORD_SCALE),
+        y: Math.round(uiY * COORD_SCALE)
+    };
+}
+
+/**
+ * Transform AE coordinates to UI coordinates
+ * @param {number} aeX - X position in AE (1920x1080)
+ * @param {number} aeY - Y position in AE (1920x1080)
+ * @returns {object} {x, y} position for UI (1280x720)
+ */
+function aeToUIPosition(aeX, aeY) {
+    return {
+        x: Math.round(aeX / COORD_SCALE),
+        y: Math.round(aeY / COORD_SCALE)
+    };
+}
+
+/**
+ * Get zone position in UI coordinates (relative to poker table)
+ * @param {string} zoneName - Zone name
+ * @param {number} zonePosition - Position within zone
+ * @returns {object} {x, y} position in UI coordinates
+ */
+function getUIZonePosition(zoneName, zonePosition = 0) {
+    const CARD_SPACING_UI = 45; // Card spacing in UI pixels
+
+    // Handle grid zones (grid-place-X)
+    if (zoneName && zoneName.startsWith('grid-')) {
+        const placeId = zoneName.replace('grid-', '');
+
+        // Try to get position from boardLayout.cardPlaces
+        const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
+        if (place) {
+            // Community zone: calculate per-card offset based on czMode
+            if (place.isCommunityZone) {
+                const czMode = place.czMode || 'row';
+                if (czMode === 'row') {
+                    // Horizontal row offset from center
+                    const spacing = Math.min(CARD_SPACING_UI, (place.czWidth || 300) / Math.max(1, zonePosition + 1));
+                    return {
+                        x: Math.round(place.x + (zonePosition * spacing) - (zonePosition * spacing / 2)),
+                        y: Math.round(place.y)
+                    };
+                } else if (czMode === 'pile') {
+                    // Slight deterministic offset per card
+                    const seed = zonePosition * 7919; // Simple pseudo-random from position
+                    const offsetX = ((seed % 20) - 10);
+                    const offsetY = (((seed * 3) % 14) - 7);
+                    return {
+                        x: Math.round(place.x + offsetX),
+                        y: Math.round(place.y + offsetY)
+                    };
+                } else {
+                    // 'stack' - all at center
+                    return { x: place.x, y: place.y };
+                }
+            }
+            return { x: place.x, y: place.y };
+        }
+
+        // Fallback: get position from DOM element
+        const zoneEl = document.querySelector(`.card-drop-zone[data-zone="${zoneName}"]`);
+        if (zoneEl) {
+            const pokerTable = document.getElementById('pokerTable');
+            if (pokerTable) {
+                const tableRect = pokerTable.getBoundingClientRect();
+                const zoneRect = zoneEl.getBoundingClientRect();
+                return {
+                    x: zoneRect.left - tableRect.left + CARD_WIDTH / 2,
+                    y: zoneRect.top - tableRect.top + CARD_HEIGHT / 2
+                };
+            }
+        }
+
+        return { x: UI_WIDTH / 2, y: UI_HEIGHT / 2 };
+    }
+
+    // Zone base positions in UI coordinates (1280x720)
+    // These match the visual layout of the web tool
+    const zonePositions = {
+        'top': { x: UI_WIDTH / 2 - 50, y: 80 },
+        'bottom': { x: UI_WIDTH / 2 - 50, y: UI_HEIGHT - 80 },
+        'left': { x: 120, y: UI_HEIGHT / 2 },
+        'right': { x: UI_WIDTH - 120, y: UI_HEIGHT / 2 },
+        'community': { x: UI_WIDTH / 2 - 80, y: UI_HEIGHT / 2 }
+    };
+
+    const basePos = zonePositions[zoneName] || { x: UI_WIDTH / 2, y: UI_HEIGHT / 2 };
+
+    // Calculate offset for multiple cards
+    let offsetX = (zonePosition || 0) * CARD_SPACING_UI;
+    let offsetY = 0;
+
+    // Vertical zones (left/right) use Y offset
+    if (zoneName === 'left' || zoneName === 'right') {
+        offsetY = (zonePosition || 0) * CARD_SPACING_UI;
+        offsetX = 0;
+    }
+
+    return {
+        x: Math.round(basePos.x + offsetX),
+        y: Math.round(basePos.y + offsetY)
+    };
+}
+
+/**
+ * Get zone position for AE export (transformed from UI to AE coordinates)
+ * @param {string} zone - Zone name
+ * @param {number} zonePosition - Position within zone
+ * @returns {object} {x, y} position for AE (1920x1080)
+ */
+function getAEZonePosition(zone, zonePosition = 0) {
+    const uiPos = getUIZonePosition(zone, zonePosition);
+    return uiToAEPosition(uiPos.x, uiPos.y);
+}
+
+
+function saveInitialStateForExport() {
+    // This version calculates positions for AE export
+    const exportState = {};
+
+    // Card scale for AE - 50% gives good visibility on 1080p
+    const aeCardScale = 0.625;
+
+    // Get the initial snapshot (step 0) to check which cards existed at start
+    const initialSnap = stepSnapshots[0] || {};
+
+    appState.tableCards.forEach(card => {
+        // Check if card existed in the initial snapshot
+        const wasInInitialSnap = initialSnap[card.id] !== undefined;
+
+        // Calculate position based on zone
+        let posX = card.x || 0;
+        let posY = card.y || 0;
+
+        if (!wasInInitialSnap) {
+            // Card was added from tray during recording - start off-screen left
+            posX = -500;
+            posY = PROJECT_INFO.height / 2;
+        } else if (initialSnap[card.id].zone && initialSnap[card.id].zone !== 'table') {
+            // For zone cards, use INITIAL zone and position (not current card.zone which may have changed)
+            const aePos = getAEZonePosition(initialSnap[card.id].zone, initialSnap[card.id].zonePosition || 0);
+            posX = aePos.x;
+            posY = aePos.y;
+        }
+
+        exportState[card.id] = {
+            name: card.name,
+            filename: card.filename,
+            frontImage: card.filename,
+            backImage: 'back.png',
+            x: Math.round(posX),
+            y: Math.round(posY),
+            rotation: wasInInitialSnap ? (initialSnap[card.id].rotation || 0) : 0,
+            scale: aeCardScale,
+            zone: wasInInitialSnap ? initialSnap[card.id].zone : 'offscreen',
+            zonePosition: wasInInitialSnap ? (initialSnap[card.id].zonePosition || 0) : 0,
+            zOrder: wasInInitialSnap ? (initialSnap[card.id].zOrder || 0) : 0,
+            isFaceUp: wasInInitialSnap ? initialSnap[card.id].isFaceUp : false
+        };
+
+        // For Pusoy layout: include per-card row/col and rowCount for AE expression sliders
+        // Use INITIAL zone (not current card.zone) to get correct row/col if card was swapped
+        const pusoyZone = wasInInitialSnap ? initialSnap[card.id].zone : card.zone;
+        if (appState.boardLayout.boardStyle === 'pusoy' && pusoyZone && pusoyZone.startsWith('grid-')) {
+            const placeId = pusoyZone.replace('grid-', '');
+            const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
+            if (place) {
+                const rowConfigs = [{ count: 3 }, { count: 5 }, { count: 5 }]; // Pusoy 3-5-5
+                const rowCount = rowConfigs[place.row] ? rowConfigs[place.row].count : 1;
+                exportState[card.id].row = place.row;
+                exportState[card.id].col = place.col;
+                exportState[card.id].rowCount = rowCount;
+            }
+        }
+
+        // Include clonerId if the card's place belongs to a cloner group
+        // This helps dealing animation group source cards with their cloner
+        var clonerZone = wasInInitialSnap ? initialSnap[card.id].zone : card.zone;
+        if (clonerZone && clonerZone.startsWith('grid-')) {
+            const placeId = clonerZone.replace('grid-', '');
+            const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
+            if (place && place.clonerId) {
+                exportState[card.id].clonerId = place.clonerId;
+            }
+        }
+    });
+
+    return exportState;
+}
+
+
+function handleExportJSON() {
+    if (appState.tableCards.length === 0) {
+        setStatus('No cards on table to export', 'error');
+        return;
+    }
+
+    // Use export version with AE-calculated positions
+    const exportData = {
+        ...scenarioData,
+        initialState: saveInitialStateForExport()
+    };
+
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `poker_scenario_${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    setStatus('Scenario exported!', 'success');
+}
+
+function handleExportToAE() {
+    if (!csInterface) {
+        setStatus('After Effects not connected', 'error');
+        return;
+    }
+
+    if (appState.tableCards.length === 0) {
+        setStatus('No cards on table', 'error');
+        return;
+    }
+
+    if (!appState.assetsRootPath) {
+        setStatus('Select Assets Folder first!', 'error');
+        return;
+    }
+
+    // Use export version with AE-calculated positions
+    const exportData = {
+        ...scenarioData,
+        initialState: saveInitialStateForExport(),
+        boardType: appState.boardLayout.boardStyle || appState.boardLayout.type || 'poker',
+        stepBlending: appState.stepBlending || 0,  // Overlap % between steps
+        enableVisualMouse: true  // Create mouse cursor null for swap animations
+    };
+
+    // Include dealing card config if enabled
+    if (appState.dealingCard.enabled) {
+        const aePos = uiToAEPosition(appState.dealingCard.x, appState.dealingCard.y);
+        exportData.dealingCard = {
+            enabled: true,
+            x: aePos.x,
+            y: aePos.y,
+            staggerFrames: appState.dealSpeed || 3  // Frames between each card deal (1=fast, 5=slow)
+        };
+    }
+
+    // Include Pusoy config for AE expression sliders
+    if (appState.boardLayout.boardStyle === 'pusoy') {
+        const spacingSlider = document.getElementById('pusoySpacing');
+        const curvatureSlider = document.getElementById('pusoyCurvature');
+        const layerGapSlider = document.getElementById('pusoyLayerGap');
+        exportData.pusoyConfig = {
+            defaultSpacing: spacingSlider ? parseInt(spacingSlider.value) : 150,
+            defaultCurvature: curvatureSlider ? parseInt(curvatureSlider.value) : 50,
+            defaultLayerGap: layerGapSlider ? parseInt(layerGapSlider.value) : 30,
+            basePivotY: 645  // 430 UI * 1.5 AE scale
+        };
+    }
+
+    // Include slotGroups for group-aware z-order in AE
+    if (appState.boardLayout.slotGroups && appState.boardLayout.slotGroups.length > 0) {
+        exportData.slotGroups = JSON.parse(JSON.stringify(appState.boardLayout.slotGroups));
+    }
+
+    setStatus('Sending to After Effects...', 'recording');
+
+    const jsonString = JSON.stringify(exportData);
+    const assetsPath = escapeForScript(appState.assetsRootPath);
+
+    csInterface.evalScript(
+        `generateSequence('${escapeForScript(jsonString)}', '${assetsPath}')`,
+        (result) => {
+            try {
+                const response = JSON.parse(result);
+                if (response.success) {
+                    setStatus(`✓ ${response.message}`, 'success');
+                } else {
+                    setStatus(`Error: ${response.message}`, 'error');
+                }
+            } catch (e) {
+                setStatus('Sent to After Effects', 'success');
+            }
+        }
+    );
+}
+
+function escapeForScript(str) {
+    return str
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r');
+}
+
+// ============================================
+// ASSETS FOLDER
+// ============================================
+
+function handleSelectAssetsFolder() {
+    if (typeof window.cep !== 'undefined' && window.cep.fs) {
+        try {
+            const result = window.cep.fs.showOpenDialogEx(
+                false, true, 'Select Assets Folder', '', []
+            );
+
+            if (result.err === 0 && result.data && result.data.length > 0) {
+                appState.assetsRootPath = result.data[0].replace(/\\/g, '/') + '/';
+                updateAssetsDisplay();
+                setStatus('Assets folder set', 'success');
+            }
+        } catch (e) {
+            setStatus('Error selecting folder', 'error');
+        }
+    } else {
+        const path = prompt('Enter assets folder path:', appState.deckPath || 'D:/Assets');
+        if (path) {
+            appState.assetsRootPath = path.replace(/\\/g, '/') + '/';
+            updateAssetsDisplay();
+        }
+    }
+}
+
+function updateAssetsDisplay() {
+    if (appState.assetsRootPath) {
+        const shortPath = appState.assetsRootPath.split('/').slice(-3).join('/');
+        assetsPathDisplay.innerHTML = `<span class="path-label">✓ .../${shortPath}</span>`;
+        assetsPathDisplay.classList.add('has-path');
+    }
+}
+
+// ============================================
+// PROJECT SAVE/LOAD
+// ============================================
+
+function handleSaveProject() {
+    const projectData = {
+        version: '1.0',
+        savedAt: new Date().toISOString(),
+        deckPath: appState.deckPath,
+        assetsRootPath: appState.assetsRootPath,
+        stepBlending: appState.stepBlending,
+        dealSpeed: appState.dealSpeed,
+        boardLayout: appState.boardLayout,
+        // Save card states (without DOM elements)
+        tableCards: appState.tableCards.map(c => ({
+            id: c.id,
+            name: c.name,
+            displayName: c.displayName,
+            filename: c.filename,
+            frontImageUrl: c.frontImageUrl,
+            backImageUrl: c.backImageUrl,
+            suit: c.suit,
+            rank: c.rank,
+            isFaceUp: c.isFaceUp,
+            zone: c.zone,
+            zonePosition: c.zonePosition,
+            rotation: c.rotation,
+            x: c.x,
+            y: c.y
+        })),
+        trayCards: appState.trayCards.map(c => ({
+            id: c.id,
+            name: c.name,
+            displayName: c.displayName,
+            filename: c.filename,
+            frontImageUrl: c.frontImageUrl,
+            backImageUrl: c.backImageUrl,
+            suit: c.suit,
+            rank: c.rank,
+            isFaceUp: c.isFaceUp
+        })),
+        // Save scenario data
+        scenarioData: {
+            initialState: scenarioData.initialState,
+            scenario: scenarioData.scenario
+        },
+        // Save step snapshots
+        stepSnapshots: stepSnapshots
+    };
+
+    const dataStr = JSON.stringify(projectData, null, 2);
+
+    // Use CEP file save dialog
+    if (csInterface) {
+        const defaultFilename = `autonim-poker-project-${Date.now()}.json`;
+        const result = window.cep.fs.showSaveDialogEx(
+            'Save Project',
+            '',
+            ['json'],
+            defaultFilename
+        );
+
+        if (result.data && result.data.length > 0) {
+            const filePath = result.data;
+            const writeResult = window.cep.fs.writeFile(filePath, dataStr);
+
+            if (writeResult.err === 0) {
+                setStatus('Project saved to: ' + filePath.split(/[\\/]/).pop(), 'success');
+            } else {
+                setStatus('Failed to save project', 'error');
+            }
+        } else {
+            setStatus('Save cancelled', '');
+        }
+    } else {
+        // Fallback for browser testing
+        const blob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `autonim-poker-project-${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        setStatus('Project saved to Downloads', 'success');
+    }
+}
+
+function handleLoadProject(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        try {
+            const projectData = JSON.parse(event.target.result);
+
+            // Restore app state
+            appState.deckPath = projectData.deckPath || null;
+            appState.assetsRootPath = projectData.assetsRootPath || null;
+            appState.stepBlending = projectData.stepBlending || 0;
+            appState.dealSpeed = projectData.dealSpeed || 3;
+            appState.boardLayout = projectData.boardLayout || appState.boardLayout;
+            // Fallback for old projects without slotGroups
+            if (!appState.boardLayout.slotGroups) {
+                appState.boardLayout.slotGroups = [];
+            }
+
+            // Restore cards
+            appState.tableCards = projectData.tableCards || [];
+            appState.trayCards = projectData.trayCards || [];
+
+            // Restore scenario
+            if (projectData.scenarioData) {
+                scenarioData.initialState = projectData.scenarioData.initialState || {};
+                scenarioData.scenario = projectData.scenarioData.scenario || [];
+            }
+
+            // Restore snapshots
+            if (projectData.stepSnapshots) {
+                stepSnapshots.length = 0;
+                projectData.stepSnapshots.forEach(s => stepSnapshots.push(s));
+            }
+
+            // Update UI
+            updateAssetsDisplay();
+            if (projectData.stepBlending) {
+                const slider = document.getElementById('stepBlendingSlider');
+                const value = document.getElementById('stepBlendingValue');
+                if (slider) slider.value = projectData.stepBlending;
+                if (value) value.textContent = projectData.stepBlending + '%';
+            }
+            if (projectData.dealSpeed) {
+                const dealSlider = document.getElementById('dealSpeedSlider');
+                const dealValue = document.getElementById('dealSpeedValue');
+                if (dealSlider) dealSlider.value = projectData.dealSpeed;
+                if (dealValue) dealValue.textContent = projectData.dealSpeed + 'f/card';
+            }
+
+            // Re-render cards on table
+            restoreFromSnapshot(stepSnapshots[stepSnapshots.length - 1] || {});
+
+            // Update tray
+            renderCardTray();
+            renderTimeline();
+            updateUI();
+
+            setStatus('Project loaded!', 'success');
+        } catch (err) {
+            setStatus('Failed to load project: ' + err.message, 'error');
+            console.error('Load project error:', err);
+        }
+    };
+    reader.readAsText(file);
+
+    // Reset file input
+    e.target.value = '';
+}
+
+// ============================================
+// TIMELINE
+// ============================================
+
+function renderTimeline() {
+    // Use new TimelineUI if available
+    if (typeof timelineUI !== 'undefined' && timelineUI !== null) {
+        // Sync timing data first
+        syncTimelineModulesWithSteps();
+        return;
+    }
+
+    // Fallback to old rendering if TimelineUI not loaded
+    timelinePreview.innerHTML = '';
+
+    scenarioData.scenario.forEach((step, index) => {
+        const el = document.createElement('div');
+        el.className = 'timeline-step';
+        if (step.actions.length > 0) el.classList.add('has-actions');
+
+        // Step number
+        const stepNum = document.createElement('span');
+        stepNum.textContent = step.stepId;
+        el.appendChild(stepNum);
+
+        // Action buttons container
+        const actions = document.createElement('div');
+        actions.className = 'step-actions';
+
+        // Edit button
+        const editBtn = document.createElement('button');
+        editBtn.className = 'step-action-btn edit-btn';
+        editBtn.innerHTML = '✏️';
+        editBtn.title = 'Edit step';
+        editBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            handleEditStep(index);
+        });
+        actions.appendChild(editBtn);
+
+        // Delete button
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'step-action-btn delete-btn';
+        deleteBtn.innerHTML = '🗑️';
+        deleteBtn.title = 'Delete step';
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            handleDeleteStep(index);
+        });
+        actions.appendChild(deleteBtn);
+
+        el.appendChild(actions);
+        el.title = `Step ${step.stepId}: ${step.actions.length} actions, ${step.duration}s`;
+        timelinePreview.appendChild(el);
+    });
+
+    // Update replay button state
+    if (replayBtn) {
+        replayBtn.disabled = scenarioData.scenario.length === 0;
+    }
+}
+
+// ============================================
+// UI HELPERS
+// ============================================
+
+function updateUI() {
+    tableCardCount.textContent = `Table: ${appState.tableCards.length}`;
+    stepCount.textContent = `Steps: ${scenarioData.scenario.length}`;
+    totalSteps.textContent = scenarioData.scenario.length;
+
+    // Update board mode watermark text if available
+    const boardModeLabel = document.getElementById('boardModeLabel');
+    if (boardModeLabel) {
+        boardModeLabel.textContent = (appState.boardLayout && appState.boardLayout.name) ? appState.boardLayout.name : '';
+    }
+}
+
+function setStatus(message, type = '') {
+    statusMessage.textContent = message;
+    statusMessage.className = 'status-bar';
+    if (type) statusMessage.classList.add(`status-${type}`);
+}
+
+function hideInstructions() {
+    tableInstructions.classList.add('hidden');
+}
+
+function showInstructions() {
+    tableInstructions.classList.remove('hidden');
+}
+
+// ============================================
+// REPLAY FUNCTIONALITY
+// ============================================
+
+let replayTimer = null;
+let isReplaying = false;
+let currentReplayStep = 0;
+let replaySpeed = 1;  // 1 = normal, 2 = faster, 0.5 = slower
+
+function handleReplay() {
+    if (scenarioData.scenario.length === 0) {
+        setStatus('No steps to replay', 'error');
+        return;
+    }
+
+    if (isReplaying) {
+        stopReplay();
+        return;
+    }
+
+    // Check if we have snapshots for replay
+    if (stepSnapshots.length === 0) {
+        setStatus('No snapshots recorded - please record some steps first', 'error');
+        debugWarn('stepSnapshots is empty:', stepSnapshots);
+        return;
+    }
+
+    debugLog('Starting replay with', scenarioData.scenario.length, 'steps');
+    debugLog('stepSnapshots:', stepSnapshots);
+
+
+    isReplaying = true;
+    currentReplayStep = 0;
+
+    // Update UI - old controls disabled, using new timeline controls
+    // replayBtn.textContent = '⏸️ Pause';
+    // replayControls.classList.remove('hidden');
+    // replayProgress.textContent = `Initial / ${scenarioData.scenario.length} steps`;
+
+    // Update playhead to start
+    updateTimelinePlayhead(0);
+
+    // Start replay from initial state
+    restoreToInitialState();
+
+    setStatus('Showing initial state...', 'recording');
+
+    // Give user time to see initial state before stepping
+    setTimeout(() => {
+        if (isReplaying) {
+            setStatus('Replaying steps...', 'recording');
+            replayNextStep();
+        }
+    }, 1000);
+}
+
+
+function replayNextStep() {
+    debugLog('=== replayNextStep ===');
+    debugLog('isReplaying:', isReplaying);
+    debugLog('currentReplayStep:', currentReplayStep);
+    debugLog('scenario.length:', scenarioData.scenario.length);
+
+    if (!isReplaying || currentReplayStep >= scenarioData.scenario.length) {
+        debugLog('Stopping replay - condition met');
+        stopReplay();
+        return;
+    }
+
+    const step = scenarioData.scenario[currentReplayStep];
+    debugLog('Playing step:', currentReplayStep + 1, 'duration:', step.duration);
+    // Old progress display disabled - using playhead now
+    // replayProgress.textContent = `Step ${currentReplayStep + 1}/${scenarioData.scenario.length}`;
+
+    // Update playhead position (step start time)
+    const playheadTime = step.startTime || currentReplayStep;
+    updateTimelinePlayhead(playheadTime);
+
+    // Get previous snapshot for start positions
+    // stepSnapshots[0] = initial state, stepSnapshots[1] = after step 1, etc.
+    const prevSnapshot = stepSnapshots[currentReplayStep];  // Start position
+    const targetSnapshot = stepSnapshots[currentReplayStep + 1];  // End position
+
+    if (targetSnapshot) {
+        debugLog('Animating step from snapshot', currentReplayStep);
+
+        // IMPORTANT: First restore cards to previous snapshot position
+        // This ensures correct start positions on subsequent replays
+        restoreFromSnapshot(prevSnapshot);
+
+        // Find cards that changed position (zone changed) or are new
+        const movingCards = [];
+        Object.entries(targetSnapshot).forEach(([cardId, targetState]) => {
+            const prevState = prevSnapshot[cardId];
+
+            // New card added from tray (not in previous snapshot)
+            if (!prevState) {
+                movingCards.push({
+                    cardId,
+                    fromZone: null,  // Card is new, no previous zone
+                    toZone: targetState.zone,
+                    targetState,
+                    isNew: true
+                });
+            } else if (prevState.zone !== targetState.zone) {
+                // Existing card that moved zones
+                movingCards.push({
+                    cardId,
+                    fromZone: prevState.zone,
+                    fromZonePosition: prevState.zonePosition || 0,
+                    toZone: targetState.zone,
+                    targetState
+                });
+            }
+        });
+
+        debugLog('Moving cards:', movingCards.length);
+
+        if (movingCards.length > 0) {
+            // Small delay to let DOM settle after restore, then animate
+            setTimeout(() => {
+                animateCardsSequentially(movingCards, targetSnapshot, () => {
+                    currentReplayStep++;
+                    // Schedule next step
+                    const duration = ((step.duration || 1) * 1000) / replaySpeed;
+                    debugLog('Scheduling next step in', duration, 'ms (speed:', replaySpeed + 'x)');
+                    replayTimer = setTimeout(() => replayNextStep(), duration);
+                });
+            }, 50);
+        } else {
+            // No movement, just restore and continue
+            restoreFromSnapshot(targetSnapshot);
+            currentReplayStep++;
+            const duration = ((step.duration || 1) * 1000) / replaySpeed;
+            replayTimer = setTimeout(() => replayNextStep(), duration);
+        }
+    } else {
+        debugWarn('No stepSnapshot at index', currentReplayStep);
+        currentReplayStep++;
+        replayTimer = setTimeout(() => replayNextStep(), 1000);
+    }
+}
+
+/**
+ * Animate cards moving to new positions sequentially
+ */
+function animateCardsSequentially(movingCards, targetSnapshot, onComplete) {
+    const ANIMATION_DURATION = 400; // ms per card
+    let index = 0;
+
+    // Calculate scale factor to convert UI coordinates (1280x720) to actual container size
+    const pokerTable = document.getElementById('pokerTable');
+    const tableWidth = pokerTable ? pokerTable.offsetWidth : gameContainer.offsetWidth;
+    const tableHeight = pokerTable ? pokerTable.offsetHeight : gameContainer.offsetHeight;
+    const scaleX = tableWidth / UI_WIDTH;
+    const scaleY = tableHeight / UI_HEIGHT;
+
+    debugLog('Animation scale factors:', { scaleX, scaleY, tableWidth, tableHeight, UI_WIDTH, UI_HEIGHT });
+
+    function animateNext() {
+        if (index >= movingCards.length) {
+            // All animations complete, restore final state
+            restoreFromSnapshot(targetSnapshot);
+            onComplete();
+            return;
+        }
+
+        const move = movingCards[index];
+        let card = appState.tableCards.find(c => c.id === move.cardId);
+
+        // For new cards (from tray), we need to find or create them
+        if (move.isNew && !card) {
+            // Find card in tray
+            card = appState.trayCards.find(c => c.id === move.cardId);
+            if (card) {
+                // Add to table cards
+                appState.tableCards.push(card);
+                appState.trayCards = appState.trayCards.filter(c => c.id !== move.cardId);
+            }
+        }
+
+        if (card) {
+            // Create element if it doesn't exist
+            if (!card.element) {
+                card.isFaceUp = move.targetState.isFaceUp;
+                const element = createTableCardElement(card);
+                card.element = element;
+            }
+
+            // Get start and end positions in UI coordinates (1280x720)
+            // Use zonePosition from state to get correct offset within zone
+            const startPos = move.isNew
+                ? { x: -100, y: UI_HEIGHT / 2 }  // Start from left edge
+                : getUIZonePosition(move.fromZone, move.fromZonePosition || 0);
+            const endPos = getUIZonePosition(move.toZone, move.targetState.zonePosition || 0);
+
+            // Get poker table offset relative to gameContainer
+            const containerRect = gameContainer.getBoundingClientRect();
+            const tableRect = pokerTable ? pokerTable.getBoundingClientRect() : containerRect;
+            const offsetX = tableRect.left - containerRect.left;
+            const offsetY = tableRect.top - containerRect.top;
+
+            // Scale card dimensions as well
+            const scaledCardWidth = CARD_WIDTH * scaleX;
+            const scaledCardHeight = CARD_HEIGHT * scaleY;
+
+            // Remove from zone container, add to gameContainer for free movement
+            const cardEl = card.element;
+            cardEl.style.position = 'absolute';
+            // Scale UI coordinates to actual container size
+            cardEl.style.left = `${offsetX + (startPos.x * scaleX) - scaledCardWidth / 2}px`;
+            cardEl.style.top = `${offsetY + (startPos.y * scaleY) - scaledCardHeight / 2}px`;
+            cardEl.style.zIndex = '200';
+            cardEl.style.transition = `left ${ANIMATION_DURATION}ms ease, top ${ANIMATION_DURATION}ms ease`;
+
+            // Move to gameContainer if not already there
+            if (cardEl.parentElement !== gameContainer) {
+                gameContainer.appendChild(cardEl);
+            }
+
+            debugLog(`Animating ${card.id}: from (${startPos.x}, ${startPos.y}) to (${endPos.x}, ${endPos.y})${move.isNew ? ' [NEW]' : ''}`);
+
+            // Trigger animation
+            requestAnimationFrame(() => {
+                cardEl.style.left = `${offsetX + (endPos.x * scaleX) - scaledCardWidth / 2}px`;
+                cardEl.style.top = `${offsetY + (endPos.y * scaleY) - scaledCardHeight / 2}px`;
+            });
+
+            // Wait for animation, then animate next
+            setTimeout(() => {
+                index++;
+                animateNext();
+            }, ANIMATION_DURATION + 50);
+        } else {
+            index++;
+            animateNext();
+        }
+    }
+
+    animateNext();
+}
+
+
+function stopReplay() {
+    isReplaying = false;
+
+    if (replayTimer) {
+        clearTimeout(replayTimer);
+        replayTimer = null;
+    }
+
+    // Reset UI
+    replayBtn.textContent = '▶️ Replay Steps';
+    replayControls.classList.add('hidden');
+
+    setStatus(`Replay finished at step ${currentReplayStep}/${scenarioData.scenario.length}`, 'success');
+}
+
+function restoreToInitialState() {
+    debugLog('=== restoreToInitialState ===');
+    debugLog('initialState:', scenarioData.initialState);
+    debugLog('tableCards:', appState.tableCards);
+
+    // First, remove all card elements from zones
+    playerZones.forEach(zone => {
+        const container = zone.querySelector('.zone-cards');
+        if (container) container.innerHTML = '';
+    });
+    // Also clear grid drop zones
+    document.querySelectorAll('.card-drop-zone .zone-cards').forEach(container => {
+        container.innerHTML = '';
+    });
+    // Clear community zone
+    const communityZoneContainer = document.querySelector('.community-zone .zone-cards');
+    if (communityZoneContainer) communityZoneContainer.innerHTML = '';
+
+    // Clear ALL card elements ANYWHERE in gameContainer (nuclear cleanup)
+    // This ensures animated cards are removed regardless of DOM location
+    // Must include both .card (table cards) and .zone-card (zone cards) classes
+    gameContainer.querySelectorAll('.card, .zone-card').forEach(cardEl => {
+        cardEl.remove();
+    });
+
+    cardArea.innerHTML = '';
+
+    // Apply initial state to all cards
+    Object.entries(scenarioData.initialState).forEach(([cardId, state]) => {
+        const card = appState.tableCards.find(c => c.id === cardId);
+        if (!card) {
+            debugWarn('Card not found in tableCards:', cardId);
+            return;
+        }
+
+        debugLog(`Restoring card ${cardId} to zone: ${state.zone}`);
+        card.x = state.x;
+        card.y = state.y;
+        card.rotation = state.rotation;
+        card.isFaceUp = state.isFaceUp;
+        card.zone = state.zone;
+        card.zonePosition = state.zonePosition || 0;
+        card.element = null;
+    });
+
+    // Re-create elements ONLY for cards in the initial state
+    // Filter tableCards to only include those in initialState
+    const initialStateCardIds = Object.keys(scenarioData.initialState);
+    const cardsInInitialState = appState.tableCards.filter(c => initialStateCardIds.includes(c.id));
+
+    // Sort by zone and zonePosition to ensure correct order
+    const sortedCards = cardsInInitialState.sort((a, b) => {
+        if (a.zone !== b.zone) return (a.zone || '').localeCompare(b.zone || '');
+        return (a.zonePosition || 0) - (b.zonePosition || 0);
+    });
+
+    debugLog('sortedCards for rendering:', sortedCards.map(c => ({ id: c.id, zone: c.zone })));
+
+    sortedCards.forEach(card => {
+        try {
+            if (card.zone && card.zone !== 'table') {
+                // Use specific selectors to target zone divs (including grid drop zones)
+                const zoneElement = document.querySelector(`.player-zone[data-zone="${card.zone}"], .community-zone[data-zone="${card.zone}"], .card-drop-zone[data-zone="${card.zone}"]`);
+                debugLog(`Creating zone card ${card.id} in zone ${card.zone}, element found:`, !!zoneElement);
+                if (zoneElement) {
+                    createZoneCardElement(card, zoneElement);
+                }
+            } else if (card.zone === 'table') {
+                debugLog(`Creating table card ${card.id}`);
+                createTableCardElement(card);
+            } else {
+                debugWarn(`Card ${card.id} has no valid zone:`, card.zone);
+            }
+        } catch (err) {
+            debugWarn(`ERROR creating card ${card.id}:`, err.message);
+            console.error('Full error:', err);
+        }
+    });
+
+    debugLog('=== restoreToInitialState COMPLETE ===');
+    updateUI();
+}
+
+
+
+// ============================================
+// EDIT/DELETE STEPS
+// ============================================
+
+let pendingWarningCallback = null;
+
+function handleDeleteStep(stepIndex) {
+    if (stepIndex < 0 || stepIndex >= scenarioData.scenario.length) return;
+
+    const isLastStep = stepIndex === scenarioData.scenario.length - 1;
+
+    if (!isLastStep) {
+        // Deleting middle step - warn about subsequent steps
+        showWarningModal(
+            `Deleting step ${stepIndex + 1} will also delete all ${scenarioData.scenario.length - stepIndex - 1} subsequent steps. Continue?`,
+            () => {
+                // Delete this step and all after it, keep steps 0..stepIndex-1
+                scenarioData.scenario = scenarioData.scenario.slice(0, stepIndex);
+                // Keep snapshots 0..stepIndex (need stepIndex+1 snapshots for stepIndex steps)
+                stepSnapshots = stepSnapshots.slice(0, stepIndex + 1);
+                renumberSteps();
+                renderTimeline();
+                updateUI();
+                setStatus(`Deleted step ${stepIndex + 1} and subsequent steps`, 'success');
+            }
+        );
+    } else {
+        // Deleting last step - just remove it
+        scenarioData.scenario.pop();
+        stepSnapshots.pop();
+        renderTimeline();
+        updateUI();
+        setStatus(`Deleted step ${stepIndex + 1}`, 'success');
+    }
+}
+
+function handleEditStep(stepIndex) {
+    if (stepIndex < 0 || stepIndex >= scenarioData.scenario.length) return;
+
+    const isLastStep = stepIndex === scenarioData.scenario.length - 1;
+
+    if (!isLastStep) {
+        // Editing middle step - warn about subsequent steps
+        showWarningModal(
+            `Editing step ${stepIndex + 1} will delete all ${scenarioData.scenario.length - stepIndex - 1} subsequent steps. Continue?`,
+            () => {
+                // Delete steps from stepIndex onward, keep steps 0..stepIndex-1
+                scenarioData.scenario = scenarioData.scenario.slice(0, stepIndex);
+                // Keep snapshots 0..stepIndex (snap[stepIndex] = state BEFORE step at stepIndex)
+                stepSnapshots = stepSnapshots.slice(0, stepIndex + 1);
+                renumberSteps();
+
+                // Restore to state before this step
+                if (stepIndex === 0) {
+                    restoreToInitialState();
+                } else if (stepSnapshots[stepIndex]) {
+                    restoreFromSnapshot(stepSnapshots[stepIndex]);
+                }
+
+                renderTimeline();
+                updateUI();
+                setStatus(`Ready to re-record step ${stepIndex + 1}. Click "Add Step" to start.`, 'success');
+            }
+        );
+    } else {
+        // Editing last step - just remove it and restore to the state BEFORE this step
+        scenarioData.scenario.pop();
+
+        if (stepSnapshots.length > 1) {
+            // Pop the end-state snapshot of the removed step
+            stepSnapshots.pop();
+            // Now the last snapshot is the START state of the removed step
+            const prevSnapshot = stepSnapshots[stepSnapshots.length - 1];
+
+            if (prevSnapshot) {
+                restoreFromSnapshot(prevSnapshot);
+            } else {
+                restoreToInitialState();
+            }
+        } else {
+            restoreToInitialState();
+        }
+
+        renderTimeline();
+        updateUI();
+        setStatus(`Ready to re-record last step. Click "Add Step" to start.`, 'success');
+    }
+}
+
+function renumberSteps() {
+    scenarioData.scenario.forEach((step, idx) => {
+        step.stepId = idx + 1;
+    });
+}
+
+function restoreFromSnapshot(snapshot) {
+    debugLog('=== restoreFromSnapshot ===');
+    debugLog('snapshot:', snapshot);
+
+    // First, remove all card elements from zones
+    playerZones.forEach(zone => {
+        const container = zone.querySelector('.zone-cards');
+        if (container) container.innerHTML = '';
+    });
+    // Also clear grid drop zones
+    document.querySelectorAll('.card-drop-zone .zone-cards').forEach(container => {
+        container.innerHTML = '';
+    });
+    // Clear community zone
+    const communityZone = document.querySelector('.community-zone .zone-cards');
+    if (communityZone) communityZone.innerHTML = '';
+
+    // Clear ALL card elements ANYWHERE in gameContainer (nuclear cleanup)
+    // This ensures animated cards are removed regardless of DOM location
+    // Must include both .card (table cards) and .zone-card (zone cards) classes
+    gameContainer.querySelectorAll('.card, .zone-card').forEach(cardEl => {
+        cardEl.remove();
+    });
+
+    cardArea.innerHTML = '';
+
+    // Clear and rebuild groupedCards based on snapshot isSelected
+    appState.groupedCards = [];
+
+    // Restore each card to its saved state
+    Object.entries(snapshot).forEach(([cardId, state]) => {
+        const card = appState.tableCards.find(c => c.id === cardId);
+        if (!card) {
+            debugWarn('Card not found in tableCards:', cardId);
+            return;
+        }
+
+        debugLog(`Restoring card ${cardId} to zone: ${state.zone}`);
+        // Restore all properties
+        card.x = state.x || 0;
+        card.y = state.y || 0;
+        card.rotation = state.rotation || 0;
+        card.isFaceUp = state.isFaceUp;
+        card.zone = state.zone;
+        card.zonePosition = state.zonePosition || 0;
+        card.flipAction = state.flipAction || false;
+        card.slamEffect = state.slamEffect || false;
+        card.element = null;
+
+        // Track selected cards for grouping
+        if (state.isSelected) {
+            appState.groupedCards.push(card);
+        }
+    });
+
+    // Re-create elements ONLY for cards in the snapshot
+    // Filter tableCards to only include those in the snapshot
+    const snapshotCardIds = Object.keys(snapshot);
+    const cardsInSnapshot = appState.tableCards.filter(c => snapshotCardIds.includes(c.id));
+
+    // Sort by zone and zonePosition to ensure correct order
+    const sortedCards = cardsInSnapshot.sort((a, b) => {
+        if (a.zone !== b.zone) return (a.zone || '').localeCompare(b.zone || '');
+        return (a.zonePosition || 0) - (b.zonePosition || 0);
+    });
+
+    debugLog('sortedCards for rendering:', sortedCards.map(c => ({ id: c.id, zone: c.zone })));
+
+    sortedCards.forEach(card => {
+        if (card.zone && card.zone !== 'table') {
+            // Use specific selectors to target zone divs (including grid drop zones)
+            const zoneElement = document.querySelector(`.player-zone[data-zone="${card.zone}"], .community-zone[data-zone="${card.zone}"], .card-drop-zone[data-zone="${card.zone}"]`);
+            debugLog(`Creating zone card ${card.id} in zone ${card.zone}, element found:`, !!zoneElement);
+            if (zoneElement) {
+                createZoneCardElement(card, zoneElement);
+            }
+        } else if (card.zone === 'table') {
+            debugLog(`Creating table card ${card.id}`);
+            createTableCardElement(card);
+        } else {
+            debugWarn(`Card ${card.id} has no valid zone:`, card.zone);
+        }
+
+        // Apply .grouped class if card is selected
+        const isCardSelected = snapshot[card.id]?.isSelected || false;
+        if (isCardSelected && card.element) {
+            card.element.classList.add('grouped');
+        }
+    });
+
+    // Update group count display
+    updateGroupCount();
+    updateUI();
+}
+
+
+
+// ============================================
+// WARNING MODAL
+// ============================================
+
+function showWarningModal(message, onConfirm) {
+    if (!warningModal) return;
+
+    warningMessage.textContent = message;
+    pendingWarningCallback = onConfirm;
+    warningModal.classList.remove('hidden');
+}
+
+function hideWarningModal() {
+    if (!warningModal) return;
+
+    warningModal.classList.add('hidden');
+    pendingWarningCallback = null;
+}
+
+function confirmWarning() {
+    if (pendingWarningCallback) {
+        pendingWarningCallback();
+    }
+    hideWarningModal();
+}
+
+// ============================================
+// AUTO-STEP POPUP
+// ============================================
+
+// ============================================
+// HELP MODAL
+// ============================================
+
+function showHelpModal() {
+    if (!helpModal) return;
+    helpModal.classList.remove('hidden');
+}
+
+function hideHelpModal() {
+    if (!helpModal) return;
+    helpModal.classList.add('hidden');
+}
+
+// Open video links in system default browser (CEP panels can't embed YouTube)
+function initHelpVideoLinks() {
+    if (!helpModal) return;
+    helpModal.querySelectorAll('.help-video-card[data-url]').forEach(card => {
+        card.addEventListener('click', function () {
+            const url = this.getAttribute('data-url');
+            if (url) {
+                try {
+                    var csInterface = new CSInterface();
+                    csInterface.openURLInDefaultBrowser(url);
+                } catch (e) {
+                    window.open(url, '_blank');
+                }
+            }
+        });
+    });
+}
+
+// ============================================
+// AUTO-STEP POPUP
+// ============================================
+
+/**
+ * Show auto-step popup when card is moved in Record mode
+ */
+function showAutoStepPopup(card, previousSnapshot) {
+    if (!autoStepPopup) return;
+    if (appState._bulkApplying) return; // Suppress during AI scenario apply
+
+    // BUG FIX: Only set pendingChangeSnapshot if not already pending.
+    // When multiple cards are selected rapidly (grouping mode), each call overwrites
+    // the snapshot, losing the first card's SELECT change. Keeping the ORIGINAL snapshot
+    // ensures computeActions detects ALL card changes between snapshot and current state.
+    if (!pendingChangeSnapshot) {
+        pendingChangeSnapshot = previousSnapshot;
+    }
+    pendingChangeCard = card;
+
+    autoStepPopup.classList.remove('hidden');
+
+    // If auto-record is enabled, start countdown to auto-accept
+    if (appState.autoRecord) {
+        startAutoRecordCountdown();
+    }
+}
+
+/**
+ * Hide auto-step popup
+ */
+function hideAutoStepPopup() {
+    if (!autoStepPopup) return;
+
+    autoStepPopup.classList.add('hidden');
+    pendingChangeSnapshot = null;
+    pendingChangeCard = null;
+}
+
+/**
+ * Handle Yes button - create new step automatically
+ */
+function handleAutoStepYes() {
+    debugLog('=== handleAutoStepYes ===');
+    debugLog('pendingChangeSnapshot:', !!pendingChangeSnapshot);
+
+    if (!pendingChangeSnapshot) {
+        debugWarn('No pendingChangeSnapshot, aborting');
+        hideAutoStepPopup();
+        return;
+    }
+
+    // Create step automatically
+    const endSnapshot = takeSnapshot();
+    const actions = computeActions(pendingChangeSnapshot, endSnapshot);
+
+    debugLog('pendingChangeSnapshot keys:', Object.keys(pendingChangeSnapshot || {}));
+    debugLog('endSnapshot keys:', Object.keys(endSnapshot || {}));
+    debugLog('actions computed:', actions.length, actions);
+
+    if (actions.length > 0) {
+        const newStep = {
+            stepId: scenarioData.scenario.length + 1,
+            duration: stepDuration ? parseFloat(stepDuration.value) : 1.0,
+            actions: actions
+        };
+
+        // BUG #4 fix: attach pending group order overrides
+        if (appState.pendingGroupOrderOverrides) {
+            newStep.groupOrderOverrides = JSON.parse(JSON.stringify(appState.pendingGroupOrderOverrides));
+            var groups = appState.boardLayout.slotGroups || [];
+            groups.forEach(function (g) {
+                if (appState.pendingGroupOrderOverrides[g.id] !== undefined) {
+                    g.groupOrder = appState.pendingGroupOrderOverrides[g.id];
+                }
+            });
+            appState.pendingGroupOrderOverrides = null;
+        }
+
+        scenarioData.scenario.push(newStep);
+
+        // Save snapshot for replay and edit restore
+        stepSnapshots.push(JSON.parse(JSON.stringify(endSnapshot)));
+
+        totalSteps.textContent = scenarioData.scenario.length;
+        renderTimeline();
+        updateUI();
+        debugLog('Step created:', newStep.stepId, 'Total steps:', scenarioData.scenario.length);
+        setStatus(`Step ${scenarioData.scenario.length} auto-created with ${actions.length} actions`, 'success');
+    } else {
+        debugWarn('No actions detected between snapshots');
+        setStatus('No changes detected', 'info');
+    }
+
+    hideAutoStepPopup();
+}
+
+
+/**
+ * Handle No button - revert card to previous position
+ */
+function handleAutoStepNo() {
+    if (!pendingChangeSnapshot) {
+        hideAutoStepPopup();
+        return;
+    }
+
+    // Revert all cards to previous snapshot
+    restoreFromSnapshot(pendingChangeSnapshot);
+
+    // Clear sticky flags only on the card(s) involved in the reverted move.
+    // These flags are set via UI checkboxes, not stored in snapshots,
+    // and can cause spurious TRANSFORM actions in subsequent steps.
+    if (pendingChangeCard) {
+        pendingChangeCard.flipAction = false;
+        pendingChangeCard.slamEffect = false;
+    } else if (appState.groupedCards.length > 0) {
+        // Grouped move — clear only the grouped cards
+        appState.groupedCards.forEach(card => {
+            card.flipAction = false;
+            card.slamEffect = false;
+        });
+    }
+
+    // Re-apply "grouped" CSS class to restored grouped cards
+    appState.groupedCards.forEach(card => {
+        if (card.element) {
+            card.element.classList.add('grouped');
+        }
+    });
+
+    setStatus('Changes reverted', 'info');
+    hideAutoStepPopup();
+}
+
+/**
+ * Trigger auto-step popup when card movement is detected in Record mode
+ * Called from moveCardToZone
+ */
+function triggerAutoStepCheck() {
+    if (appState.phase !== 'record') return;
+    if (appState.isEditingStep) return; // Don't trigger if manually editing a step
+
+    // Take snapshot before showing popup (this becomes the "before" state)
+    // Note: The snapshot was taken BEFORE the move in moveCardToZone
+}
+
+// ============================================
+// INLINE CARD CONTEXT MENU
+// ============================================
+
+/**
+ * Show context menu next to selected card (Record mode only)
+ */
+function showCardContextMenu(card) {
+    if (!cardContextMenu || !card.element) return;
+
+    // Only show in Record mode
+    if (appState.phase !== 'record') {
+        hideCardContextMenu();
+        return;
+    }
+
+    // Check if popup is disabled by user toggle
+    var showToggle = document.getElementById('showContextMenuToggle');
+    if (showToggle && !showToggle.checked) {
+        hideCardContextMenu();
+        return;
+    }
+
+    // Use pinned position (fixed coords) if available, otherwise default to top-right of game area
+    const pinned = _ctxMenuPinnedPos;
+    if (pinned) {
+        cardContextMenu.style.left = pinned.left + 'px';
+        cardContextMenu.style.top = pinned.top + 'px';
+    } else {
+        // Default: top-right corner of game container
+        const containerRect = gameContainer.getBoundingClientRect();
+        cardContextMenu.style.left = (containerRect.right - 320) + 'px';
+        cardContextMenu.style.top = (containerRect.top + 10) + 'px';
+    }
+
+    // Update button states
+    updateContextMenuState(card);
+
+    // Show/hide group action buttons — show if grouping with 2+ grouped, OR if 2+ cards are on the table
+    const tableCardsOnBoard = appState.tableCards.filter(c => c.zone && !c.inTray);
+    const hasGroupedCards = appState.groupingMode && appState.groupedCards.length > 1;
+    const showAllBtns = hasGroupedCards || tableCardsOnBoard.length >= 2;
+    if (ctxGroupDivider) ctxGroupDivider.classList.toggle('hidden', !showAllBtns);
+    if (ctxFlipAllBtn) ctxFlipAllBtn.classList.toggle('hidden', !showAllBtns);
+    if (ctxSlamAllBtn) ctxSlamAllBtn.classList.toggle('hidden', !showAllBtns);
+    if (ctxSpinAllBtn) ctxSpinAllBtn.classList.toggle('hidden', !showAllBtns);
+
+    cardContextMenu.classList.remove('hidden');
+}
+
+/**
+ * Hide context menu
+ */
+function hideCardContextMenu() {
+    if (!cardContextMenu) return;
+    cardContextMenu.classList.add('hidden');
+}
+
+/**
+ * Setup drag-to-pin for cardContextMenu (position: fixed, body-level).
+ * The entire menu bar is draggable (mousedown on menu background or drag handle).
+ * Clicking buttons works normally. Position saved in localStorage.
+ * Double-click handle or click reset → unpin (back to default corner).
+ */
+function setupCtxMenuDrag() {
+    if (!cardContextMenu) return;
+
+    // Load pinned position from localStorage
+    try {
+        var saved = localStorage.getItem('ctxMenuPinnedPos');
+        if (saved) _ctxMenuPinnedPos = JSON.parse(saved);
+    } catch (e) { /* ignore */ }
+
+    var handle = cardContextMenu.querySelector('.ctx-drag-handle');
+    var resetBtn = cardContextMenu.querySelector('.ctx-reset-btn');
+
+    var isDragging = false;
+    var didDrag = false;
+    var dragOffsetX = 0, dragOffsetY = 0;
+
+    // Start drag on mousedown anywhere on the menu (except buttons)
+    cardContextMenu.addEventListener('mousedown', function (e) {
+        // Only start drag from handle, divider, or menu background — not from buttons
+        if (e.target.tagName === 'BUTTON') return;
+        e.preventDefault();
+        isDragging = true;
+        didDrag = false;
+        var menuRect = cardContextMenu.getBoundingClientRect();
+        dragOffsetX = e.clientX - menuRect.left;
+        dragOffsetY = e.clientY - menuRect.top;
+        cardContextMenu.classList.add('ctx-dragging');
+    });
+
+    document.addEventListener('mousemove', function (e) {
+        if (!isDragging) return;
+        didDrag = true;
+        var left = e.clientX - dragOffsetX;
+        var top = e.clientY - dragOffsetY;
+        // Clamp within viewport
+        left = Math.max(0, Math.min(left, window.innerWidth - 50));
+        top = Math.max(0, Math.min(top, window.innerHeight - 30));
+        cardContextMenu.style.left = left + 'px';
+        cardContextMenu.style.top = top + 'px';
+    });
+
+    document.addEventListener('mouseup', function () {
+        if (!isDragging) return;
+        isDragging = false;
+        cardContextMenu.classList.remove('ctx-dragging');
+        if (!didDrag) return; // Only pin if actually dragged
+        // Save pinned position
+        _ctxMenuPinnedPos = {
+            left: parseInt(cardContextMenu.style.left),
+            top: parseInt(cardContextMenu.style.top)
+        };
+        try {
+            localStorage.setItem('ctxMenuPinnedPos', JSON.stringify(_ctxMenuPinnedPos));
+        } catch (e) { /* ignore */ }
+        cardContextMenu.classList.add('ctx-pinned');
+        if (resetBtn) resetBtn.classList.remove('hidden');
+    });
+
+    // Double-click handle or click reset → unpin
+    function unpinMenu() {
+        _ctxMenuPinnedPos = null;
+        try { localStorage.removeItem('ctxMenuPinnedPos'); } catch (e) { /* ignore */ }
+        cardContextMenu.classList.remove('ctx-pinned');
+        if (resetBtn) resetBtn.classList.add('hidden');
+        if (appState.selectedCard) showCardContextMenu(appState.selectedCard);
+    }
+
+    if (handle) {
+        handle.addEventListener('dblclick', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            unpinMenu();
+        });
+    }
+
+    if (resetBtn) {
+        resetBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            unpinMenu();
+        });
+        if (_ctxMenuPinnedPos) resetBtn.classList.remove('hidden');
+    }
+
+    if (_ctxMenuPinnedPos) {
+        cardContextMenu.classList.add('ctx-pinned');
+    }
+}
+
+/**
+ * Update context menu button active states
+ */
+function updateContextMenuState(card) {
+    if (!card) return;
+
+    if (ctxFlipBtn) {
+        ctxFlipBtn.classList.toggle('active', card.flipAction || false);
+    }
+    if (ctxSlamBtn) {
+        ctxSlamBtn.classList.toggle('active', card.slamEffect || false);
+    }
+    if (ctxSpinBtn) {
+        ctxSpinBtn.classList.toggle('active', card.spinEffect || false);
+    }
+}
+
+/**
+ * Toggle flip action on selected card
+ */
+function toggleCtxFlip() {
+    if (!appState.selectedCard) return;
+
+    appState.selectedCard.flipAction = !appState.selectedCard.flipAction;
+
+    // Always flip the card visually when toggle changes
+    // Enable flipAction: shows END state (flipped)
+    // Disable flipAction: flips back to original state
+    flipCard(appState.selectedCard);
+
+
+    // Sync with properties panel
+    flipCardCheck.checked = appState.selectedCard.flipAction;
+
+    // Update button state
+    if (ctxFlipBtn) {
+        ctxFlipBtn.classList.toggle('active', appState.selectedCard.flipAction);
+    }
+
+    setStatus(appState.selectedCard.flipAction ? 'Flip animation enabled' : 'Flip animation disabled');
+
+    // Auto-hide menu after selection (with brief delay to show state change)
+    setTimeout(() => {
+        hideCardContextMenu();
+    }, 300);
+}
+
+/**
+ * Handle Flip.Ani — flip card and trigger step recording
+ * Records the flip as a standalone FLIP action (no movement needed)
+ */
+function handleFlipAni() {
+    if (!appState.selectedCard) return;
+    if (appState.phase !== 'record') {
+        setStatus('Flip.Ani only works in Record mode');
+        return;
+    }
+
+    // Take snapshot BEFORE the flip
+    const beforeSnapshot = takeSnapshot();
+
+    // Flip the card visually
+    flipCard(appState.selectedCard);
+
+    debugLog(`[FlipAni] Card ${appState.selectedCard.id} flipped to ${appState.selectedCard.isFaceUp ? 'face-up' : 'face-down'}`);
+
+    // Trigger step recording popup (same flow as card movement)
+    showAutoStepPopup(appState.selectedCard, beforeSnapshot);
+
+    hideCardContextMenu();
+}
+
+/**
+ * Toggle slam effect on selected card
+ */
+function toggleCtxSlam() {
+    if (!appState.selectedCard) return;
+
+    appState.selectedCard.slamEffect = !appState.selectedCard.slamEffect;
+
+    // Sync with properties panel
+    slamEffectCheck.checked = appState.selectedCard.slamEffect;
+
+    // Update button state
+    if (ctxSlamBtn) {
+        ctxSlamBtn.classList.toggle('active', appState.selectedCard.slamEffect);
+    }
+
+    setStatus(appState.selectedCard.slamEffect ? 'Slam effect enabled' : 'Slam effect disabled');
+
+    // Auto-hide menu after selection (with brief delay to show state change)
+    setTimeout(() => {
+        hideCardContextMenu();
+    }, 300);
+}
+
+/**
+ * Toggle flip action on ALL grouped cards
+ */
+function toggleCtxFlipAll() {
+    // Use grouped cards if in grouping mode, otherwise all table cards on board
+    const targetCards = (appState.groupingMode && appState.groupedCards.length > 0)
+        ? appState.groupedCards
+        : appState.tableCards.filter(c => c.zone && !c.inTray);
+    if (targetCards.length === 0) return;
+
+    // Determine new state: toggle based on majority
+    const enabledCount = targetCards.filter(c => c.flipAction).length;
+    const newState = enabledCount < targetCards.length / 2;
+
+    targetCards.forEach(card => {
+        card.flipAction = newState;
+        // Flip visually if state changed
+        flipCard(card);
+    });
+
+    // Update properties panel if selected card is in group
+    if (appState.selectedCard && targetCards.some(c => c.id === appState.selectedCard.id)) {
+        flipCardCheck.checked = appState.selectedCard.flipAction;
+        if (ctxFlipBtn) {
+            ctxFlipBtn.classList.toggle('active', appState.selectedCard.flipAction);
+        }
+    }
+
+    setStatus(newState
+        ? `Flip animation enabled for ${targetCards.length} cards`
+        : `Flip animation disabled for ${targetCards.length} cards`
+    );
+
+    // Auto-hide menu after selection
+    setTimeout(() => {
+        hideCardContextMenu();
+    }, 300);
+}
+
+/**
+ * Toggle slam effect on ALL grouped cards
+ */
+function toggleCtxSlamAll() {
+    // Use grouped cards if in grouping mode, otherwise all table cards on board
+    const targetCards = (appState.groupingMode && appState.groupedCards.length > 0)
+        ? appState.groupedCards
+        : appState.tableCards.filter(c => c.zone && !c.inTray);
+    if (targetCards.length === 0) return;
+
+    // Determine new state: toggle based on majority
+    const enabledCount = targetCards.filter(c => c.slamEffect).length;
+    const newState = enabledCount < targetCards.length / 2;
+
+    targetCards.forEach(card => {
+        card.slamEffect = newState;
+    });
+
+    // Update properties panel if selected card is in group
+    if (appState.selectedCard && targetCards.some(c => c.id === appState.selectedCard.id)) {
+        slamEffectCheck.checked = appState.selectedCard.slamEffect;
+        if (ctxSlamBtn) {
+            ctxSlamBtn.classList.toggle('active', appState.selectedCard.slamEffect);
+        }
+    }
+
+    setStatus(newState
+        ? `Slam effect enabled for ${targetCards.length} cards`
+        : `Slam effect disabled for ${targetCards.length} cards`
+    );
+
+    // Auto-hide menu after selection
+    setTimeout(() => {
+        hideCardContextMenu();
+    }, 300);
+}
+
+/**
+ * Toggle spin effect on selected card
+ */
+function toggleCtxSpin() {
+    if (!appState.selectedCard) return;
+
+    appState.selectedCard.spinEffect = !appState.selectedCard.spinEffect;
+
+    // Sync with properties panel
+    spinEffectCheck.checked = appState.selectedCard.spinEffect;
+
+    // Update button state
+    if (ctxSpinBtn) {
+        ctxSpinBtn.classList.toggle('active', appState.selectedCard.spinEffect);
+    }
+
+    setStatus(appState.selectedCard.spinEffect ? 'Spin effect enabled' : 'Spin effect disabled');
+
+    // Auto-hide menu after selection (with brief delay to show state change)
+    setTimeout(() => {
+        hideCardContextMenu();
+    }, 300);
+}
+
+/**
+ * Toggle spin effect on ALL grouped cards
+ */
+function toggleCtxSpinAll() {
+    // Use grouped cards if in grouping mode, otherwise all table cards on board
+    const targetCards = (appState.groupingMode && appState.groupedCards.length > 0)
+        ? appState.groupedCards
+        : appState.tableCards.filter(c => c.zone && !c.inTray);
+    if (targetCards.length === 0) return;
+
+    // Determine new state: toggle based on majority
+    const enabledCount = targetCards.filter(c => c.spinEffect).length;
+    const newState = enabledCount < targetCards.length / 2;
+
+    targetCards.forEach(card => {
+        card.spinEffect = newState;
+    });
+
+    // Update properties panel if selected card is in group
+    if (appState.selectedCard && targetCards.some(c => c.id === appState.selectedCard.id)) {
+        spinEffectCheck.checked = appState.selectedCard.spinEffect;
+        if (ctxSpinBtn) {
+            ctxSpinBtn.classList.toggle('active', appState.selectedCard.spinEffect);
+        }
+    }
+
+    setStatus(newState
+        ? `Spin effect enabled for ${targetCards.length} cards`
+        : `Spin effect disabled for ${targetCards.length} cards`
+    );
+
+    // Auto-hide menu after selection
+    setTimeout(() => {
+        hideCardContextMenu();
+    }, 300);
+}
+
+// ============================================
+// Z-ORDER UTILITY
+// ============================================
+
+/**
+ * Ensure all card places have a valid zOrder for AE Z-positioning.
+ * RULE: Cards visually "in front" (lower on screen / higher row) get HIGHER zOrder.
+ * Higher zOrder → more negative Z in AE → closer to camera → in front.
+ *
+ * Priority:
+ * 1. If ANY place already has zOrder → skip (layout manages its own, e.g. Poker/Pusoy)
+ * 2. If place has row/col → calculate (row * maxCols) + col
+ * 3. Fallback → use array index
+ */
+function ensureZOrder(cardPlaces) {
+    if (!cardPlaces || cardPlaces.length === 0) return;
+
+    // Check if ANY place already has zOrder (layout self-manages)
+    var hasExistingZOrder = cardPlaces.some(function (p) { return p.zOrder !== undefined; });
+    if (hasExistingZOrder) return;
+
+    // Find max cols for row-based calculation
+    var maxCols = cardPlaces.reduce(function (max, p) {
+        return Math.max(max, (p.col || 0) + 1);
+    }, 1);
+
+    cardPlaces.forEach(function (place, index) {
+        if (place.row !== undefined && place.col !== undefined) {
+            place.zOrder = (place.row * maxCols) + place.col;
+        } else {
+            place.zOrder = index;
+        }
+    });
+}
+
+// ============================================
+// BOARD SETTING FUNCTIONS
+// ============================================
+
+/**
+ * Load preset from file or predefined presets
+ */
+function handleLoadPreset() {
+    const presetValue = presetSelect.value;
+
+    // Clean up previous layout before loading new one
+    deselectCardPlace();
+    clearCardPlaceMarkers();
+    clearCardDropZones();
+    gameContainer.classList.remove('grid-mode', 'poker-grid-mode');
+
+    // Determine effective boardStyle for controls visibility
+    let effectiveBoardStyle = presetValue;
+
+    if (presetValue === 'poker') {
+        loadPokerLayout();
+    } else if (presetValue === 'pusoy') {
+        loadPusoyLayout();
+    } else if (presetValue === 'pusoy-2p') {
+        loadPusoyMultiLayout(2);
+    } else if (presetValue === 'pusoy-4p') {
+        loadPusoyMultiLayout(4);
+    } else if (presetValue === 'card-sorting') {
+        loadGridLayout(4, 3);
+    } else if (presetValue === 'custom') {
+        // Start with empty grid (no card places)
+        appState.boardLayout = {
+            type: 'grid',
+            name: 'Custom',
+            boardStyle: 'custom',
+            gridCols: 4,
+            gridRows: 3,
+            cardPlaces: [],
+            slotGroups: []
+        };
+        gameContainer.classList.add('grid-mode');
+        setStatus('Custom layout - Add card places with buttons above');
+    } else if (presetValue.startsWith('saved:')) {
+        // Load user-saved layout from localStorage
+        const layoutName = presetValue.substring(6);
+        const savedLayouts = loadSavedLayouts();
+        const data = savedLayouts[layoutName];
+
+        if (!data || !data.cardPlaces) {
+            setStatus(`Layout "${layoutName}" not found`, 'error');
+            return;
+        }
+
+        // Restore board layout (same logic as autoRestoreBoardLayout)
+        appState.boardLayout = {
+            type: data.type || 'grid',
+            name: data.name || layoutName,
+            boardStyle: data.boardStyle || 'custom',
+            gridCols: data.gridCols || 4,
+            gridRows: data.gridRows || 3,
+            cardPlaces: data.cardPlaces,
+            slotGroups: data.slotGroups || []
+        };
+
+        // Restore CSS classes based on boardStyle
+        if (data.type === 'grid') gameContainer.classList.add('grid-mode');
+        if (data.boardStyle === 'poker') gameContainer.classList.add('poker-grid-mode');
+
+        // Restore Pusoy slider values
+        if (data.pusoyConfig) {
+            const s = document.getElementById('pusoySpacing');
+            const c = document.getElementById('pusoyCurvature');
+            const l = document.getElementById('pusoyLayerGap');
+            if (s) s.value = data.pusoyConfig.spacing;
+            if (c) c.value = data.pusoyConfig.curvature;
+            if (l) l.value = data.pusoyConfig.layerGap;
+        }
+
+        // Use effective boardStyle for controls visibility (Gap 2)
+        effectiveBoardStyle = data.boardStyle || 'custom';
+
+        debugLog(`[SaveLayout] Loaded "${layoutName}" with ${data.cardPlaces.length} places, ${(data.slotGroups || []).length} groups`);
+        setStatus(`Loaded layout: ${layoutName}`);
+    }
+
+    // Toggle Grid Size controls visibility using effective boardStyle (Gap 2)
+    toggleGridControlsVisibility(effectiveBoardStyle);
+
+    updateCardPlacesList();
+    renderCardPlaceMarkers();
+    updateGroupPanelVisibility();
+    // Auto-trigger Transform Indicator on new layout if it has card places
+    if (!document.body.classList.contains('previewing-preset')) {
+        if (presetValue !== 'custom' && appState.boardLayout && appState.boardLayout.cardPlaces.length > 0) {
+            appState.selectedCardPlaces = [...appState.boardLayout.cardPlaces];
+            setTimeout(() => {
+                if (typeof syncTransformIndicator === 'function') syncTransformIndicator();
+            }, 100);
+        }
+    }
+}
+
+function renderGroupPencils() {
+    // Clear old pencils
+    document.querySelectorAll('.group-pencil-btn, .clone-btn, .group-tools-float, .quadrant-number-watermark').forEach(b => b.remove());
+
+    const svgOverlay = document.getElementById('tableQuadrantsOverlay');
+    if (svgOverlay) {
+        svgOverlay.querySelectorAll('text').forEach(t => t.remove());
+    }
+
+    if (!appState.boardLayout || appState.phase === 'setup' || !appState.boardLayout.cardPlaces || appState.boardLayout.cardPlaces.length === 0) return;
+    
+    const gameContainer = document.getElementById('gameContainer');
+    const pokerTable = document.getElementById('pokerTable');
+    if (!gameContainer) return;
+    
+    let scaleX = 1, scaleY = 1, offsetX = 0, offsetY = 0;
+    if (pokerTable) {
+        const tableRect = pokerTable.getBoundingClientRect();
+        const containerRect = gameContainer.getBoundingClientRect();
+        scaleX = pokerTable.offsetWidth / UI_WIDTH;
+        scaleY = pokerTable.offsetHeight / UI_HEIGHT;
+        offsetX = tableRect.left - containerRect.left;
+        offsetY = tableRect.top - containerRect.top;
+    }
+
+    const Q_CENTERS = {
+        1: { x: 640, y: 720 * 0.78, rot: 0 },
+        2: { x: 1280 * 0.20, y: 360, rot: 90 },
+        3: { x: 640, y: 720 * 0.22, rot: 180 },
+        4: { x: 1280 * 0.80, y: 360, rot: -90 }
+    };
+
+    let baseQuadrant = -1; 
+    let quadrantCreationOrder = 1;
+
+    // Map quadrant via slotGroup macros to prevent visual spillover generating multiple pencils/clones
+    const quadrantCards = { 1: [], 2: [], 3: [], 4: [] };
+    const quadrantOrder = []; 
+    
+    appState.boardLayout.slotGroups.forEach(g => {
+        if (!g.slotIds || g.slotIds.length === 0) return;
+        const groupPlaces = appState.boardLayout.cardPlaces.filter(p => g.slotIds.includes(p.id));
+        if (groupPlaces.length === 0) return;
+        
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        groupPlaces.forEach(p => {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+        });
+        const cx = minX + (maxX - minX) / 2;
+        const cy = minY + (maxY - minY) / 2;
+
+        const dx = cx - 640;
+        const dy = cy - 360;
+        let q = 1;
+        if (Math.abs(dy) / 360 > Math.abs(dx) / 640) q = (dy > 0) ? 1 : 3;
+        else q = (dx > 0) ? 4 : 2;
+
+        quadrantCards[q].push(...groupPlaces);
+        if (!quadrantOrder.includes(q)) {
+            quadrantOrder.push(q);
+        }
+    });
+
+    [1, 2, 3, 4].forEach(q => {
+        const places = quadrantCards[q];
+
+        if (places.length > 0) {
+            if (baseQuadrant === -1) baseQuadrant = q;
+
+            // Draw Dynamic Watermark Number using a DOM DIV to float above cards
+            const WatermarkCenters = {
+                1: { x: 640, y: 580 },
+                2: { x: 230, y: 380 },
+                3: { x: 640, y: 180 },
+                4: { x: 1050, y: 380 }
+            };
+
+            const watermark = document.createElement('div');
+            watermark.className = 'quadrant-number-watermark';
+            
+            // The number is the chronological order this quadrant was discovered
+            const orderIndex = quadrantOrder.indexOf(q) + 1;
+            watermark.textContent = String(orderIndex);
+            
+            watermark.style.position = 'absolute';
+            watermark.style.left = `${WatermarkCenters[q].x * scaleX + offsetX}px`;
+            watermark.style.top = `${WatermarkCenters[q].y * scaleY + offsetY}px`;
+            watermark.style.transform = 'translate(-50%, -50%)';
+            watermark.style.fontSize = `${150 * scaleY}px`;
+            watermark.style.fontWeight = '900';
+            watermark.style.color = '#fff';
+            watermark.style.opacity = '0.3';
+            watermark.style.zIndex = '900000'; // High enough to sit on top of cards
+            watermark.style.pointerEvents = 'none';
+            watermark.style.fontFamily = 'monospace';
+            watermark.style.textShadow = '0 10px 30px rgba(0,0,0,0.8)';
+            gameContainer.appendChild(watermark);
+
+            const allSelected = places.every(p => appState.selectedCardPlaces && appState.selectedCardPlaces.includes(p));
+            if (allSelected && document.body.classList.contains('indicator-active')) return; 
+
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            places.forEach(p => {
+                if (p.x < minX) minX = p.x;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.y > maxY) maxY = p.y;
+            });
+            const cx = minX + (maxX - minX)/2;
+
+            const editDomX = cx * scaleX + offsetX;
+            const editDomY = (maxY * scaleY + offsetY) + 60;  
+
+            const pencilBtn = document.createElement('button');
+            pencilBtn.className = 'group-pencil-btn';
+            pencilBtn.innerHTML = '✏️ Edit Hand';
+            pencilBtn.title = `Edit Hand`;
+            pencilBtn.style.left = `${editDomX}px`;
+            pencilBtn.style.top = `${editDomY}px`;
+            pencilBtn.style.transform = 'translate(-50%, -50%)';
+            pencilBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                appState.selectedCardPlaces = [...places];
+                renderCardPlaceMarkers();
+                if (typeof syncTransformIndicator === 'function') syncTransformIndicator();
+                renderGroupPencils();
+            });
+            gameContainer.appendChild(pencilBtn);
+        }
+    });
+
+    if (baseQuadrant !== -1) {
+        [1, 2, 3, 4].forEach(q => {
+            const places = quadrantCards[q];
+
+            if (places.length === 0) {
+                const domX = Q_CENTERS[q].x * scaleX + offsetX;
+                const domY = Q_CENTERS[q].y * scaleY + offsetY;
+
+                const cloneBtn = document.createElement('button');
+                cloneBtn.className = 'clone-btn';
+                cloneBtn.innerHTML = '➕';
+                cloneBtn.title = `Clone layout to this area`;
+                cloneBtn.style.position = 'absolute';
+                cloneBtn.style.left = `${domX}px`;
+                cloneBtn.style.top = `${domY}px`;
+                cloneBtn.style.transform = 'translate(-50%, -50%) scale(1.6)';
+                cloneBtn.style.opacity = '0.7';
+                cloneBtn.style.zIndex = '1000001';
+                
+                cloneBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    cloneHandToTargetQuadrant(baseQuadrant, q);
+                });
+                gameContainer.appendChild(cloneBtn);
+            }
+        });
+    }
+}
+
+function cloneHandToTargetQuadrant(sourceQuad, targetQuad) {
+    const Q_CENTERS = {
+        1: { x: 640, y: 720 * 0.78, rot: 0 },
+        2: { x: 1280 * 0.20, y: 360, rot: 90 },
+        3: { x: 640, y: 720 * 0.22, rot: 180 },
+        4: { x: 1280 * 0.80, y: 360, rot: -90 }
+    };
+
+    const sourceQuadDef = Q_CENTERS[sourceQuad];
+    const targetQuadDef = Q_CENTERS[targetQuad];
+
+    const angleDiff = targetQuadDef.rot - sourceQuadDef.rot;
+    const angleRad = angleDiff * Math.PI / 180;
+    const cosA = Math.cos(angleRad);
+    const sinA = Math.sin(angleRad);
+
+    // Identify all source groups purely inside sourceQuad
+    const sourceGroupsToClone = appState.boardLayout.slotGroups.filter(g => {
+        if (!g.slotIds || g.slotIds.length === 0) return false;
+        // Check if the FIRST place is in the sourceQuad
+        const p1 = appState.boardLayout.cardPlaces.find(p => p.id === g.slotIds[0]);
+        if (!p1) return false;
+        const dx = p1.x - 640;
+        const dy = p1.y - 360;
+        let placeQ = 1;
+        if (Math.abs(dy) / 360 > Math.abs(dx) / 640) placeQ = (dy > 0) ? 1 : 3;
+        else placeQ = (dx > 0) ? 4 : 2;
+        return placeQ === sourceQuad;
+    });
+
+    if (sourceGroupsToClone.length === 0) return;
+
+    // Determine the centroid of all cards in the source quadrant to spin around mathematically
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    sourceGroupsToClone.forEach(g => {
+        const places = appState.boardLayout.cardPlaces.filter(p => g.slotIds.includes(p.id));
+        places.forEach(p => {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+        });
+    });
+    const srcCx = minX + (maxX - minX)/2;
+    const srcCy = minY + (maxY - minY)/2;
+
+    sourceGroupsToClone.forEach(g => {
+        const places = appState.boardLayout.cardPlaces.filter(p => g.slotIds.includes(p.id));
+        const clonedPlaces = [];
+        const newSlotIds = [];
+        let placeCounter = appState.boardLayout.cardPlaces.length + Math.floor(Math.random() * 1000);
+
+        places.forEach(p => {
+            // Spin around the mathematical center of the entire hand
+            let localX = p.x - srcCx;
+            let localY = p.y - srcCy;
+            
+            // Apply orbit spin
+            let rotX = localX * cosA - localY * sinA;
+            let rotY = localX * sinA + localY * cosA;
+
+            let newId = `place-${Date.now()}-${placeCounter++}`;
+            newSlotIds.push(newId);
+
+            let newRot = (p.rotation || 0) + angleDiff;
+            // Normalize
+            while (newRot >= 360) newRot -= 360;
+            while (newRot < 0) newRot += 360;
+
+            clonedPlaces.push({
+                ...p,
+                id: newId,
+                x: targetQuadDef.x + rotX,
+                y: targetQuadDef.y + rotY,
+                rotation: newRot,
+            });
+        });
+
+        appState.boardLayout.cardPlaces.push(...clonedPlaces);
+
+        // Remove old 'Clone' texts from name if cloning multiple times, then append targetQuad
+        let cleanName = g.name.replace(/ Quadrant \d+/g, '').replace(/ Clone/g, '');
+        createSlotGroup(cleanName + ` Quadrant ${targetQuad}`, newSlotIds);
+    });
+
+    // Reorder groups based on Quadrants if they want:
+    // But keeping it as is ensures rendering in order of generation.
+
+    renderCardPlaceMarkers();
+    updateGroupPanelVisibility();
+    setStatus(`Cloned hand to quadrant ${targetQuad}`);
+}
+
+
+/**
+ * Load default poker layout with fixed card slots
+ * Each player zone has 13 slots, community has 7
+ * Uses grid type so all grid infrastructure (drop zones, z-order, AE export) applies
+ */
+function generateArrayHand(zoneName, packIndex) {
+    const places = [];
+    let spacing = 68; // Spread pacing
+    // Default spread matches a tight horizontal lineup
+    let startX = (UI_WIDTH / 2) - (6 * spacing);
+    let startY = 130 + (packIndex * 130);
+    let isVertical = false;
+    let rotation = 0;
+    let stepDirX = 1;
+    let stepDirY = 1;
+
+    const zOrderBase = packIndex * 100;
+
+    for (let i = 0; i < 13; i++) {
+        places.push({
+            id: 'array-' + zoneName + '-' + i,
+            zone: zoneName,
+            x: isVertical ? startX : startX + (i * spacing * stepDirX),
+            y: isVertical ? startY + (i * spacing * stepDirY) : startY,
+            rotation: rotation,
+            zOrder: zOrderBase + i,
+            label: zoneName.charAt(0).toUpperCase() + (i + 1)
+        });
+    }
+
+    const slotIds = places.map(p => p.id);
+    const groupName = 'Hand ' + (packIndex + 1);
+    const group = {
+        id: 'array-' + zoneName,
+        name: groupName,
+        slotIds: slotIds,
+        groupOrder: packIndex,
+        color: getGroupColor(packIndex % 8)
+    };
+
+    return { places, group };
+}
+
+/**
+ * Load default Array layout (creating just Hand 1 at bottom by default per user rules)
+ */
+function loadPokerLayout() {
+    appState.boardLayout.cardPlaces = [];
+    appState.boardLayout.slotGroups = [];
+
+    // The logic inside handleAddArrayPack will continue adding arrays if user clicks + Array Pack
+    const bottomPack = generateArrayHand('bottom', 0);
+    appState.boardLayout.cardPlaces.push(...bottomPack.places);
+    appState.boardLayout.slotGroups.push(bottomPack.group);
+
+    appState.boardLayout.type = 'grid';
+    appState.boardLayout.name = 'Array (Hand 1)';
+    appState.boardLayout.boardStyle = 'poker';
+
+    gameContainer.classList.add('grid-mode');
+    setStatus('Loaded Array layout (Hand 1)');
+}
+
+/**
+ * Load Pusoy layout (3-5-5 pyramid formation)
+ * Row 0 (top): 3 cards
+ * Row 1 (middle): 5 cards  
+ * Row 2 (bottom): 5 cards
+ * 
+ * Z-order: 
+ * - Within row: left cards behind, right cards in front
+ * - Between rows: bottom row in front of middle, middle in front of top
+ */
+function loadPusoyLayout() {
+    const places = [];
+
+    // Use UI coordinate system (1280x720) for consistency with animation/export
+    // The positions will be scaled down when rendering to actual DOM size
+    const tableWidth = UI_WIDTH;  // 1280
+    const tableHeight = UI_HEIGHT; // 720
+
+    // Read slider values from DOM (with defaults)
+    const spacingSlider = document.getElementById('pusoySpacing');
+    const curvatureSlider = document.getElementById('pusoyCurvature');
+    const layerGapSlider = document.getElementById('pusoyLayerGap');
+
+    const baseSpacing = spacingSlider ? parseInt(spacingSlider.value) : 150;
+    const curvature = curvatureSlider ? parseInt(curvatureSlider.value) : 50;
+    const layerGap = layerGapSlider ? parseInt(layerGapSlider.value) : 30;
+
+    // Fan configuration for each row
+    // fanRadius decreases for each row (top row biggest, bottom row smallest)
+    // angleSpread scales with curvature slider
+    // pivotY increases by layerGap for each row
+    // basePivotY of 710 places the 3-5-5 pyramid squarely in the Bottom Box (Box 1)
+    const basePivotY = 710; // Starting pivot Y position (adjusted for AE centering)
+    const rowConfigs = [
+        { row: 0, count: 3, fanRadius: baseSpacing + 30, angleSpread: curvature - 20, pivotY: basePivotY },
+        { row: 1, count: 5, fanRadius: baseSpacing, angleSpread: curvature, pivotY: basePivotY + layerGap },
+        { row: 2, count: 5, fanRadius: baseSpacing - 30, angleSpread: curvature + 5, pivotY: basePivotY + (layerGap * 2) }
+    ];
+
+    const centerX = tableWidth / 2;
+    let placeIndex = 0;
+
+    rowConfigs.forEach(config => {
+        const { row, count, fanRadius, angleSpread, pivotY } = config;
+
+        // Convert to radians
+        const spreadRad = (angleSpread * Math.PI) / 180;
+        const startAngle = -spreadRad / 2;  // Start from left
+        const angleStep = count > 1 ? spreadRad / (count - 1) : 0;
+
+        for (let col = 0; col < count; col++) {
+            // Calculate angle for this card (from vertical, -90° = up)
+            const angle = startAngle + (col * angleStep);
+
+            // Position card using polar coordinates from pivot point
+            // X = centerX + radius * sin(angle)
+            // Y = pivotY - radius * cos(angle)
+            const x = centerX + (fanRadius * Math.sin(angle));
+            const y = pivotY - (fanRadius * Math.cos(angle));
+
+            // Rotation matches the angle (convert to degrees)
+            const rotation = Math.round((angle * 180) / Math.PI);
+
+            // Z-order: higher row = front, higher col = front within row
+            const zOrder = (row * 10) + col;
+
+            places.push({
+                id: `place-${placeIndex}`,
+                x: x,
+                y: y,
+                col: col,
+                row: row,
+                rotation: rotation,
+                zOrder: zOrder,
+                label: String(placeIndex + 1)
+            });
+            placeIndex++;
+        }
+    });
+
+    // Create a single unified slotGroup for the ENTIRE HAND to enable full-hand dragging/editing
+    appState.boardLayout = {
+        type: 'grid',
+        name: 'Pusoy (3-5-5)',
+        boardStyle: 'pusoy',
+        gridCols: 5,
+        gridRows: 3,
+        cardPlaces: places,
+        slotGroups: [
+            { id: 'pusoy-hand', name: 'Pusoy Hand', slotIds: places.map(p => p.id), groupOrder: 0, color: getGroupColor(0) }
+        ]
+    };
+
+    gameContainer.classList.add('grid-mode');
+    setStatus('Loaded Pusoy layout (3-5-5 fan)');
+}
+
+/**
+ * Generate a single Pusoy 3-5-5 fan hand at a given position/orientation.
+ * Returns an array of card place objects.
+ * @param {string} playerPrefix - ID prefix (e.g. 'p1', 'p2')
+ * @param {number} centerX - Pivot X in UI coords
+ * @param {number} basePivotY - Pivot Y for top row in UI coords
+ * @param {number} orientationDeg - Rotation offset for entire hand (0=bottom, 180=top, 90=left, -90=right)
+ * @param {number} scale - Scale factor (1.0 = full size, 0.6 = 60%)
+ * @param {number} baseZOrder - Starting z-order for this hand
+ * @param {number} baseSpacing - Fan radius from slider
+ * @param {number} curvature - Angle spread from slider
+ * @param {number} layerGap - Gap between rows from slider
+ */
+function generatePusoyHand(playerPrefix, centerX, basePivotY, orientationDeg, scale, baseZOrder, baseSpacing, curvature, layerGap) {
+    const places = [];
+    const orientationRad = (orientationDeg * Math.PI) / 180;
+
+    // Hardcode base radius to 300 for a flatter, cinematic arc that exactly matches the default transform_indicator logic.
+    // We add yCorrection to the pivot so the cards stay visually grounded at the same vertical coordinates as before.
+    const baseRadius = 300;
+    const originalRadius = 150; // What the Y offset was originally balanced for
+    const yCorrection = baseRadius - originalRadius;
+
+    const rowConfigs = [
+        { row: 0, count: 3, fanRadius: (baseRadius + 30) * scale, angleSpread: curvature - 20, pivotYOffset: 0 },
+        { row: 1, count: 5, fanRadius: baseRadius * scale, angleSpread: curvature, pivotYOffset: layerGap * scale },
+        { row: 2, count: 5, fanRadius: (baseRadius - 30) * scale, angleSpread: curvature + 5, pivotYOffset: (layerGap * 2) * scale }
+    ];
+
+    let placeIndex = 0;
+
+    rowConfigs.forEach(config => {
+        const { row, count, fanRadius, angleSpread, pivotYOffset } = config;
+        const spreadRad = (angleSpread * Math.PI) / 180;
+        const startAngle = -spreadRad / 2;
+        const angleStep = count > 1 ? spreadRad / (count - 1) : 0;
+
+        for (let col = 0; col < count; col++) {
+            const angle = startAngle + (col * angleStep);
+
+            // Local position relative to pivot (before orientation rotation)
+            const localX = fanRadius * Math.sin(angle);
+            const localY = -(fanRadius * Math.cos(angle)) + pivotYOffset + (yCorrection * scale);
+
+            // Rotate local position by orientation
+            const rotatedX = localX * Math.cos(orientationRad) - localY * Math.sin(orientationRad);
+            const rotatedY = localX * Math.sin(orientationRad) + localY * Math.cos(orientationRad);
+
+            const x = centerX + rotatedX;
+            const y = basePivotY + rotatedY;
+
+            // Card rotation = fan angle + orientation
+            const cardRotation = Math.round((angle * 180) / Math.PI) + orientationDeg;
+
+            const zOrder = baseZOrder + (row * 10) + col;
+
+            places.push({
+                id: playerPrefix + '-' + placeIndex,
+                x: x,
+                y: y,
+                col: col,
+                row: row,
+                rotation: cardRotation,
+                zOrder: zOrder,
+                label: playerPrefix.toUpperCase() + (placeIndex + 1)
+            });
+            placeIndex++;
+        }
+    });
+
+    return places;
+}
+
+/**
+ * Load multi-player Pusoy layout
+ * @param {number} playerCount - 2 or 4 players
+ */
+function loadPusoyMultiLayout(playerCount) {
+    const spacingSlider = document.getElementById('pusoySpacing');
+    const curvatureSlider = document.getElementById('pusoyCurvature');
+    const layerGapSlider = document.getElementById('pusoyLayerGap');
+
+    const baseSpacing = spacingSlider ? parseInt(spacingSlider.value) : 150;
+    const curvature = curvatureSlider ? parseInt(curvatureSlider.value) : 50;
+    const layerGap = layerGapSlider ? parseInt(layerGapSlider.value) : 30;
+
+    let places = [];
+    const slotGroups = [];
+    const scale = playerCount === 2 ? 0.75 : 0.55;
+
+    let playerPositions = [];
+    if (playerCount === 1) {
+        playerPositions = [
+            { prefix: 'p1', label: 'Player 1 (Bottom)', cx: UI_WIDTH / 2, py: 710, orient: 0 }
+        ];
+    } else if (playerCount === 2) {
+        playerPositions = [
+            { prefix: 'p1', label: 'Player 1 (Bottom)', cx: UI_WIDTH / 2, py: 710, orient: 0 },
+            { prefix: 'p2', label: 'Player 2 (Top)', cx: UI_WIDTH / 2, py: 10, orient: 0 }
+        ];
+    } else {
+        playerPositions = [
+            { prefix: 'p1', label: 'Player 1 (Bottom)', cx: UI_WIDTH / 2, py: 590, orient: 0 },
+            { prefix: 'p2', label: 'Player 2 (Top)', cx: UI_WIDTH / 2, py: 130, orient: 0 },
+            { prefix: 'p3', label: 'Player 3 (Left)', cx: UI_WIDTH / 2, py: 280, orient: 0 },
+            { prefix: 'p4', label: 'Player 4 (Right)', cx: UI_WIDTH / 2, py: 430, orient: 0 }
+        ];
+    }
+
+    playerPositions.forEach((pos, idx) => {
+        const hand = generatePusoyHand(
+            pos.prefix, pos.cx, pos.py, pos.orient, scale,
+            idx * 100, baseSpacing, curvature, layerGap
+        );
+        places = places.concat(hand);
+
+        // Create a single unified slotGroup for the ENTIRE player hand
+        slotGroups.push({
+            id: pos.prefix + '-hand', name: pos.label,
+            slotIds: hand.map(p => p.id), groupOrder: idx, color: getGroupColor(idx)
+        });
+    });
+
+    const presetName = 'Pusoy ' + playerCount + 'P';
+    appState.boardLayout = {
+        type: 'grid',
+        name: presetName,
+        boardStyle: 'pusoy',
+        gridCols: 5,
+        gridRows: 3 * playerCount,
+        cardPlaces: places,
+        slotGroups: slotGroups
+    };
+
+    gameContainer.classList.add('grid-mode');
+    setStatus('Loaded ' + presetName + ' layout (' + places.length + ' slots)');
+}
+
+/**
+ * Setup Pusoy layout slider controls and visibility toggle
+ */
+function setupPusoySliderControls() {
+    const pusoyControls = document.getElementById('pusoyControls');
+    const presetSelect = document.getElementById('presetSelect');
+    const loadPresetBtn = document.getElementById('loadPresetBtn');
+
+    const spacingSlider = document.getElementById('pusoySpacing');
+    const curvatureSlider = document.getElementById('pusoyCurvature');
+    const layerGapSlider = document.getElementById('pusoyLayerGap');
+
+    const spacingValue = document.getElementById('pusoySpacingValue');
+    const curvatureValue = document.getElementById('pusoyCurvatureValue');
+    const layerGapValue = document.getElementById('pusoyLayerGapValue');
+
+    if (!pusoyControls || !presetSelect) return;
+
+    // Function to toggle Pusoy controls visibility
+    const togglePusoyControls = () => {
+        const isPusoy = presetSelect.value.startsWith('pusoy');
+        pusoyControls.classList.toggle('hidden', !isPusoy);
+
+        // Add Pusoy Pack: visible for both pusoy and custom presets
+        const addPusoyPackSection = document.getElementById('addPusoyPackSection');
+        if (addPusoyPackSection) {
+            const showPack = isPusoy || presetSelect.value === 'custom';
+            addPusoyPackSection.classList.toggle('hidden', !showPack);
+        }
+    };
+
+    // Function to update layout when sliders change
+    const updatePusoyLayout = () => {
+        // Update display values
+        if (spacingSlider && spacingValue) {
+            spacingValue.textContent = spacingSlider.value;
+        }
+        if (curvatureSlider && curvatureValue) {
+            curvatureValue.textContent = curvatureSlider.value + '°';
+        }
+        if (layerGapSlider && layerGapValue) {
+            layerGapValue.textContent = layerGapSlider.value;
+        }
+
+        // Regenerate layout if Pusoy is selected
+        if (appState.boardLayout.boardStyle === 'pusoy') {
+            const currentPreset = presetSelect.value;
+            if (currentPreset === 'pusoy-2p') {
+                loadPusoyMultiLayout(2);
+            } else if (currentPreset === 'pusoy-4p') {
+                loadPusoyMultiLayout(4);
+            } else {
+                loadPusoyLayout();
+            }
+            renderCardPlaceMarkers();
+            renderCardDropZones();
+        }
+    };
+
+    // Show/hide on preset change
+    presetSelect.addEventListener('change', () => {
+        togglePusoyControls();
+        toggleGridControlsVisibility(presetSelect.value);
+    });
+
+    // Show controls after preset is loaded
+    if (loadPresetBtn) {
+        loadPresetBtn.addEventListener('click', () => {
+            setTimeout(() => {
+                togglePusoyControls();
+                toggleGridControlsVisibility(presetSelect.value);
+            }, 100);
+        });
+    }
+
+    // Slider event listeners
+    if (spacingSlider) spacingSlider.addEventListener('input', updatePusoyLayout);
+    if (curvatureSlider) curvatureSlider.addEventListener('input', updatePusoyLayout);
+    if (layerGapSlider) layerGapSlider.addEventListener('input', updatePusoyLayout);
+}
+
+/**
+ * Load grid layout with specified columns and rows
+ * Uses UI coordinates (1280x720) — consistent with loadPokerLayout/loadPusoyLayout
+ */
+function loadGridLayout(cols, rows) {
+    const places = [];
+
+    // Use UI coordinate system (1280x720) for consistency with other layouts
+    const spacingX = 100;  // Horizontal spacing between cards in UI coords
+    const spacingY = 120;  // Vertical spacing between cards in UI coords
+    const totalW = cols * spacingX;
+    const totalH = rows * spacingY;
+    const startX = (UI_WIDTH - totalW) / 2 + spacingX / 2;
+    const startY = (UI_HEIGHT - totalH) / 2 + spacingY / 2;
+
+    let placeId = 0;
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+            places.push({
+                id: `place-${placeId}`,
+                x: startX + col * spacingX,
+                y: startY + row * spacingY,
+                col: col,
+                row: row,
+                label: String(placeId + 1)
+            });
+            placeId++;
+        }
+    }
+
+    appState.boardLayout = {
+        type: 'grid',
+        name: `Card Sorting (${cols}x${rows})`,
+        boardStyle: 'card-sorting',
+        gridCols: cols,
+        gridRows: rows,
+        cardPlaces: places,
+        slotGroups: []
+    };
+
+    // Auto-assign zOrder based on row/col
+    ensureZOrder(places);
+
+    gameContainer.classList.add('grid-mode');
+    setStatus(`Loaded ${cols}x${rows} grid layout`);
+}
+
+/** 
+ * Toggle Grid Size / Card Sorting controls visibility based on preset
+ */
+function toggleGridControlsVisibility(presetValue) {
+    const gridControlsEl = document.querySelector('.grid-controls');
+    const cardSortingControls = document.getElementById('cardSortingControls');
+
+    const showGrid = (presetValue === 'card-sorting' || presetValue === 'custom');
+    if (gridControlsEl) gridControlsEl.classList.toggle('hidden', !showGrid);
+
+    const showSorting = (presetValue === 'card-sorting');
+    if (cardSortingControls) cardSortingControls.classList.toggle('hidden', !showSorting);
+}
+
+/** 
+ * Snap/redistribute card places using current slider spacing values
+ */
+function snapCardPlacesToGrid(spacingX, spacingY) {
+    const places = appState.boardLayout.cardPlaces;
+    if (!places || places.length === 0) return;
+
+    const cols = appState.boardLayout.gridCols || 4;
+    const rows = appState.boardLayout.gridRows || Math.ceil(places.length / cols);
+
+    const totalW = cols * spacingX;
+    const totalH = rows * spacingY;
+    const startX = (UI_WIDTH - totalW) / 2 + spacingX / 2;
+    const startY = (UI_HEIGHT - totalH) / 2 + spacingY / 2;
+
+    places.forEach((place, idx) => {
+        const col = idx % cols;
+        const row = Math.floor(idx / cols);
+        place.x = startX + col * spacingX;
+        place.y = startY + row * spacingY;
+        place.col = col;
+        place.row = row;
+        place.rotation = 0;
+        // Recalculate zOrder based on new row/col
+        place.zOrder = (row * cols) + col;
+    });
+
+    renderCardPlaceMarkers();
+    updateCardPlacesList();
+    updateGroupPanelVisibility();
+    setStatus(`Snapped ${places.length} cards to ${cols}×${rows} grid`);
+}
+
+/** 
+ * Reset card sorting sliders to defaults and redistribute
+ */
+function handleGridResetDefault() {
+    const hSlider = document.getElementById('gridHSpacing');
+    const vSlider = document.getElementById('gridVSpacing');
+    const hValue = document.getElementById('gridHSpacingValue');
+    const vValue = document.getElementById('gridVSpacingValue');
+
+    if (hSlider) { hSlider.value = 100; if (hValue) hValue.textContent = '100'; }
+    if (vSlider) { vSlider.value = 120; if (vValue) vValue.textContent = '120'; }
+
+    snapCardPlacesToGrid(100, 120);
+    setStatus('Reset grid to default spacing');
+}
+
+/** 
+ * Setup card sorting slider controls (H/V spacing) — similar to Pusoy slider pattern
+ */
+function setupCardSortingSliderControls() {
+    const hSlider = document.getElementById('gridHSpacing');
+    const vSlider = document.getElementById('gridVSpacing');
+    const hValue = document.getElementById('gridHSpacingValue');
+    const vValue = document.getElementById('gridVSpacingValue');
+    const resetBtn = document.getElementById('gridResetDefaultBtn');
+
+    const updateGridFromSliders = () => {
+        const sx = hSlider ? parseInt(hSlider.value) : 100;
+        const sy = vSlider ? parseInt(vSlider.value) : 120;
+        if (hValue) hValue.textContent = String(sx);
+        if (vValue) vValue.textContent = String(sy);
+
+        if (appState.boardLayout.boardStyle === 'card-sorting') {
+            snapCardPlacesToGrid(sx, sy);
+        }
+    };
+
+    if (hSlider) hSlider.addEventListener('input', updateGridFromSliders);
+    if (vSlider) vSlider.addEventListener('input', updateGridFromSliders);
+    if (resetBtn) resetBtn.addEventListener('click', handleGridResetDefault);
+}
+
+// ============================================
+// DEALING CARD CONTROLS
+// ============================================
+
+/**
+ * Setup dealing card toggle and draggable slot
+ * When enabled, a card-shaped marker appears on the table
+ * to indicate where cards will "deal from" in AE export
+ */
+function setupDealingCardControls() {
+    if (!dealingCardToggle) return;
+
+    dealingCardToggle.addEventListener('change', (e) => {
+        appState.dealingCard.enabled = e.target.checked;
+        const dealSpeedRow = document.getElementById('dealSpeedRow');
+        if (e.target.checked) {
+            renderDealingSlot();
+            if (dealSpeedRow) dealSpeedRow.classList.remove('hidden');
+            updateDealTimeEstimate();
+            setStatus('Dealing Card enabled — drag the deck marker to position');
+        } else {
+            removeDealingSlot();
+            if (dealSpeedRow) dealSpeedRow.classList.add('hidden');
+            setStatus('Dealing Card disabled');
+        }
+    });
+}
+
+/**
+ * Update the estimated dealing duration display
+ * Formula matches AE: ((numCards-1) * staggerFrames + moveFrames + holdFrames) / fps
+ */
+function updateDealTimeEstimate() {
+    const el = document.getElementById('dealTimeEstimate');
+    if (!el) return;
+    const numCards = appState.tableCards.length;
+    if (numCards === 0) {
+        el.textContent = '';
+        return;
+    }
+    const stagger = appState.dealSpeed || 3;
+    const moveFrames = 10;  // MOVE_DURATION_FRAMES in AE
+    const holdFrames = Math.max(5, Math.round(30 / (3 / stagger)));  // Scale hold with speed
+    const totalFrames = Math.max(numCards - 1, 0) * stagger + moveFrames + holdFrames;
+    const seconds = (totalFrames / 30).toFixed(1);
+    el.textContent = '~' + seconds + 's';
+}
+
+/**
+ * Render the dealing card slot marker on the game container
+ * This is a draggable deck-shaped element
+ */
+function renderDealingSlot() {
+    // Remove existing if any
+    removeDealingSlot();
+
+    const marker = document.createElement('div');
+    marker.id = 'dealingSlotMarker';
+    marker.className = 'dealing-card-slot';
+    marker.innerHTML = '🃏<span>DEAL</span>';
+    marker.title = 'Drag to reposition dealing slot';
+
+    // Delete button
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'marker-delete';
+    deleteBtn.textContent = '✕';
+    deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        appState.dealingCard.enabled = false;
+        if (dealingCardToggle) dealingCardToggle.checked = false;
+        removeDealingSlot();
+        updateDealingSlotButton();
+        setStatus('Dealing Card removed');
+    });
+    marker.appendChild(deleteBtn);
+
+    // Position using UI coordinates → DOM pixel coordinates
+    const containerRect = gameContainer.getBoundingClientRect();
+    const scaleX = containerRect.width / UI_WIDTH;
+    const scaleY = containerRect.height / UI_HEIGHT;
+
+    marker.style.left = (appState.dealingCard.x * scaleX) + 'px';
+    marker.style.top = (appState.dealingCard.y * scaleY) + 'px';
+
+    // Make draggable
+    let isDragging = false;
+    let offsetX = 0, offsetY = 0;
+
+    marker.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        isDragging = true;
+        // When .dragging is added, transform: translate(-50%, -50%) is removed
+        // Compensate by adjusting left/top so the marker doesn't jump
+        const markerW = marker.offsetWidth;
+        const markerH = marker.offsetHeight;
+        const containerRect = gameContainer.getBoundingClientRect();
+        const currentLeft = parseFloat(marker.style.left) || 0;
+        const currentTop = parseFloat(marker.style.top) || 0;
+        // Before dragging: CSS position is center, transform shifts -50%,-50%
+        // After dragging: no transform, so position should be at top-left corner
+        const adjustedLeft = currentLeft - markerW / 2;
+        const adjustedTop = currentTop - markerH / 2;
+        marker.style.left = adjustedLeft + 'px';
+        marker.style.top = adjustedTop + 'px';
+        marker.classList.add('dragging');
+        // Offset from mouse to marker top-left corner
+        offsetX = e.clientX - containerRect.left - adjustedLeft;
+        offsetY = e.clientY - containerRect.top - adjustedTop;
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const containerRect = gameContainer.getBoundingClientRect();
+        const x = e.clientX - containerRect.left - offsetX;
+        const y = e.clientY - containerRect.top - offsetY;
+
+        marker.style.left = x + 'px';
+        marker.style.top = y + 'px';
+
+        // Update UI coordinates
+        const scaleX = containerRect.width / UI_WIDTH;
+        const scaleY = containerRect.height / UI_HEIGHT;
+        appState.dealingCard.x = Math.round(x / scaleX);
+        appState.dealingCard.y = Math.round(y / scaleY);
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isDragging) {
+            isDragging = false;
+            // Convert back to center-based positioning (CSS transform: translate(-50%, -50%))
+            const currentLeft = parseFloat(marker.style.left) || 0;
+            const currentTop = parseFloat(marker.style.top) || 0;
+            const markerW = marker.offsetWidth;
+            const markerH = marker.offsetHeight;
+            marker.style.left = (currentLeft + markerW / 2) + 'px';
+            marker.style.top = (currentTop + markerH / 2) + 'px';
+            marker.classList.remove('dragging');
+            console.log('[DealingCard] Position:', appState.dealingCard.x, appState.dealingCard.y);
+        }
+    });
+
+    gameContainer.appendChild(marker);
+}
+
+/**
+ * Remove the dealing card slot marker from DOM
+ */
+function removeDealingSlot() {
+    const existing = document.getElementById('dealingSlotMarker');
+    if (existing) existing.remove();
+}
+
+/**
+ * Update the Add Deal button state (disabled when dealing card exists)
+ */
+function updateDealingSlotButton() {
+    const btn = document.getElementById('addDealingSlotBtn');
+    if (btn) {
+        btn.disabled = appState.dealingCard.enabled;
+        btn.title = appState.dealingCard.enabled ? 'Dealing card already added (max 1)' : 'Add dealing card origin (max 1)';
+    }
+}
+
+/**
+ * Apply grid size from input fields
+ */
+function handleApplyGrid() {
+    const cols = parseInt(gridCols.value) || 4;
+    const rows = parseInt(gridRows.value) || 3;
+
+    loadGridLayout(cols, rows);
+    updateCardPlacesList();
+    renderCardPlaceMarkers();
+    updateGroupPanelVisibility();
+}
+
+/**
+ * Add a single card place at center
+ */
+function handleAddCardPlace() {
+    const containerWidth = gameContainer.offsetWidth || 800;
+    const containerHeight = gameContainer.offsetHeight || 450;
+
+    const newId = appState.boardLayout.cardPlaces.length;
+    const newPlace = {
+        id: `place-${newId}`,
+        x: containerWidth / 2,
+        y: containerHeight / 2,
+        label: String(newId + 1),
+        zOrder: newId
+    };
+
+    appState.boardLayout.cardPlaces.push(newPlace);
+    appState.boardLayout.type = 'grid';
+
+    updateCardPlacesList();
+    renderCardPlaceMarkers();
+    updateGroupPanelVisibility();
+    setStatus(`Added card place #${newId + 1}`);
+}
+
+/**
+ * Add a community zone slot (multi-card zone) at center
+ */
+function handleAddCommunityZone() {
+    // Count existing community zones for labeling
+    const czCount = appState.boardLayout.cardPlaces.filter(p => p.isCommunityZone).length;
+    const newId = appState.boardLayout.cardPlaces.length;
+
+    const newPlace = {
+        id: `cz-${czCount}`,
+        x: UI_WIDTH / 2,
+        y: UI_HEIGHT / 2,
+        label: `CZ ${czCount + 1}`,
+        zOrder: 500 + czCount,
+        isCommunityZone: true,
+        czMode: 'row',        // 'row' | 'pile' | 'stack'
+        czWidth: 300,          // Width in UI pixels
+        czHeight: 120          // Height in UI pixels
+    };
+
+    appState.boardLayout.cardPlaces.push(newPlace);
+    appState.boardLayout.type = 'grid';
+
+    updateCardPlacesList();
+    renderCardPlaceMarkers();
+    updateGroupPanelVisibility();
+    setStatus(`Added community zone #${czCount + 1}`);
+    debugLog(`[CommunityZone] Created ${newPlace.id} at UI(${newPlace.x}, ${newPlace.y}) mode=${newPlace.czMode}`);
+}
+
+/**
+ * Clear all card places
+ */
+function handleClearBoard() {
+    appState.boardLayout.cardPlaces = [];
+    appState.boardLayout.slotGroups = [];
+    updateCardPlacesList();
+    renderCardPlaceMarkers();
+    updateGroupPanelVisibility();
+    setStatus('Cleared all card places');
+}
+
+/**
+ * Save current layout as preset JSON
+ * Serializes full board state: cardPlaces (with zone, clonerId), slotGroups, boardStyle, pusoyConfig
+ */
+function handleSavePreset() {
+    const name = presetName.value.trim() || 'Custom Layout';
+
+    const presetData = {
+        name: name,
+        type: appState.boardLayout.type,
+        boardStyle: appState.boardLayout.boardStyle,
+        description: `Saved preset: ${name}`,
+        gridCols: appState.boardLayout.gridCols,
+        gridRows: appState.boardLayout.gridRows,
+        cardPlaces: appState.boardLayout.cardPlaces.map(p => {
+            const placeData = {
+                id: p.id,
+                x: Math.round(p.x),
+                y: Math.round(p.y),
+                col: p.col,
+                row: p.row,
+                rotation: p.rotation || 0,
+                zOrder: p.zOrder,
+                label: p.label,
+                zone: p.zone || null
+            };
+            // Serialize community zone fields
+            if (p.isCommunityZone) {
+                placeData.isCommunityZone = true;
+                placeData.czMode = p.czMode || 'row';
+                placeData.czWidth = p.czWidth || 300;
+                placeData.czHeight = p.czHeight || 120;
+            }
+            // Serialize cloner reference
+            if (p.clonerId) placeData.clonerId = p.clonerId;
+            return placeData;
+        }),
+        // Serialize slot groups (cloner groups, pusoy packs, user groups)
+        slotGroups: (appState.boardLayout.slotGroups || []).map(g => {
+            const group = { ...g };
+            if (g.clonerConfig) group.clonerConfig = { ...g.clonerConfig };
+            return group;
+        }),
+        // Save Pusoy slider values if applicable
+        pusoyConfig: null
+    };
+
+    // Capture Pusoy slider state
+    if (presetData.boardStyle === 'pusoy') {
+        const s = document.getElementById('pusoySpacing');
+        const c = document.getElementById('pusoyCurvature');
+        const l = document.getElementById('pusoyLayerGap');
+        presetData.pusoyConfig = {
+            spacing: s ? parseInt(s.value) : 150,
+            curvature: c ? parseInt(c.value) : 50,
+            layerGap: l ? parseInt(l.value) : 30
+        };
+    }
+
+    // Always save to localStorage for persistence
+    saveLayoutToStorage(name, presetData);
+    refreshSavedLayoutsDropdown();
+
+    // Also try to save to file system (CEP mode)
+    if (fs && appState.decksFolder) {
+        const presetsFolder = appState.decksFolder.replace('/decks', '/presets');
+        const filename = name.toLowerCase().replace(/\s+/g, '-') + '.json';
+        const filepath = presetsFolder + '/' + filename;
+
+        try {
+            // Ensure presets folder exists
+            if (!fs.existsSync(presetsFolder)) {
+                fs.mkdirSync(presetsFolder, { recursive: true });
+            }
+
+            fs.writeFileSync(filepath, JSON.stringify(presetData, null, 2));
+            debugLog(`[SaveLayout] Also saved to filesystem: ${filepath}`);
+        } catch (e) {
+            console.error('[SaveLayout] Filesystem write failed:', e);
+        }
+    }
+
+    setStatus(`Layout saved: ${name}`, 'success');
+    debugLog(`[SaveLayout] Saved "${name}" — ${presetData.cardPlaces.length} places, ${presetData.slotGroups.length} groups`);
+}
+
+/**
+ * Download preset as JSON file (browser fallback)
+ */
+function downloadPresetJSON(data, filename) {
+    const jsonStr = JSON.stringify(data, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+
+    URL.revokeObjectURL(url);
+    setStatus(`Preset downloaded: ${filename}`, 'success');
+}
+
+// ============================================
+// SAVED LAYOUTS (localStorage persistence)
+// ============================================
+
+const SAVED_LAYOUTS_KEY = 'autonim_savedLayouts';
+
+/**
+ * Save a layout to localStorage
+ * @param {string} name - Layout name (key)
+ * @param {object} data - Full preset data object
+ */
+function saveLayoutToStorage(name, data) {
+    try {
+        const layouts = loadSavedLayouts();
+        layouts[name] = data;
+        localStorage.setItem(SAVED_LAYOUTS_KEY, JSON.stringify(layouts));
+        debugLog(`[SaveLayout] Saved "${name}" to localStorage (${Object.keys(layouts).length} total)`);
+    } catch (e) {
+        console.error('[SaveLayout] Failed to save to localStorage:', e);
+    }
+}
+
+/**
+ * Load all saved layouts from localStorage
+ * @returns {object} { name: layoutData } map
+ */
+function loadSavedLayouts() {
+    try {
+        const json = localStorage.getItem(SAVED_LAYOUTS_KEY);
+        return json ? JSON.parse(json) : {};
+    } catch (e) {
+        console.error('[SaveLayout] Failed to read saved layouts:', e);
+        return {};
+    }
+}
+
+/**
+ * Delete a saved layout from localStorage
+ * @param {string} name - Layout name to delete
+ */
+function deleteSavedLayout(name) {
+    try {
+        const layouts = loadSavedLayouts();
+        delete layouts[name];
+        localStorage.setItem(SAVED_LAYOUTS_KEY, JSON.stringify(layouts));
+        debugLog(`[SaveLayout] Deleted "${name}" from localStorage`);
+    } catch (e) {
+        console.error('[SaveLayout] Failed to delete layout:', e);
+    }
+}
+
+/**
+ * Refresh the preset dropdown with user-saved layouts from localStorage
+ * Adds saved layouts after a separator below built-in presets
+ */
+function refreshSavedLayoutsDropdown() {
+    const select = document.getElementById('presetSelect');
+    if (!select) return;
+
+    // Remove existing saved layout options and separator
+    select.querySelectorAll('.saved-layout-option, .saved-layout-separator').forEach(el => el.remove());
+
+    const layouts = loadSavedLayouts();
+    const names = Object.keys(layouts);
+    if (names.length === 0) return;
+
+    // Add separator
+    const separator = document.createElement('option');
+    separator.disabled = true;
+    separator.textContent = '── Saved Layouts ──';
+    separator.className = 'saved-layout-separator';
+    select.appendChild(separator);
+
+    // Add each saved layout
+    names.forEach(name => {
+        const option = document.createElement('option');
+        option.value = `saved:${name}`;
+        option.textContent = `📁 ${name}`;
+        option.className = 'saved-layout-option';
+        select.appendChild(option);
+    });
+
+    debugLog(`[SaveLayout] Dropdown refreshed with ${names.length} saved layout(s)`);
+}
+
+// ============================================
+// BOARD AUTOSAVE / RESTORE
+// ============================================
+
+const AUTOSAVE_KEY = 'autonim_boardLayout';
+
+/**
+ * Get the autosave file path for CEP mode
+ * @returns {string|null} File path or null if not in CEP
+ */
+function getAutosaveFilePath() {
+    if (!fs || !csInterface) return null;
+    try {
+        const extPath = csInterface.getSystemPath(SystemPath.EXTENSION);
+        return extPath + '/assets/autosave-board.json';
+    } catch (e) {
+        return null;
+    }
+}
+
+/**
+ * Auto-save current board layout state
+ * Called when leaving board-setting phase
+ */
+function autoSaveBoardLayout() {
+    try {
+        const data = {
+            name: appState.boardLayout.name || 'Autosave',
+            boardStyle: appState.boardLayout.boardStyle,
+            type: appState.boardLayout.type,
+            gridCols: appState.boardLayout.gridCols,
+            gridRows: appState.boardLayout.gridRows,
+            cardPlaces: appState.boardLayout.cardPlaces.map(p => {
+                const place = {
+                    id: p.id, x: Math.round(p.x), y: Math.round(p.y),
+                    col: p.col, row: p.row,
+                    rotation: p.rotation || 0,
+                    zOrder: p.zOrder, label: p.label,
+                    zone: p.zone || null
+                };
+                if (p.isCommunityZone) {
+                    place.isCommunityZone = true;
+                    place.czMode = p.czMode || 'row';
+                    place.czWidth = p.czWidth || 300;
+                    place.czHeight = p.czHeight || 120;
+                }
+                if (p.clonerId) place.clonerId = p.clonerId;
+                return place;
+            }),
+            slotGroups: (appState.boardLayout.slotGroups || []).map(g => {
+                const group = { ...g };
+                if (g.clonerConfig) group.clonerConfig = { ...g.clonerConfig };
+                return group;
+            }),
+            // Save Pusoy slider values if applicable
+            pusoyConfig: null
+        };
+
+        // Capture Pusoy slider state
+        if (data.boardStyle === 'pusoy') {
+            const s = document.getElementById('pusoySpacing');
+            const c = document.getElementById('pusoyCurvature');
+            const l = document.getElementById('pusoyLayerGap');
+            data.pusoyConfig = {
+                spacing: s ? parseInt(s.value) : 150,
+                curvature: c ? parseInt(c.value) : 50,
+                layerGap: l ? parseInt(l.value) : 30
+            };
+        }
+
+        const json = JSON.stringify(data, null, 2);
+
+        // CEP mode: write to filesystem
+        const filepath = getAutosaveFilePath();
+        if (filepath && fs) {
+            fs.writeFileSync(filepath, json);
+            debugLog(`[Autosave] Saved board layout to ${filepath}`);
+        }
+
+        // Also save to localStorage as fallback / browser mode
+        try {
+            localStorage.setItem(AUTOSAVE_KEY, json);
+        } catch (e) { /* ignore quota errors */ }
+
+    } catch (e) {
+        console.error('[Autosave] Failed to save board layout:', e);
+    }
+}
+
+/**
+ * Attempt to restore board layout from autosave
+ * @returns {boolean} true if restored successfully
+ */
+function autoRestoreBoardLayout() {
+    try {
+        let json = null;
+
+        // Try filesystem first (CEP mode)
+        const filepath = getAutosaveFilePath();
+        if (filepath && fs && fs.existsSync(filepath)) {
+            json = fs.readFileSync(filepath, 'utf8');
+            debugLog('[Autosave] Loaded board from filesystem');
+        }
+
+        // Fallback to localStorage (browser mode)
+        if (!json) {
+            json = localStorage.getItem(AUTOSAVE_KEY);
+            if (json) debugLog('[Autosave] Loaded board from localStorage');
+        }
+
+        if (!json) return false;
+
+        const data = JSON.parse(json);
+        if (!data.cardPlaces || data.cardPlaces.length === 0) return false;
+
+        // Restore board layout
+        appState.boardLayout = {
+            type: data.type || 'grid',
+            name: data.name || 'Restored Layout',
+            boardStyle: data.boardStyle || 'custom',
+            gridCols: data.gridCols || 4,
+            gridRows: data.gridRows || 3,
+            cardPlaces: data.cardPlaces,
+            slotGroups: data.slotGroups || []
+        };
+
+        // Restore Pusoy slider values
+        if (data.pusoyConfig) {
+            const s = document.getElementById('pusoySpacing');
+            const c = document.getElementById('pusoyCurvature');
+            const l = document.getElementById('pusoyLayerGap');
+            if (s) s.value = data.pusoyConfig.spacing;
+            if (c) c.value = data.pusoyConfig.curvature;
+            if (l) l.value = data.pusoyConfig.layerGap;
+        }
+
+        // Update preset selector to match restored layout
+        const presetSelect = document.getElementById('presetSelect');
+        if (presetSelect && data.boardStyle) {
+            const option = presetSelect.querySelector(`option[value="${data.boardStyle}"]`);
+            if (option) presetSelect.value = data.boardStyle;
+        }
+
+        if (data.type === 'grid') gameContainer.classList.add('grid-mode');
+        debugLog(`[Autosave] Restored "${data.name}" with ${data.cardPlaces.length} places`);
+        return true;
+
+    } catch (e) {
+        console.error('[Autosave] Failed to restore board layout:', e);
+        return false;
+    }
+}
+
+/**
+ * Render card place markers on the game container
+ */
+function renderCardPlaceMarkers() {
+    // Clear existing markers
+    clearCardPlaceMarkers();
+
+    if (appState.boardLayout.type !== 'grid' || appState.boardLayout.cardPlaces.length === 0) {
+        return;
+    }
+
+    // Render markers in gameContainer (not pokerTable) so they appear above the table
+    if (!gameContainer) return;
+
+    // Get poker table position for offset calculation
+    const pokerTable = document.getElementById('pokerTable');
+    if (!pokerTable) return;
+
+    const tableRect = pokerTable.getBoundingClientRect();
+    const containerRect = gameContainer.getBoundingClientRect();
+    const tableWidth = pokerTable.offsetWidth;
+    const tableHeight = pokerTable.offsetHeight;
+
+    // Calculate offset from gameContainer to pokerTable
+    const offsetX = tableRect.left - containerRect.left;
+    const offsetY = tableRect.top - containerRect.top;
+
+    // Scale factors to convert UI coordinates (1280x720) to actual DOM size
+    const scaleX = tableWidth / UI_WIDTH;
+    const scaleY = tableHeight / UI_HEIGHT;
+
+    appState.boardLayout.cardPlaces.forEach((place, index) => {
+        const marker = document.createElement('div');
+        marker.className = 'card-place-marker';
+        marker.dataset.placeId = place.id;
+        marker.dataset.zone = `grid-${place.id}`;
+
+        // Scale UI coordinates to DOM pixels, then position relative to gameContainer
+        const scaledX = place.x * scaleX;
+        const scaledY = place.y * scaleY;
+
+        if (place.isCommunityZone) {
+            // Community zone: use czWidth/czHeight scaled
+            marker.classList.add('community-zone-marker');
+            const markerW = (place.czWidth || 300) * scaleX;
+            const markerH = (place.czHeight || 120) * scaleY;
+            marker.style.width = `${markerW}px`;
+            marker.style.height = `${markerH}px`;
+            marker.style.left = `${offsetX + scaledX - markerW / 2}px`;
+            marker.style.top = `${offsetY + scaledY - markerH / 2}px`;
+        } else {
+            // Normal slot: card-sized
+            marker.style.left = `${offsetX + scaledX - (CARD_WIDTH * scaleX) / 2}px`;
+            marker.style.top = `${offsetY + scaledY - (CARD_HEIGHT * scaleY) / 2}px`;
+        }
+
+        // Apply rotation and z-order for Pusoy layout
+        if (place.rotation) {
+            marker.style.transform = `rotate(${place.rotation}deg)`;
+        }
+        if (place.zOrder !== undefined) {
+            marker.style.zIndex = String(computeFinalZOrder(place) + 10);
+        }
+
+        // Group color coding
+        var placeGroup = getGroupForPlace(place.id);
+        if (placeGroup) {
+            marker.style.borderColor = placeGroup.color;
+            marker.title = placeGroup.name + ' (z:' + computeFinalZOrder(place) + ')';
+        }
+
+        // Place number / label
+        const number = document.createElement('span');
+        number.className = 'place-number';
+        number.textContent = place.label || String(index + 1);
+        marker.appendChild(number);
+
+        // Community zone: add mode badge + cycle button
+        if (place.isCommunityZone) {
+            const modeBadge = document.createElement('span');
+            modeBadge.className = 'cz-mode-badge';
+            modeBadge.textContent = (place.czMode || 'row').toUpperCase();
+            marker.appendChild(modeBadge);
+
+            // Mode cycle button
+            const modeBtn = document.createElement('button');
+            modeBtn.className = 'cz-mode-btn';
+            modeBtn.textContent = '🔄';
+            modeBtn.title = 'Cycle mode: Row → Pile → Stack';
+            modeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const modes = ['row', 'pile', 'stack'];
+                const currentIdx = modes.indexOf(place.czMode || 'row');
+                place.czMode = modes[(currentIdx + 1) % modes.length];
+                modeBadge.textContent = place.czMode.toUpperCase();
+                debugLog(`[CommunityZone] ${place.id} mode → ${place.czMode}`);
+            });
+            marker.appendChild(modeBtn);
+
+            // Resize handle (bottom-right)
+            const resizeHandle = document.createElement('div');
+            resizeHandle.className = 'cz-resize-handle';
+            resizeHandle.addEventListener('mousedown', (e) => startResizeCommunityZone(e, place, marker, scaleX, scaleY));
+            marker.appendChild(resizeHandle);
+        }
+
+        // Delete button
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'marker-delete';
+        deleteBtn.textContent = '✕';
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteCardPlace(place.id);
+        });
+        marker.appendChild(deleteBtn);
+
+        // Add zone-cards container to receive visual cards!
+        const cardsContainer = document.createElement('div');
+        cardsContainer.className = 'zone-cards';
+        cardsContainer.style.pointerEvents = 'none'; // Don't block dragging the marker itself
+        marker.appendChild(cardsContainer);
+
+        // Rotation handle (bottom-left) — only for normal slots, not CZ
+        if (!place.isCommunityZone) {
+            const rotateHandle = document.createElement('div');
+            rotateHandle.className = 'marker-rotate';
+            rotateHandle.title = 'Drag to rotate';
+            rotateHandle.textContent = '↻';
+            rotateHandle.addEventListener('mousedown', (e) => startRotateMarker(e, place, marker));
+            marker.appendChild(rotateHandle);
+        }
+
+        // Make draggable (pass event for group drag detection)
+        marker.addEventListener('mousedown', (e) => {
+            if (e.target.classList.contains('marker-delete') || e.target.classList.contains('cz-mode-btn') || e.target.classList.contains('cz-resize-handle') || e.target.classList.contains('marker-rotate')) return;
+            startDragMarker(e, place, marker);
+        });
+
+        // Click to select (Shift+Click for multi-select)
+        marker.addEventListener('click', (e) => {
+            if (e.target.classList.contains('marker-delete') || e.target.classList.contains('cz-mode-btn')) return;
+
+            if (e.shiftKey) {
+                // Shift+Click: toggle this marker in multi-select
+                // If multi-select is empty but there's a single selected marker, add it first
+                if (appState.selectedCardPlaces.length === 0 && appState.selectedCardPlace) {
+                    appState.selectedCardPlaces.push(appState.selectedCardPlace);
+                    const prevMarker = document.querySelector(`.card-place-marker[data-place-id="${appState.selectedCardPlace.id}"]`);
+                    if (prevMarker) prevMarker.classList.add('multi-selected');
+                }
+                const idx = appState.selectedCardPlaces.indexOf(place);
+                if (idx >= 0) {
+                    appState.selectedCardPlaces.splice(idx, 1);
+                    marker.classList.remove('multi-selected');
+                } else {
+                    appState.selectedCardPlaces.push(place);
+                    marker.classList.add('multi-selected');
+                }
+                // Also select for CZ panel
+                selectCardPlace(place, marker);
+                updateCreateGroupBtnState();
+                if (typeof syncTransformIndicator === 'function') syncTransformIndicator();
+                debugLog(`[MultiSelect] ${appState.selectedCardPlaces.length} slots selected`);
+            } else {
+                // Normal click: single select, clear multi-select
+                appState.selectedCardPlaces = [];
+                document.querySelectorAll('.card-place-marker.multi-selected').forEach(m => m.classList.remove('multi-selected'));
+                selectCardPlace(place, marker);
+                updateCreateGroupBtnState();
+                if (typeof syncTransformIndicator === 'function') syncTransformIndicator();
+            }
+        });
+
+        // Apply multi-selected class if in selection
+        if (appState.selectedCardPlaces.includes(place)) {
+            marker.classList.add('multi-selected');
+        }
+
+        gameContainer.appendChild(marker);
+    });
+    
+    if (typeof renderGroupPencils === 'function') renderGroupPencils();
+}
+
+/**
+ * Clear all card place markers from DOM
+ */
+function clearCardPlaceMarkers() {
+    const markers = document.querySelectorAll('.card-place-marker');
+    markers.forEach(m => m.remove());
+    
+    // Also clear any floating tools/watermarks from board-setting mode
+    document.querySelectorAll('.group-pencil-btn, .clone-btn, .group-tools-float, .quadrant-number-watermark').forEach(b => b.remove());
+    const svgOverlay = document.getElementById('tableQuadrantsOverlay');
+    if (svgOverlay) svgOverlay.querySelectorAll('text').forEach(t => t.remove());
+}
+
+/**
+ * Render card drop zones for Setup mode (non-editable)
+ */
+function renderCardDropZones() {
+    // Clear existing drop zones
+    clearCardDropZones();
+
+    if (appState.boardLayout.type !== 'grid' || appState.boardLayout.cardPlaces.length === 0) {
+        return;
+    }
+
+    if (!gameContainer) return;
+
+    // Get poker table position for offset calculation
+    const pokerTable = document.getElementById('pokerTable');
+    if (!pokerTable) return;
+
+    const tableRect = pokerTable.getBoundingClientRect();
+    const containerRect = gameContainer.getBoundingClientRect();
+    const tableWidth = pokerTable.offsetWidth;
+    const tableHeight = pokerTable.offsetHeight;
+
+    const offsetX = tableRect.left - containerRect.left;
+    const offsetY = tableRect.top - containerRect.top;
+
+    // Scale factors to convert UI coordinates (1280x720) to actual DOM size
+    const scaleX = tableWidth / UI_WIDTH;
+    const scaleY = tableHeight / UI_HEIGHT;
+
+    // --- SETUP PHASE OVERRIDE LOGIC ---
+    const isSetupFlatten = (appState.phase === 'setup');
+    const placeToGroup = {};
+    const placeToLocalIndex = {};
+    const groupCardCounts = {};
+
+    if (isSetupFlatten && appState.boardLayout.slotGroups) {
+        appState.boardLayout.slotGroups.forEach((group, gIdx) => {
+            groupCardCounts[gIdx] = group.slotIds.length;
+            group.slotIds.forEach((id, localIdx) => {
+                placeToGroup[id] = gIdx;
+                placeToLocalIndex[id] = localIdx;
+            });
+
+            if (group.slotIds.length > 0) {
+                const totalInGroup = group.slotIds.length;
+                const spacing = 80;
+                
+                // Calculate exactly where the flattened first card box will be rendered
+                const visualStartX = (UI_WIDTH - (totalInGroup - 1) * spacing) / 2;
+                const visualY = 120 + (gIdx * 115);
+                
+                const labelEl = document.createElement('div');
+                labelEl.className = 'setup-row-label';
+                // Soften the color and adjust the size
+                labelEl.innerHTML = `<span style="color: rgba(255,255,255,0.7); font-size: 52px; font-weight: 800; text-shadow: 0 4px 12px rgba(0,0,0,0.8); line-height: 1;">${gIdx + 1}</span>`;
+                labelEl.style.position = 'absolute';
+                
+                // Place exactly relative to the center of the first card slot
+                // The slot width is ~80 UI pixels, so going -75 from center puts it right beside it
+                const domX = (visualStartX - 75) * scaleX + offsetX; 
+                const domY = visualY * scaleY + offsetY;
+                
+                labelEl.style.left = domX + 'px';
+                labelEl.style.top = domY + 'px'; // Exact vertical center tracking
+                labelEl.style.transform = 'translate(-50%, -50%)'; // Center pivot
+                labelEl.style.pointerEvents = 'none';
+                labelEl.style.zIndex = '50';
+                labelEl.style.display = 'flex';
+                labelEl.style.alignItems = 'center';
+                labelEl.style.justifyContent = 'center';
+                labelEl.style.width = '60px';
+                gameContainer.appendChild(labelEl);
+            }
+        });
+    }
+
+    appState.boardLayout.cardPlaces.forEach((place, index) => {
+        const zone = document.createElement('div');
+        zone.className = 'card-drop-zone';
+        zone.dataset.placeId = place.id;
+        zone.dataset.zone = `grid-${place.id}`;
+        
+        let finalX = place.x;
+        let finalY = place.y;
+        let finalRot = place.rotation || 0;
+
+        if (isSetupFlatten && !place.isCommunityZone) {
+            const gIdx = placeToGroup[place.id];
+            const localIdx = placeToLocalIndex[place.id];
+            if (gIdx !== undefined && localIdx !== undefined) {
+                const totalInGroup = groupCardCounts[gIdx];
+                const spacing = 80;
+                // Center the group horizontally across UI_WIDTH
+                const startX = (UI_WIDTH - (totalInGroup - 1) * spacing) / 2;
+                finalX = startX + localIdx * spacing;
+                // Distribute groups vertically (approx. 115 spacing per row)
+                finalY = 120 + (gIdx * 115);
+                finalRot = 0;
+
+                // Colorize the drop zone solidly to contrast against the transparent table
+                if (appState.boardLayout.slotGroups[gIdx]) {
+                    const groupColor = appState.boardLayout.slotGroups[gIdx].color;
+                    const mixPercent = 20 + localIdx * 5; // 20% Base -> darker mix
+                    zone.style.borderColor = `color-mix(in srgb, ${groupColor} 100%, black)`;
+                    zone.style.background = `color-mix(in srgb, ${groupColor} ${mixPercent}%, #222)`;
+                    zone.style.opacity = '1';
+                }
+            }
+        }
+
+        zone.dataset.rotation = String(finalRot);
+
+        // Scale UI coordinates to DOM pixels, then position relative to gameContainer
+        const scaledX = finalX * scaleX;
+        const scaledY = finalY * scaleY;
+
+        if (place.isCommunityZone) {
+            // Community zone: use czWidth/czHeight
+            zone.classList.add('community-zone-drop');
+            zone.dataset.czMode = place.czMode || 'row';
+            const zoneW = (place.czWidth || 300) * scaleX;
+            const zoneH = (place.czHeight || 120) * scaleY;
+            zone.style.width = `${zoneW}px`;
+            zone.style.height = `${zoneH}px`;
+            zone.style.left = `${offsetX + scaledX - zoneW / 2}px`;
+            zone.style.top = `${offsetY + scaledY - zoneH / 2}px`;
+        } else {
+            // Normal slot: card-sized (keep css dimensions to match markers)
+            zone.style.left = `${offsetX + scaledX - (CARD_WIDTH * scaleX) / 2}px`;
+            zone.style.top = `${offsetY + scaledY - (CARD_HEIGHT * scaleY) / 2}px`;
+        }
+
+        // Apply rotation and z-order for Pusoy layout
+        if (finalRot) {
+            zone.style.transform = `rotate(${finalRot}deg)`;
+        }
+        if (place.zOrder !== undefined) {
+            zone.style.zIndex = String(computeFinalZOrder(place) + 10); // +10 to ensure above table
+        }
+
+        // Zone label
+        const label = document.createElement('span');
+        label.className = 'zone-number';
+        label.textContent = place.label || String(index + 1);
+        zone.appendChild(label);
+
+        // Community zone: show mode indicator
+        if (place.isCommunityZone) {
+            const modeLabel = document.createElement('span');
+            modeLabel.className = 'cz-drop-mode';
+            modeLabel.textContent = (place.czMode || 'row').toUpperCase();
+            zone.appendChild(modeLabel);
+        }
+
+        // Cards container
+        const cardsContainer = document.createElement('div');
+        cardsContainer.className = 'zone-cards';
+        zone.appendChild(cardsContainer);
+
+        // Add drop event handlers
+        zone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            zone.classList.add('drag-over');
+        });
+
+        zone.addEventListener('dragleave', () => {
+            zone.classList.remove('drag-over');
+        });
+
+        zone.addEventListener('drop', (e) => handleZoneDrop(e, zone));
+
+        // Shift+Click to multi-select drop zones
+        zone.addEventListener('click', (e) => {
+            if (!e.shiftKey) return;
+            e.stopPropagation();
+            const placeId = place.id;
+            const idx = appState.selectedDropZones.indexOf(placeId);
+            if (idx >= 0) {
+                appState.selectedDropZones.splice(idx, 1);
+                zone.classList.remove('zone-multi-selected');
+            } else {
+                appState.selectedDropZones.push(placeId);
+                zone.classList.add('zone-multi-selected');
+            }
+        });
+
+        // Right-click to show slot fill context menu
+        zone.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const placeId = place.id;
+            // If zone not already selected, single-select it
+            if (!appState.selectedDropZones.includes(placeId)) {
+                clearDropZoneSelection();
+                appState.selectedDropZones.push(placeId);
+                zone.classList.add('zone-multi-selected');
+            }
+            showSlotContextMenu(e);
+        });
+
+        gameContainer.appendChild(zone);
+
+        // Restore multi-selected state after render
+        if (appState.selectedDropZones.includes(place.id)) {
+            zone.classList.add('zone-multi-selected');
+        }
+    });
+
+    // Restore existing cards in grid zones
+    restoreGridCards();
+}
+
+/**
+ * Restore cards that are already in grid zones after re-rendering drop zones
+ */
+function restoreGridCards() {
+    const gridCards = appState.tableCards.filter(c => c.zone && c.zone.startsWith('grid-'));
+
+    gridCards.forEach(card => {
+        const zoneElement = document.querySelector(`.card-drop-zone[data-zone="${card.zone}"]`);
+        if (zoneElement) {
+            createZoneCardElement(card, zoneElement);
+        }
+    });
+}
+
+/**
+ * Clear all card drop zones from DOM
+ */
+function clearCardDropZones() {
+    const zones = document.querySelectorAll('.card-drop-zone');
+    zones.forEach(z => z.remove());
+    
+    // Also clean up setup row labels
+    const labels = document.querySelectorAll('.setup-row-label');
+    labels.forEach(l => l.remove());
+}
+
+// ============================================
+// SLOT FILL FEATURE (Auto / Manual)
+// ============================================
+
+/**
+ * Clear multi-select state for drop zones
+ */
+function clearDropZoneSelection() {
+    appState.selectedDropZones = [];
+    document.querySelectorAll('.card-drop-zone.zone-multi-selected').forEach(z => {
+        z.classList.remove('zone-multi-selected');
+    });
+}
+
+/**
+ * Get selected empty slots (no card placed yet), sorted by cardPlaces index
+ */
+function getSelectedEmptySlots() {
+    const selected = appState.selectedDropZones;
+    if (!selected.length) return [];
+
+    // Get the ordered list of cardPlaces, filtered to selected + empty
+    return appState.boardLayout.cardPlaces.filter(place => {
+        if (!selected.includes(place.id)) return false;
+        // Check if zone already has a card
+        const zoneName = 'grid-' + place.id;
+        return !appState.tableCards.some(c => c.zone === zoneName);
+    });
+}
+
+/**
+ * Show the slot fill context menu at mouse position
+ */
+function showSlotContextMenu(e) {
+    if (!slotContextMenu || !gameContainer) return;
+    hideSlotContextMenu();
+
+    const containerRect = gameContainer.getBoundingClientRect();
+    let x = e.clientX - containerRect.left;
+    let y = e.clientY - containerRect.top;
+
+    // Clamp to container bounds
+    const menuW = 140;
+    const menuH = 80;
+    if (x + menuW > containerRect.width) x = containerRect.width - menuW;
+    if (y + menuH > containerRect.height) y = containerRect.height - menuH;
+
+    slotContextMenu.style.left = x + 'px';
+    slotContextMenu.style.top = y + 'px';
+    slotContextMenu.classList.remove('hidden');
+}
+
+/**
+ * Hide the slot fill context menu
+ */
+function hideSlotContextMenu() {
+    if (slotContextMenu) slotContextMenu.classList.add('hidden');
+}
+
+/**
+ * Auto fill selected empty slots with random cards from tray
+ */
+function fillSlotsAuto() {
+    hideSlotContextMenu();
+
+    const emptySlots = getSelectedEmptySlots();
+    if (emptySlots.length === 0) {
+        setStatus('No empty slots selected', 'warning');
+        clearDropZoneSelection();
+        return;
+    }
+
+    // Get available tray cards
+    const available = appState.trayCards.filter(c => c.inTray);
+    if (available.length === 0) {
+        setStatus('No cards available in tray', 'warning');
+        return;
+    }
+
+    // Shuffle available cards (Fisher-Yates)
+    const shuffled = [...available];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    // Take min(emptySlots, available) cards
+    const count = Math.min(emptySlots.length, shuffled.length);
+    const cardsToPlace = shuffled.slice(0, count);
+
+    // Bulk place
+    appState._bulkApplying = true;
+    for (let i = 0; i < count; i++) {
+        const place = emptySlots[i];
+        const card = cardsToPlace[i];
+        const zoneName = 'grid-' + place.id;
+        const rotation = place.rotation || 0;
+        const zoneElement = document.querySelector(`.card-drop-zone[data-zone="${zoneName}"]`);
+        if (zoneElement) {
+            placeCardInZone(card, zoneName, rotation, zoneElement);
+        }
+    }
+    appState._bulkApplying = false;
+
+    renderCardTray();
+    hideInstructions();
+    updateUI();
+    clearDropZoneSelection();
+
+    const msg = count < emptySlots.length
+        ? `Auto filled ${count}/${emptySlots.length} slots (tray ran out)`
+        : `Auto filled ${count} slots`;
+    setStatus(msg, 'success');
+}
+
+/**
+ * Show manual fill overlay
+ */
+function showManualFillOverlay() {
+    hideSlotContextMenu();
+    if (!manualFillOverlay) return;
+
+    const emptySlots = getSelectedEmptySlots();
+    if (emptySlots.length === 0) {
+        setStatus('No empty slots selected', 'warning');
+        clearDropZoneSelection();
+        return;
+    }
+
+    // Update slot count display
+    if (manualFillSlotCount) {
+        manualFillSlotCount.textContent = `${emptySlots.length} slot${emptySlots.length > 1 ? 's' : ''}`;
+    }
+
+    // Reset input and error
+    if (manualFillInput) manualFillInput.value = '';
+    if (manualFillError) {
+        manualFillError.textContent = '';
+        manualFillError.classList.add('hidden');
+    }
+
+    manualFillOverlay.classList.remove('hidden');
+    setTimeout(() => { if (manualFillInput) manualFillInput.focus(); }, 50);
+}
+
+/**
+ * Hide manual fill overlay
+ */
+function hideManualFillOverlay() {
+    if (manualFillOverlay) manualFillOverlay.classList.add('hidden');
+}
+
+/**
+ * Execute manual fill — parse input, validate, then bulk place
+ * All-or-nothing: if any card is invalid, nothing gets placed
+ */
+function executeManualFill() {
+    if (!manualFillInput) return;
+
+    const raw = manualFillInput.value.trim();
+    if (!raw) {
+        showManualFillError('Please enter card codes');
+        return;
+    }
+
+    // Parse input: split by space, comma, or semicolon
+    const codes = raw.split(/[\s,;]+/).filter(s => s.length > 0);
+    if (codes.length === 0) {
+        showManualFillError('Please enter card codes');
+        return;
+    }
+
+    const emptySlots = getSelectedEmptySlots();
+    if (emptySlots.length === 0) {
+        showManualFillError('No empty slots available');
+        return;
+    }
+
+    // Check count mismatch
+    if (codes.length > emptySlots.length) {
+        showManualFillError(`Too many cards: ${codes.length} entered, but only ${emptySlots.length} empty slot${emptySlots.length > 1 ? 's' : ''} selected`);
+        return;
+    }
+
+    // Get available tray cards
+    const trayAvailable = appState.trayCards.filter(c => c.inTray);
+
+    // Resolve all card codes (all-or-nothing validation)
+    const resolvedCards = [];
+    const errors = [];
+    const usedBaseNames = new Set();
+
+    for (let i = 0; i < codes.length; i++) {
+        const code = codes[i];
+        const card = typeof resolveCardName === 'function'
+            ? resolveCardName(code, trayAvailable)
+            : trayAvailable.find(c => c.name === code);
+
+        if (!card) {
+            errors.push(`"${code}" — card not found`);
+            continue;
+        }
+
+        // Check duplicate in this batch
+        if (usedBaseNames.has(card.name)) {
+            errors.push(`"${code}" — duplicate card`);
+            continue;
+        }
+
+        usedBaseNames.add(card.name);
+        resolvedCards.push(card);
+    }
+
+    // If any errors, show them all and abort
+    if (errors.length > 0) {
+        showManualFillError(errors.join('\n'));
+        return;
+    }
+
+    // All valid — bulk place
+    hideManualFillOverlay();
+
+    appState._bulkApplying = true;
+    for (let i = 0; i < resolvedCards.length; i++) {
+        const place = emptySlots[i];
+        const card = resolvedCards[i];
+        const zoneName = 'grid-' + place.id;
+        const rotation = place.rotation || 0;
+        const zoneElement = document.querySelector(`.card-drop-zone[data-zone="${zoneName}"]`);
+        if (zoneElement) {
+            placeCardInZone(card, zoneName, rotation, zoneElement);
+        }
+    }
+    appState._bulkApplying = false;
+
+    renderCardTray();
+    hideInstructions();
+    updateUI();
+    clearDropZoneSelection();
+    setStatus(`Manually filled ${resolvedCards.length} slot${resolvedCards.length > 1 ? 's' : ''}`, 'success');
+}
+
+/**
+ * Show error message in manual fill overlay
+ */
+function showManualFillError(msg) {
+    if (manualFillError) {
+        manualFillError.textContent = msg;
+        manualFillError.classList.remove('hidden');
+    }
+}
+
+/**
+ * Delete a card place by ID
+ */
+function deleteCardPlace(placeId) {
+    appState.boardLayout.cardPlaces = appState.boardLayout.cardPlaces.filter(p => p.id !== placeId);
+
+    // Remove from any group
+    removeSlotFromAllGroups(placeId);
+    cleanupEmptyGroups();
+
+    // Re-label remaining places (preserve community zone labels)
+    let normalIdx = 0;
+    appState.boardLayout.cardPlaces.forEach((p) => {
+        if (!p.isCommunityZone) {
+            normalIdx++;
+            p.label = String(normalIdx);
+        }
+    });
+
+    updateCardPlacesList();
+    renderCardPlaceMarkers();
+    updateGroupPanelVisibility();
+    setStatus('Card place deleted');
+}
+
+/**
+ * Select a card place marker
+ */
+function selectCardPlace(place, markerElement) {
+    // Deselect previous
+    document.querySelectorAll('.card-place-marker.selected').forEach(m => m.classList.remove('selected'));
+
+    appState.selectedCardPlace = place;
+    if (markerElement) {
+        markerElement.classList.add('selected');
+    }
+
+    // Show CZ settings panel if community zone
+    const czPanel = document.getElementById('czSettingsPanel');
+    if (czPanel && place.isCommunityZone) {
+        czPanel.classList.remove('hidden');
+
+        // Populate settings
+        const nameEl = document.getElementById('czSettingName');
+        if (nameEl) nameEl.textContent = place.label || place.id;
+
+        // Mode buttons
+        czPanel.querySelectorAll('.cz-mode-option').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.mode === (place.czMode || 'row'));
+        });
+
+        // Width/Height sliders
+        const wSlider = document.getElementById('czWidthSlider');
+        const hSlider = document.getElementById('czHeightSlider');
+        const wValue = document.getElementById('czWidthValue');
+        const hValue = document.getElementById('czHeightValue');
+        if (wSlider) { wSlider.value = place.czWidth || 300; }
+        if (hSlider) { hSlider.value = place.czHeight || 120; }
+        if (wValue) { wValue.textContent = place.czWidth || 300; }
+        if (hValue) { hValue.textContent = place.czHeight || 120; }
+    } else if (czPanel) {
+        czPanel.classList.add('hidden');
+    }
+
+    // Enable cloner button when a slot is selected
+    updateClonerBtnState();
+}
+
+/**
+ * Deselect any selected card place marker and hide CZ settings
+ */
+function deselectCardPlace() {
+    document.querySelectorAll('.card-place-marker.selected').forEach(m => m.classList.remove('selected'));
+    document.querySelectorAll('.card-place-marker.multi-selected').forEach(m => m.classList.remove('multi-selected'));
+    appState.selectedCardPlace = null;
+    appState.selectedCardPlaces = [];
+    const czPanel = document.getElementById('czSettingsPanel');
+    if (czPanel) czPanel.classList.add('hidden');
+
+    // Disable cloner button when nothing selected
+    updateClonerBtnState();
+
+    if (typeof syncTransformIndicator === 'function') syncTransformIndicator();
+}
+
+/**
+ * Update the cloner button enabled/disabled state
+ * Cloner requires exactly one slot to be selected as source
+ */
+function updateClonerBtnState() {
+    var clonerBtn = document.getElementById('clonerBtn');
+    if (clonerBtn) {
+        clonerBtn.disabled = !appState.selectedCardPlace;
+    }
+}
+
+/**
+ * Initialize CZ settings panel event listeners
+ */
+function initCZSettingsPanel() {
+    const czPanel = document.getElementById('czSettingsPanel');
+    if (!czPanel) return;
+
+    // Mode buttons
+    czPanel.querySelectorAll('.cz-mode-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const place = appState.selectedCardPlace;
+            if (!place || !place.isCommunityZone) return;
+
+            place.czMode = btn.dataset.mode;
+            czPanel.querySelectorAll('.cz-mode-option').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            renderCardPlaceMarkers();
+            // Re-select to keep panel open
+            const marker = document.querySelector(`.card-place-marker[data-place-id="${place.id}"]`);
+            if (marker) selectCardPlace(place, marker);
+            debugLog(`[CommunityZone] ${place.id} mode → ${place.czMode}`);
+        });
+    });
+
+    // Width slider
+    const wSlider = document.getElementById('czWidthSlider');
+    const wValue = document.getElementById('czWidthValue');
+    if (wSlider) {
+        wSlider.addEventListener('input', () => {
+            const place = appState.selectedCardPlace;
+            if (!place || !place.isCommunityZone) return;
+            place.czWidth = parseInt(wSlider.value);
+            if (wValue) wValue.textContent = wSlider.value;
+            renderCardPlaceMarkers();
+            const marker = document.querySelector(`.card-place-marker[data-place-id="${place.id}"]`);
+            if (marker) {
+                marker.classList.add('selected');
+            }
+        });
+    }
+
+    // Height slider
+    const hSlider = document.getElementById('czHeightSlider');
+    const hValue = document.getElementById('czHeightValue');
+    if (hSlider) {
+        hSlider.addEventListener('input', () => {
+            const place = appState.selectedCardPlace;
+            if (!place || !place.isCommunityZone) return;
+            place.czHeight = parseInt(hSlider.value);
+            if (hValue) hValue.textContent = hSlider.value;
+            renderCardPlaceMarkers();
+            const marker = document.querySelector(`.card-place-marker[data-place-id="${place.id}"]`);
+            if (marker) {
+                marker.classList.add('selected');
+            }
+        });
+    }
+
+    // Click on table/container to deselect
+    const pokerTable = document.getElementById('pokerTable');
+    if (pokerTable) {
+        pokerTable.addEventListener('click', (e) => {
+            // Only deselect if clicking directly on the table (not on a marker)
+            if (e.target === pokerTable || e.target.classList.contains('table-felt') || e.target.classList.contains('table-border-ring')) {
+                if (appState.phase === 'board-setting') {
+                    deselectCardPlace();
+                }
+            }
+        });
+    }
+
+    // Lasso selection: mousedown on gameContainer (board-setting phase)
+    if (gameContainer) {
+        let lassoRect = null;
+        let lassoStartX = 0, lassoStartY = 0;
+        let isLassoing = false;
+
+        gameContainer.addEventListener('mousedown', (e) => {
+            if (appState.phase !== 'board-setting' && appState.phase !== 'setup') return;
+            if (e.button !== 0) return;
+            // Only start lasso if clicking on table/felt (not on markers, buttons, cards, etc.)
+            const target = e.target;
+            if (target.closest('.card-place-marker') || target.closest('.dealing-card-slot') || target.closest('button')) return;
+            // In setup phase: don't start lasso if clicking on a card or filled zone
+            if (appState.phase === 'setup' && (target.closest('.zone-card') || target.closest('.card'))) return;
+
+            const containerRect = gameContainer.getBoundingClientRect();
+            lassoStartX = e.clientX - containerRect.left;
+            lassoStartY = e.clientY - containerRect.top;
+            isLassoing = true;
+
+            // Create lasso rect element
+            lassoRect = document.createElement('div');
+            lassoRect.className = 'selection-rect';
+            lassoRect.style.left = `${lassoStartX}px`;
+            lassoRect.style.top = `${lassoStartY}px`;
+            lassoRect.style.width = '0px';
+            lassoRect.style.height = '0px';
+            gameContainer.appendChild(lassoRect);
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isLassoing || !lassoRect) return;
+            
+            // Fix for stuck drag: if left mouse button is no longer pressed (e.g. released outside window)
+            if (e.buttons !== 1) {
+                // Abort lasso
+                isLassoing = false;
+                if (lassoRect) lassoRect.remove();
+                lassoRect = null;
+                return;
+            }
+
+            const containerRect = gameContainer.getBoundingClientRect();
+            const currentX = e.clientX - containerRect.left;
+            const currentY = e.clientY - containerRect.top;
+
+            const left = Math.min(lassoStartX, currentX);
+            const top = Math.min(lassoStartY, currentY);
+            const width = Math.abs(currentX - lassoStartX);
+            const height = Math.abs(currentY - lassoStartY);
+
+            lassoRect.style.left = `${left}px`;
+            lassoRect.style.top = `${top}px`;
+            lassoRect.style.width = `${width}px`;
+            lassoRect.style.height = `${height}px`;
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (!isLassoing || !lassoRect) return;
+            isLassoing = false;
+
+            const rectBounds = lassoRect.getBoundingClientRect();
+            lassoRect.remove();
+            lassoRect = null;
+
+            // Minimum size threshold to avoid accidental clicks
+            if (rectBounds.width < 5 && rectBounds.height < 5) return;
+
+            if (appState.phase === 'setup') {
+                // Setup phase: select empty drop zones and show fill context menu
+                clearDropZoneSelection();
+                const dropZones = document.querySelectorAll('.card-drop-zone');
+                dropZones.forEach(zone => {
+                    const zoneBounds = zone.getBoundingClientRect();
+                    if (zoneBounds.left < rectBounds.right &&
+                        zoneBounds.right > rectBounds.left &&
+                        zoneBounds.top < rectBounds.bottom &&
+                        zoneBounds.bottom > rectBounds.top) {
+                        const zoneName = zone.dataset.zone;
+                        if (!zoneName) return;
+                        const placeId = zoneName.replace('grid-', '');
+                        // Only select EMPTY slots (no card in this zone)
+                        const hasCard = appState.tableCards.some(c => c.zone === zoneName);
+                        if (!hasCard) {
+                            appState.selectedDropZones.push(placeId);
+                            zone.classList.add('zone-multi-selected');
+                        }
+                    }
+                });
+
+                if (appState.selectedDropZones.length > 0) {
+                    debugLog(`[LassoSelect] Selected ${appState.selectedDropZones.length} empty slots`);
+                    // Show fill context menu at mouse position
+                    showSlotContextMenu(e);
+                }
+            } else {
+                // Board-setting phase: select markers
+                const markers = document.querySelectorAll('.card-place-marker');
+                appState.selectedCardPlaces = [];
+                markers.forEach(marker => {
+                    const markerBounds = marker.getBoundingClientRect();
+                    if (markerBounds.left < rectBounds.right &&
+                        markerBounds.right > rectBounds.left &&
+                        markerBounds.top < rectBounds.bottom &&
+                        markerBounds.bottom > rectBounds.top) {
+                        const placeId = marker.dataset.placeId;
+                        const place = appState.boardLayout.cardPlaces.find(p => p.id === placeId);
+                        if (place) {
+                            appState.selectedCardPlaces.push(place);
+                            marker.classList.add('multi-selected');
+                        }
+                    } else {
+                        marker.classList.remove('multi-selected');
+                    }
+                });
+
+                if (appState.selectedCardPlaces.length > 0) {
+                    debugLog(`[LassoSelect] Selected ${appState.selectedCardPlaces.length} markers`);
+                }
+                updateCreateGroupBtnState();
+                if (typeof syncTransformIndicator === 'function') syncTransformIndicator();
+            }
+        });
+    }
+
+    // Ctrl+Z: Undo marker positions, rotation, and group operations (board-setting phase)
+    document.addEventListener('keydown', (e) => {
+        if (appState.phase !== 'board-setting') return;
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+            e.preventDefault();
+
+            // Try marker undo stack first (position/rotation changes OR delete undo)
+            if (appState.markerUndoStack.length > 0) {
+                const snapshot = appState.markerUndoStack.pop();
+
+                // Delete undo: restore full cardPlaces + slotGroups
+                if (snapshot.type === 'delete') {
+                    appState.boardLayout.cardPlaces = snapshot.cardPlaces;
+                    appState.boardLayout.slotGroups = snapshot.slotGroups;
+                    renderCardPlaceMarkers();
+                    updateCardPlacesList();
+                    updateGroupPanelVisibility();
+                    debugLog(`[Undo] Restored ${snapshot.cardPlaces.length} markers after delete`);
+                }
+                // Position/rotation undo
+                else {
+                    snapshot.forEach(saved => {
+                        const place = appState.boardLayout.cardPlaces.find(p => p.id === saved.id);
+                        if (place) {
+                            place.x = saved.x;
+                            place.y = saved.y;
+                            place.rotation = saved.rotation || 0;
+                            // Restore CZ dimensions if present
+                            if (saved.czWidth !== undefined) place.czWidth = saved.czWidth;
+                            if (saved.czHeight !== undefined) place.czHeight = saved.czHeight;
+                        }
+                    });
+                    renderCardPlaceMarkers();
+                    updateCardPlacesList();
+                    debugLog(`[Undo] Restored marker state (${appState.markerUndoStack.length} left)`);
+                }
+            }
+            // Otherwise try group undo stack
+            else if (typeof undoGroupAction === 'function') {
+                undoGroupAction();
+                renderGroupPanel();
+                renderCardPlaceMarkers();
+                debugLog('[Undo] Restored group state');
+            }
+        }
+
+        // Delete/Backspace: delete selected markers (multi-select or single)
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            // Don't delete if focus is in a text input/textarea (allow range/checkbox/radio)
+            if (e.target.tagName === 'TEXTAREA') return;
+            if (e.target.tagName === 'INPUT' && !['range', 'checkbox', 'radio'].includes(e.target.type)) return;
+
+            const toDelete = appState.selectedCardPlaces.length > 0
+                ? [...appState.selectedCardPlaces]
+                : (appState.selectedCardPlace ? [appState.selectedCardPlace] : []);
+            if (toDelete.length === 0) return;
+
+            e.preventDefault();
+
+            // Push full cardPlaces + slotGroups snapshot for undo
+            appState.markerUndoStack.push({
+                type: 'delete',
+                cardPlaces: JSON.parse(JSON.stringify(appState.boardLayout.cardPlaces)),
+                slotGroups: JSON.parse(JSON.stringify(appState.boardLayout.slotGroups || []))
+            });
+
+            toDelete.forEach(p => deleteCardPlace(p.id));
+            deselectCardPlace();
+            debugLog(`[Delete] Removed ${toDelete.length} marker(s)`);
+            setStatus(`Deleted ${toDelete.length} card place(s)`);
+        }
+    });
+}
+
+/**
+ * Start dragging a marker (supports group drag for multi-selected markers)
+ */
+function startDragMarker(e, place, marker) {
+    if (e.button !== 0) return; // Left click only
+
+    e.preventDefault();
+    marker.classList.add('dragging');
+
+    const pokerTable = document.getElementById('pokerTable');
+    const tableRect = pokerTable.getBoundingClientRect();
+    const containerRect = gameContainer.getBoundingClientRect();
+    const tableWidth = pokerTable.offsetWidth;
+    const tableHeight = pokerTable.offsetHeight;
+
+    // Calculate offset from gameContainer to pokerTable
+    const offsetX = tableRect.left - containerRect.left;
+    const offsetY = tableRect.top - containerRect.top;
+
+    // Scale factors: UI coordinates (1280x720) → DOM pixels
+    const scaleX = tableWidth / UI_WIDTH;
+    const scaleY = tableHeight / UI_HEIGHT;
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+
+    // Save position+rotation snapshot for undo (before any movement)
+    const undoSnapshot = appState.boardLayout.cardPlaces.map(p => ({ id: p.id, x: p.x, y: p.y, rotation: p.rotation || 0 }));
+    let hasMoved = false;
+
+    // Check if this is a group drag (marker is in multi-select)
+    const isGroupDrag = appState.selectedCardPlaces.includes(place) && appState.selectedCardPlaces.length > 1;
+
+    // For group drag: store initial positions for all selected markers
+    let groupData = [];
+    if (isGroupDrag) {
+        groupData = appState.selectedCardPlaces.map(p => {
+            const markerW = p.isCommunityZone ? (p.czWidth || 300) * scaleX : CARD_WIDTH;
+            const markerH = p.isCommunityZone ? (p.czHeight || 120) * scaleY : CARD_HEIGHT;
+            const markerEl = document.querySelector(`.card-place-marker[data-place-id="${p.id}"]`);
+            return {
+                place: p,
+                marker: markerEl,
+                startLeft: offsetX + p.x * scaleX - markerW / 2,
+                startTop: offsetY + p.y * scaleY - markerH / 2,
+                markerW,
+                markerH
+            };
+        });
+    } else {
+        // Single drag
+        const markerW = place.isCommunityZone ? (place.czWidth || 300) * scaleX : CARD_WIDTH;
+        const markerH = place.isCommunityZone ? (place.czHeight || 120) * scaleY : CARD_HEIGHT;
+        groupData = [{
+            place,
+            marker,
+            startLeft: offsetX + place.x * scaleX - markerW / 2,
+            startTop: offsetY + place.y * scaleY - markerH / 2,
+            markerW,
+            markerH
+        }];
+    }
+
+    function onMouseMove(moveE) {
+        hasMoved = true;
+        const dx = moveE.clientX - startX;
+        const dy = moveE.clientY - startY;
+
+        groupData.forEach(item => {
+            // New position in container coordinates
+            let newLeft = item.startLeft + dx;
+            let newTop = item.startTop + dy;
+
+            // Constrain to game container bounds
+            newLeft = Math.max(0, Math.min(containerRect.width - item.markerW, newLeft));
+            newTop = Math.max(0, Math.min(containerRect.height - item.markerH, newTop));
+
+            // Update marker position
+            if (item.marker) {
+                item.marker.style.left = `${newLeft}px`;
+                item.marker.style.top = `${newTop}px`;
+            }
+
+            // Convert DOM pixels back to UI coordinates for storage (center point)
+            item.place.x = (newLeft - offsetX + item.markerW / 2) / scaleX;
+            item.place.y = (newTop - offsetY + item.markerH / 2) / scaleY;
+        });
+
+        // Update cloner preview if cloner is active and source is being dragged
+        if (typeof clonerState !== 'undefined' && clonerState.active && clonerState.sourcePlace) {
+            clonerState.sourceX = clonerState.sourcePlace.x;
+            clonerState.sourceY = clonerState.sourcePlace.y;
+            if (typeof updateClonerPreview === 'function') updateClonerPreview();
+        }
+    }
+
+    function onMouseUp() {
+        marker.classList.remove('dragging');
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        // Push undo snapshot only if marker actually moved
+        if (hasMoved) {
+            appState.markerUndoStack.push(undoSnapshot);
+            if (appState.markerUndoStack.length > 50) appState.markerUndoStack.shift();
+        }
+        if (isGroupDrag) {
+            debugLog(`[GroupDrag] Moved ${groupData.length} markers`);
+        } else {
+            debugLog(`[DragMarker] Place ${place.id} → UI(${Math.round(place.x)}, ${Math.round(place.y)})`);
+        }
+        updateCardPlacesList();
+    }
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+}
+
+/**
+ * Start rotating a card place marker by dragging the rotation handle
+ * Calculates angle from mouse position relative to marker center
+ * Shift = snap to 15° increments
+ */
+function startRotateMarker(e, place, marker) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    marker.classList.add('rotating');
+
+    // Get marker center in viewport coordinates
+    const markerRect = marker.getBoundingClientRect();
+    const centerX = markerRect.left + markerRect.width / 2;
+    const centerY = markerRect.top + markerRect.height / 2;
+
+    // Calculate initial angle offset so rotation starts from current angle
+    const startMouseAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180 / Math.PI;
+    const startRotation = place.rotation || 0;
+
+    // Save undo snapshot
+    const undoSnapshot = appState.boardLayout.cardPlaces.map(p => ({ id: p.id, x: p.x, y: p.y, rotation: p.rotation || 0 }));
+    let hasRotated = false;
+
+    function onMouseMove(moveE) {
+        hasRotated = true;
+        const mouseAngle = Math.atan2(moveE.clientY - centerY, moveE.clientX - centerX) * 180 / Math.PI;
+        let newRotation = startRotation + (mouseAngle - startMouseAngle);
+
+        // Normalize to -180..180
+        while (newRotation > 180) newRotation -= 360;
+        while (newRotation < -180) newRotation += 360;
+
+        // Shift = snap to 15° increments
+        if (moveE.shiftKey) {
+            newRotation = Math.round(newRotation / 15) * 15;
+        }
+
+        place.rotation = Math.round(newRotation);
+        marker.style.transform = `rotate(${place.rotation}deg)`;
+    }
+
+    function onMouseUp() {
+        marker.classList.remove('rotating');
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        if (hasRotated) {
+            appState.markerUndoStack.push(undoSnapshot);
+            if (appState.markerUndoStack.length > 50) appState.markerUndoStack.shift();
+        }
+        debugLog(`[RotateMarker] Place ${place.id} → ${place.rotation}°`);
+        updateCardPlacesList();
+    }
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+}
+
+/**
+ * Start resizing a community zone marker
+ * Resizes from CENTER (anchor at center, not top-left)
+ */
+function startResizeCommunityZone(e, place, marker, scaleX, scaleY) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = (place.czWidth || 300) * scaleX;
+    const startH = (place.czHeight || 120) * scaleY;
+    const startLeft = parseFloat(marker.style.left);
+    const startTop = parseFloat(marker.style.top);
+
+    // Push undo snapshot before resize (includes CZ dimensions)
+    const undoSnapshot = appState.boardLayout.cardPlaces.map(p => ({
+        id: p.id, x: p.x, y: p.y, rotation: p.rotation || 0,
+        czWidth: p.czWidth, czHeight: p.czHeight
+    }));
+    let hasResized = false;
+
+    marker.classList.add('resizing');
+
+    function onMouseMove(moveE) {
+        const dx = moveE.clientX - startX;
+        const dy = moveE.clientY - startY;
+
+        const newW = Math.max(CARD_WIDTH * 2, startW + dx);
+        const newH = Math.max(CARD_HEIGHT, startH + dy);
+        hasResized = true;
+
+        // Adjust left/top to keep center fixed (grow from center, not top-left)
+        const deltaW = newW - startW;
+        const deltaH = newH - startH;
+        marker.style.left = `${startLeft - deltaW / 2}px`;
+        marker.style.top = `${startTop - deltaH / 2}px`;
+        marker.style.width = `${newW}px`;
+        marker.style.height = `${newH}px`;
+
+        // Store back in UI coordinates
+        place.czWidth = Math.round(newW / scaleX);
+        place.czHeight = Math.round(newH / scaleY);
+    }
+
+    function onMouseUp() {
+        marker.classList.remove('resizing');
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        if (hasResized) {
+            appState.markerUndoStack.push(undoSnapshot);
+            if (appState.markerUndoStack.length > 50) appState.markerUndoStack.shift();
+        }
+        debugLog(`[CommunityZone] ${place.id} resized → ${place.czWidth}×${place.czHeight} UI px`);
+        // Re-render to apply final state
+        renderCardPlaceMarkers();
+    }
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+}
+
+/**
+ * Update the card places list in the director panel
+ */
+function updateCardPlacesList() {
+    if (!cardPlacesList) return;
+
+    const count = appState.boardLayout.cardPlaces.length;
+    cardPlacesList.innerHTML = `<div class="list-header">Card Places (${count})</div>`;
+
+    appState.boardLayout.cardPlaces.forEach((place, index) => {
+        const item = document.createElement('div');
+        item.className = 'card-place-item';
+        const isCZ = place.isCommunityZone;
+        const labelText = isCZ
+            ? `📦 ${place.label || 'CZ'} (${(place.czMode || 'row').toUpperCase()})`
+            : (place.label || index + 1);
+        item.innerHTML = `
+            <span class="place-label">${labelText}</span>
+            <span class="place-coords">(${Math.round(place.x)}, ${Math.round(place.y)})${isCZ ? ` ${place.czWidth}×${place.czHeight}` : ''}</span>
+            <button class="delete-place-btn" data-place-id="${place.id}">✕</button>
+        `;
+
+        // Delete button handler
+        item.querySelector('.delete-place-btn').addEventListener('click', () => {
+            deleteCardPlace(place.id);
+        });
+
+        cardPlacesList.appendChild(item);
+    });
+}
+
+/**
+ * Toggle visibility between cardPlacesList and slotGroupPanel
+ * Panel is ALWAYS visible (for createGroupBtn access) — BUG #1 fix
+ * Card places list hidden when groups exist, shown otherwise
+ */
+function updateGroupPanelVisibility() {
+    var groupPanel = document.getElementById('slotGroupPanel');
+    var placesList = document.getElementById('cardPlacesList');
+    if (!groupPanel || !placesList) return;
+
+    // Panel always visible in board-setting mode
+    groupPanel.classList.remove('hidden');
+
+    var hasGroups = appState.boardLayout.slotGroups && appState.boardLayout.slotGroups.length > 0;
+    if (hasGroups) {
+        placesList.classList.add('hidden');
+        renderGroupPanel();
+    } else {
+        placesList.classList.remove('hidden');
+        // Show empty hint in group list
+        var groupList = document.getElementById('groupList');
+        if (groupList) {
+            groupList.innerHTML = '<div class="group-ungrouped">No groups yet — select 2+ markers then click + Group</div>';
+        }
+    }
+    updateCreateGroupBtnState();
+}
+
+/**
+ * Render the group panel with drag-to-reorder support
+ * Groups displayed in reverse order: top item = highest groupOrder = front/closest to camera
+ */
+function renderGroupPanel() {
+    var groupList = document.getElementById('groupList');
+    if (!groupList) return;
+    groupList.innerHTML = '';
+
+    var groups = appState.boardLayout.slotGroups || [];
+    if (groups.length === 0) return;
+
+    // Display in reverse: highest groupOrder at top (= "front" like Photoshop)
+    var sorted = groups.slice().sort(function (a, b) { return b.groupOrder - a.groupOrder; });
+
+    sorted.forEach(function (group, displayIdx) {
+        var item = document.createElement('div');
+        item.className = 'group-item';
+        item.dataset.groupId = group.id;
+        item.dataset.groupIndex = String(groups.indexOf(group));
+        item.draggable = true;
+        item.style.borderLeftColor = group.color;
+
+        // Color dot
+        var dot = document.createElement('span');
+        dot.className = 'group-color-dot';
+        dot.style.backgroundColor = group.color;
+        item.appendChild(dot);
+
+        // Editable name
+        var name = document.createElement('span');
+        name.className = 'group-name';
+        name.textContent = group.name;
+        name.addEventListener('dblclick', function () {
+            name.contentEditable = 'true';
+            name.focus();
+            // Select all text
+            var range = document.createRange();
+            range.selectNodeContents(name);
+            var sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+        });
+        name.addEventListener('blur', function () {
+            name.contentEditable = 'false';
+            var newName = name.textContent.trim();
+            if (newName && newName !== group.name) {
+                renameSlotGroup(group.id, newName);
+            } else {
+                name.textContent = group.name;
+            }
+        });
+        name.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                name.blur();
+            }
+        });
+        item.appendChild(name);
+
+        // Slot count
+        var count = document.createElement('span');
+        count.className = 'group-slot-count';
+        count.textContent = '(' + group.slotIds.length + ')';
+        item.appendChild(count);
+
+        // Actions
+        var actions = document.createElement('div');
+        actions.className = 'group-actions';
+
+        // Edit button for cloner groups
+        if (group.clonerConfig) {
+            var editBtn = document.createElement('button');
+            editBtn.className = 'edit-group';
+            editBtn.textContent = '✏️';
+            editBtn.title = 'Edit cloner settings';
+            editBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                editCloner(group.id);
+            });
+            actions.appendChild(editBtn);
+        }
+
+        var deleteBtn = document.createElement('button');
+        deleteBtn.className = 'delete-group';
+        deleteBtn.textContent = '✕';
+        deleteBtn.title = group.clonerConfig ? 'Delete cloner group & all slots' : 'Delete group';
+        deleteBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (group.clonerConfig) {
+                deleteClonerGroup(group.id);
+            } else {
+                deleteSlotGroup(group.id);
+            }
+            renderGroupPanel();
+            renderCardPlaceMarkers();
+        });
+        actions.appendChild(deleteBtn);
+        item.appendChild(actions);
+
+        // Hover: highlight markers on board
+        item.addEventListener('mouseenter', function () {
+            highlightGroupMarkers(group.id, true);
+        });
+        item.addEventListener('mouseleave', function () {
+            highlightGroupMarkers(group.id, false);
+        });
+
+        // Click: toggle-select all markers in this group
+        item.addEventListener('click', function (e) {
+            // Don't trigger on delete button or name editing
+            if (e.target.closest('.group-actions') || e.target.closest('.group-name[contenteditable="true"]')) return;
+
+            // Check if this group's slots are already fully selected
+            var allSelected = group.slotIds.length > 0 && group.slotIds.every(function (sid) {
+                return appState.selectedCardPlaces.some(function (p) { return p.id === sid; });
+            });
+
+            if (allSelected) {
+                // Unselect: remove this group's slots from selection
+                appState.selectedCardPlaces = appState.selectedCardPlaces.filter(function (p) {
+                    return group.slotIds.indexOf(p.id) < 0;
+                });
+                item.classList.remove('selected');
+            } else {
+                // Select: add all group's slots (avoid duplicates)
+                group.slotIds.forEach(function (sid) {
+                    var alreadyIn = appState.selectedCardPlaces.some(function (p) { return p.id === sid; });
+                    if (!alreadyIn) {
+                        var place = appState.boardLayout.cardPlaces.find(function (p) { return p.id === sid; });
+                        if (place) appState.selectedCardPlaces.push(place);
+                    }
+                });
+                item.classList.add('selected');
+            }
+
+            // Update marker visual state on board
+            document.querySelectorAll('.card-place-marker').forEach(function (m) {
+                var pid = m.dataset.placeId;
+                if (appState.selectedCardPlaces.some(function (p) { return p.id === pid; })) {
+                    m.classList.add('multi-selected');
+                } else {
+                    m.classList.remove('multi-selected');
+                }
+            });
+
+            // Sync other group items' selected state
+            groupList.querySelectorAll('.group-item').forEach(function (gi) {
+                var gid = gi.dataset.groupId;
+                var grp = groups.find(function (g) { return g.id === gid; });
+                if (!grp) return;
+                var grpAllSelected = grp.slotIds.length > 0 && grp.slotIds.every(function (sid) {
+                    return appState.selectedCardPlaces.some(function (p) { return p.id === sid; });
+                });
+                if (grpAllSelected) {
+                    gi.classList.add('selected');
+                } else {
+                    gi.classList.remove('selected');
+                }
+            });
+
+            updateCreateGroupBtnState();
+            debugLog('[GroupPanel] Click ' + group.name + ' → ' + appState.selectedCardPlaces.length + ' selected');
+        });
+
+        // HTML5 Drag-to-reorder
+        item.addEventListener('dragstart', function (e) {
+            e.dataTransfer.setData('text/plain', String(groups.indexOf(group)));
+            e.dataTransfer.effectAllowed = 'move';
+            item.classList.add('dragging');
+        });
+        item.addEventListener('dragend', function () {
+            item.classList.remove('dragging');
+            // Remove all drag-over states
+            groupList.querySelectorAll('.drag-over').forEach(function (el) {
+                el.classList.remove('drag-over');
+            });
+        });
+        item.addEventListener('dragover', function (e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            item.classList.add('drag-over');
+        });
+        item.addEventListener('dragleave', function () {
+            item.classList.remove('drag-over');
+        });
+        item.addEventListener('drop', function (e) {
+            e.preventDefault();
+            item.classList.remove('drag-over');
+            var fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
+            var toIndex = groups.indexOf(group);
+            if (fromIndex !== toIndex && !isNaN(fromIndex)) {
+                reorderSlotGroups(fromIndex, toIndex);
+                renderGroupPanel();
+                renderCardPlaceMarkers();
+            }
+        });
+
+        groupList.appendChild(item);
+    });
+
+    // Show ungrouped count
+    var allSlotIds = [];
+    groups.forEach(function (g) {
+        allSlotIds = allSlotIds.concat(g.slotIds);
+    });
+    var ungroupedCount = (appState.boardLayout.cardPlaces || []).filter(function (p) {
+        return allSlotIds.indexOf(p.id) < 0;
+    }).length;
+    if (ungroupedCount > 0) {
+        var ungroupedDiv = document.createElement('div');
+        ungroupedDiv.className = 'group-ungrouped';
+        ungroupedDiv.textContent = ungroupedCount + ' ungrouped slot' + (ungroupedCount > 1 ? 's' : '');
+        groupList.appendChild(ungroupedDiv);
+    }
+
+    updateCreateGroupBtnState();
+}
+
+/**
+ * Update the create group button enabled/disabled state
+ * Called from shift-click handler, renderGroupPanel, and updateGroupPanelVisibility
+ */
+function updateCreateGroupBtnState() {
+    var createBtn = document.getElementById('createGroupBtn');
+    if (createBtn) {
+        createBtn.disabled = !appState.selectedCardPlaces || appState.selectedCardPlaces.length < 2;
+    }
+}
+
+/**
+ * Highlight or unhighlight markers belonging to a group on the board
+ * @param {string} groupId
+ * @param {boolean} highlight
+ */
+function highlightGroupMarkers(groupId, highlight) {
+    var groups = appState.boardLayout.slotGroups || [];
+    var group = groups.find(function (g) { return g.id === groupId; });
+    if (!group) return;
+
+    group.slotIds.forEach(function (slotId) {
+        var marker = document.querySelector('.card-place-marker[data-place-id="' + slotId + '"]');
+        if (marker) {
+            if (highlight) {
+                marker.classList.add('group-highlight');
+            } else {
+                marker.classList.remove('group-highlight');
+            }
+        }
+    });
+}
+
+/**
+ * Show/hide the group order section in Record phase
+ */
+function updateGroupOrderSectionVisibility() {
+    var section = document.getElementById('groupOrderSection');
+    if (!section) return;
+    var hasGroups = appState.boardLayout.slotGroups && appState.boardLayout.slotGroups.length > 0;
+    if (hasGroups) {
+        section.classList.remove('hidden');
+        renderGroupOrderStrip();
+    } else {
+        section.classList.add('hidden');
+    }
+}
+
+/**
+ * Render group order chips in Record mode — drag to reorder for this step
+ * Order: left = back (lowest groupOrder), right = front (highest)
+ */
+function renderGroupOrderStrip() {
+    var strip = document.getElementById('groupOrderStrip');
+    if (!strip) return;
+    strip.innerHTML = '';
+
+    var groups = appState.boardLayout.slotGroups || [];
+    if (groups.length === 0) return;
+
+    // Build working order: start from current order, apply pending overrides
+    var workingGroups = groups.map(function (g) {
+        var order = g.groupOrder;
+        if (appState.pendingGroupOrderOverrides && appState.pendingGroupOrderOverrides[g.id] !== undefined) {
+            order = appState.pendingGroupOrderOverrides[g.id];
+        }
+        return { id: g.id, name: g.name, color: g.color, workingOrder: order };
+    });
+    workingGroups.sort(function (a, b) { return a.workingOrder - b.workingOrder; });
+
+    workingGroups.forEach(function (wg, displayIdx) {
+        var chip = document.createElement('div');
+        chip.className = 'group-order-chip';
+        chip.style.backgroundColor = wg.color;
+        chip.dataset.groupId = wg.id;
+        chip.dataset.displayIdx = String(displayIdx);
+        chip.draggable = true;
+
+        // Order number
+        var orderSpan = document.createElement('span');
+        orderSpan.className = 'chip-order';
+        orderSpan.textContent = String(displayIdx);
+        chip.appendChild(orderSpan);
+
+        // Name
+        var nameSpan = document.createElement('span');
+        nameSpan.textContent = wg.name;
+        chip.appendChild(nameSpan);
+
+        // Drag handlers
+        chip.addEventListener('dragstart', function (e) {
+            e.dataTransfer.setData('text/plain', String(displayIdx));
+            e.dataTransfer.effectAllowed = 'move';
+            chip.classList.add('dragging');
+        });
+        chip.addEventListener('dragend', function () {
+            chip.classList.remove('dragging');
+            strip.querySelectorAll('.drag-over').forEach(function (el) { el.classList.remove('drag-over'); });
+        });
+        chip.addEventListener('dragover', function (e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            chip.classList.add('drag-over');
+        });
+        chip.addEventListener('dragleave', function () {
+            chip.classList.remove('drag-over');
+        });
+        chip.addEventListener('drop', function (e) {
+            e.preventDefault();
+            chip.classList.remove('drag-over');
+            var fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+            var toIdx = displayIdx;
+            if (fromIdx !== toIdx && !isNaN(fromIdx)) {
+                // Reorder workingGroups locally
+                var moved = workingGroups.splice(fromIdx, 1)[0];
+                workingGroups.splice(toIdx, 0, moved);
+                // Build overrides map
+                var overrides = {};
+                workingGroups.forEach(function (wg2, i) {
+                    overrides[wg2.id] = i;
+                });
+
+                if (appState.isEditingStep) {
+                    // During active step edit: store as pending, attach on finish
+                    appState.pendingGroupOrderOverrides = overrides;
+                } else {
+                    // Not editing: auto-create standalone group-reorder step
+                    var reorderStep = {
+                        stepId: scenarioData.scenario.length + 1,
+                        duration: stepDuration ? parseFloat(stepDuration.value) : 1.0,
+                        actions: [],
+                        groupOrderOverrides: JSON.parse(JSON.stringify(overrides))
+                    };
+
+                    // Apply overrides to actual group.groupOrder
+                    var groups2 = appState.boardLayout.slotGroups || [];
+                    groups2.forEach(function (g) {
+                        if (overrides[g.id] !== undefined) {
+                            g.groupOrder = overrides[g.id];
+                        }
+                    });
+
+                    // Take snapshot for replay
+                    var snap = takeSnapshot();
+                    scenarioData.scenario.push(reorderStep);
+                    stepSnapshots.push(JSON.parse(JSON.stringify(snap)));
+
+                    totalSteps.textContent = scenarioData.scenario.length;
+                    renderTimeline();
+                    updateUI();
+                    setStatus('Step ' + reorderStep.stepId + ' auto-created: group order changed', 'success');
+                }
+                renderGroupOrderStrip();
+            }
+        });
+
+        strip.appendChild(chip);
+    });
+}
+
+// ============================================
+// TIMELINE MODULES INTEGRATION
+// ============================================
+
+// Module instances (lazy init)
+let timelineModules = null;
+let timelineUI = null;
+
+/**
+ * Initialize timeline modules integration
+ * This is called from init() and sets up all new timeline functionality
+ */
+function initTimelineModulesIntegration() {
+    // Check if modules are available
+    if (typeof TIMELINE_FEATURE_FLAGS === 'undefined') {
+        console.log('[Timeline] Modules not loaded - skipping initialization');
+        return;
+    }
+
+    if (!TIMELINE_FEATURE_FLAGS.ENABLED) {
+        console.log('[Timeline] Modules disabled via feature flag');
+        return;
+    }
+
+    console.log('[Timeline] Initializing modules integration...');
+
+    try {
+        // Initialize core modules
+        timelineModules = initTimelineModules(
+            scenarioData,
+            stepSnapshots,
+            restoreFromSnapshot
+        );
+
+        if (!timelineModules) {
+            console.warn('[Timeline] Module initialization returned null');
+            return;
+        }
+
+        // Initialize Timeline UI if container exists
+        const timelineBar = document.getElementById('timelineBar');
+        if (timelineBar && TIMELINE_FEATURE_FLAGS.TIMELINE_UI) {
+            timelineUI = new TimelineUI(timelineBar, {
+                timelineManager: timelineModules.timelineManager,
+                playbackController: timelineModules.playbackController,
+                onStepSelect: handleTimelineStepSelect,
+                onStepEdit: handleTimelineStepEdit,
+                onStepMove: handleTimelineStepMove
+            });
+
+            // Handle clear timeline
+            timelineUI.on('clearTimeline', function () {
+                scenarioData.scenario = [];
+                stepSnapshots = [];
+                pendingChangeSnapshot = null; // Clear stale snapshot to prevent ghost steps
+                if (timelineModules.timelineManager) {
+                    timelineModules.timelineManager.clearSteps();
+                }
+                timelineUI.render();
+                totalSteps.textContent = '0';
+                if (typeof restoreToInitialState === 'function') {
+                    restoreToInitialState();
+                }
+                // Re-save initial state so new recordings start fresh
+                if (typeof saveInitialStateForExport === 'function') {
+                    saveInitialStateForExport();
+                }
+                // Save a fresh snapshot[0] for the new recording session
+                stepSnapshots.push(JSON.parse(JSON.stringify(scenarioData.initialState)));
+                setStatus('Timeline cleared');
+                console.log('[Timeline] All steps cleared');
+            });
+
+            // Initial render
+            timelineUI.render();
+            console.log('[Timeline] UI initialized');
+        }
+
+        // Hook into existing functions to sync with timeline modules
+        hookTimelineFunctions();
+
+        // Run tests in development
+        if (typeof TIMELINE_FEATURE_FLAGS !== 'undefined' && location.hostname === 'localhost') {
+            // Uncomment to run tests automatically
+            // timelineModules.runTests();
+        }
+
+        console.log('[Timeline] Integration complete');
+
+    } catch (error) {
+        console.error('[Timeline] Error initializing modules:', error);
+    }
+}
+
+/**
+ * Hook into existing functions to sync timeline modules
+ */
+function hookTimelineFunctions() {
+    if (!timelineModules) return;
+
+    const { timelineManager, snapshotManager, stepPropertyManager } = timelineModules;
+
+    // Hook handleFinishStep to sync with timeline manager
+    const originalHandleFinishStep = handleFinishStep;
+    handleFinishStep = function () {
+        // Call original implementation
+        originalHandleFinishStep();
+
+        // Sync with timeline modules after step is created
+        syncTimelineModulesWithSteps();
+    };
+
+    // Hook property changes for per-step property storage
+    if (TIMELINE_FEATURE_FLAGS.PER_STEP_PROPS) {
+        const originalHandlePropertyChange = handlePropertyChange;
+        handlePropertyChange = function () {
+            // Store in per-step manager during editing
+            if (appState.isEditingStep && appState.selectedCard) {
+                const cardId = appState.selectedCard.id;
+                const stepIndex = appState.currentStepIndex;
+
+                stepPropertyManager.setPendingProperty(cardId, 'flip', {
+                    enabled: flipCardCheck.checked,
+                    toFaceUp: appState.selectedCard.isFaceUp
+                });
+
+                stepPropertyManager.setPendingProperty(cardId, 'slam', {
+                    enabled: slamEffectCheck.checked
+                });
+
+                stepPropertyManager.setPendingProperty(cardId, 'spin', {
+                    enabled: spinEffectCheck.checked
+                });
+            }
+
+            // Still call original to update card object
+            originalHandlePropertyChange();
+        };
+    }
+
+    // Hook handleAutoStepYes to sync with snapshotManager
+    const originalHandleAutoStepYes = handleAutoStepYes;
+    handleAutoStepYes = function () {
+        // Call original implementation
+        originalHandleAutoStepYes();
+
+        // Sync with timeline modules after step is created
+        syncTimelineModulesWithSteps();
+    };
+
+    // Hook handleFinishStep that we already defined above also needs to sync
+    // The handleFinishStep hook is already defined above, but let's make sure
+    // auto-step also triggers timeline UI update
+
+    console.log('[Timeline] Functions hooked');
+}
+
+/**
+ * Get step color (cycling through palette)
+ */
+function getStepColor(stepId) {
+    const colors = ['#4CAF50', '#2196F3', '#FF9800', '#E91E63', '#9C27B0', '#00BCD4', '#FF5722'];
+    return colors[(stepId - 1) % colors.length];
+}
+
+/**
+ * Handle timeline step selection
+ */
+function handleTimelineStepSelect(step, index) {
+    console.log('[Timeline] Step selected:', step.stepId);
+
+    // Jump playback to this step
+    if (timelineModules && timelineModules.playbackController) {
+        timelineModules.playbackController.jumpToStep(index);
+    }
+
+    // Highlight in existing timeline preview
+    const existingBlocks = document.querySelectorAll('.timeline-step');
+    existingBlocks.forEach(block => block.classList.remove('selected'));
+}
+
+/**
+ * Handle timeline step edit request
+ */
+function handleTimelineStepEdit(step, index) {
+    console.log('[Timeline] Edit requested for step:', step.stepId);
+
+    // Show warning if there are subsequent steps
+    if (index < scenarioData.scenario.length - 1) {
+        showWarningModal(`Editing Step ${step.stepId} may affect subsequent steps. Continue?`, () => {
+            startEditingStep(index);
+        });
+    } else {
+        startEditingStep(index);
+    }
+}
+
+/**
+ * Start editing an existing step
+ */
+function startEditingStep(stepIndex) {
+    if (appState.isEditingStep) {
+        setStatus('Finish current step first', 'error');
+        return;
+    }
+
+    // Restore to state before this step
+    const snapshot = stepSnapshots[stepIndex];
+    if (snapshot) {
+        restoreFromSnapshot(snapshot);
+    }
+
+    // Enter edit mode
+    appState.isEditingStep = true;
+    appState.currentStepIndex = stepIndex;
+
+    const step = scenarioData.scenario[stepIndex];
+    currentStep = JSON.parse(JSON.stringify(step));
+    startSnapshot = snapshot;
+
+    // Update UI
+    if (stepDuration) stepDuration.value = step.duration || 1.0;
+    if (finishStepBtn) {
+        finishStepBtn.disabled = false;
+        finishStepBtn.textContent = '✓ Update Step';
+    }
+    if (addStepBtn) addStepBtn.disabled = true;
+    if (recordingIndicator) recordingIndicator.classList.add('active');
+    if (currentStepNum) currentStepNum.textContent = step.stepId;
+
+    setStatus(`Editing Step ${step.stepId} - Move cards and click Update`, 'recording');
+}
+
+/**
+ * Handle timeline step move (drag)
+ */
+function handleTimelineStepMove(step) {
+    console.log('[Timeline] Step moved:', step.stepId, 'to', step.startTime);
+    // Timeline manager already updated the step
+    // Just need to re-render existing timeline if needed
+    renderTimeline();
+}
+
+// showWarningModal is defined earlier (line ~3575) using pendingWarningCallback.
+// A duplicate was here that stored callback on warningModal._onConfirm instead,
+// which broke confirmWarning(). Removed to fix all warning confirmation actions.
+
+/**
+ * Refresh timeline UI
+ */
+function refreshTimelineUI() {
+    if (timelineUI) {
+        timelineUI.render();
+    }
+}
+
+/**
+ * Sync timeline modules with current step data
+ * Called after any step is created or modified
+ */
+function syncTimelineModulesWithSteps() {
+    if (!timelineModules) {
+        console.log('[Timeline] No modules to sync');
+        return;
+    }
+
+    const { snapshotManager, timelineManager } = timelineModules;
+
+    // Sync snapshots from stepSnapshots array to snapshotManager
+    if (stepSnapshots.length > 0) {
+        console.log('[Timeline] Syncing', stepSnapshots.length, 'snapshots');
+        snapshotManager.loadFromArray(stepSnapshots);
+    }
+
+    // Sync step timing
+    if (scenarioData.scenario.length > 0) {
+        let currentTime = 0;
+        scenarioData.scenario.forEach((step) => {
+            if (step.startTime === undefined) {
+                step.startTime = currentTime;
+            }
+            if (step.endTime === undefined) {
+                step.endTime = step.startTime + (step.duration || 1.0);
+            }
+            if (!step.label) step.label = `Step ${step.stepId}`;
+            if (!step.color) step.color = getStepColor(step.stepId);
+            currentTime = step.endTime;
+        });
+
+        // Update timeline total duration
+        if (scenarioData.timeline) {
+            scenarioData.timeline.totalDuration = currentTime;
+        }
+    }
+
+    // Update timeline UI
+    if (timelineUI) {
+        timelineUI.render();
+    }
+
+    console.log('[Timeline] Sync complete. Steps:', scenarioData.scenario.length, 'Snapshots:', snapshotManager.getSnapshotCount());
+}
+
+/**
+ * Update timeline playhead position
+ * @param {number} time - Current time in seconds
+ */
+function updateTimelinePlayhead(time) {
+    // Update TimelineUI playhead
+    if (timelineUI && timelineUI._updatePlayhead) {
+        timelineUI._updatePlayhead(time);
+    }
+
+    // Also update the time display elements directly
+    const currentTimeEl = document.getElementById('tlCurrentTime');
+    if (currentTimeEl) {
+        currentTimeEl.textContent = time.toFixed(1);
+    }
+}
+
+// ============================================
+// GROUPING MODE
+// ============================================
+
+/**
+ * Handle grouping mode toggle change
+ */
+function handleGroupingModeChange(e) {
+    appState.groupingMode = e.target.checked;
+
+    // Clear grouped cards when disabling
+    if (!appState.groupingMode) {
+        clearGroupedCards();
+        cancelAutoRecordCountdown();
+    }
+
+    // Update body class for CSS styling
+    document.body.classList.toggle('grouping-mode-active', appState.groupingMode);
+
+    setStatus(appState.groupingMode ? 'Grouping Mode ON - Click cards to select' : 'Grouping Mode OFF');
+}
+
+/**
+ * Handle auto-record toggle change
+ */
+function handleAutoRecordChange(e) {
+    appState.autoRecord = e.target.checked;
+
+    // Cancel any running countdown when disabling
+    if (!appState.autoRecord) {
+        cancelAutoRecordCountdown();
+    }
+}
+
+/**
+ * Handle auto-record delay slider change
+ */
+function handleAutoRecordDelayChange(e) {
+    appState.autoRecordDelay = parseInt(e.target.value);
+    if (autoRecordDelayValue) {
+        autoRecordDelayValue.textContent = `${appState.autoRecordDelay}s`;
+    }
+}
+
+/**
+ * Toggle card selection for grouping
+ * Called when clicking a card in grouping mode
+ * Each selection/deselection triggers auto-step popup to record as separate step
+ */
+function toggleCardGroupSelection(card) {
+    console.log('[GroupSelect] Before - groupedCards:', appState.groupedCards.length);
+
+    // Take snapshot BEFORE the selection change (for recording)
+    const snapshotBeforeChange = takeSnapshot();
+
+    const index = appState.groupedCards.findIndex(c => c.id === card.id);
+
+    if (index === -1) {
+        // Add to group (SELECT)
+        appState.groupedCards.push(card);
+        card.element?.classList.add('grouped');
+        console.log('[GroupSelect] Added card:', card.id, 'groupedCards:', appState.groupedCards.length);
+    } else {
+        // Remove from group (DESELECT)
+        appState.groupedCards.splice(index, 1);
+        card.element?.classList.remove('grouped');
+        console.log('[GroupSelect] Removed card:', card.id, 'groupedCards:', appState.groupedCards.length);
+    }
+
+    // Update count display
+    updateGroupCount();
+
+    console.log('[GroupSelect] After - groupedCards:', appState.groupedCards.length);
+
+    // Trigger auto-step popup for this selection change (Record mode only)
+    if (appState.phase === 'record' && !appState.isEditingStep) {
+        showAutoStepPopup(card, snapshotBeforeChange);
+    }
+}
+
+
+/**
+ * Clear all grouped cards
+ */
+function clearGroupedCards() {
+    appState.groupedCards.forEach(card => {
+        card.element?.classList.remove('grouped');
+    });
+    appState.groupedCards = [];
+    updateGroupCount();
+}
+
+/**
+ * Update the group count display
+ */
+function updateGroupCount() {
+    if (groupCount) {
+        const count = appState.groupedCards.length;
+        groupCount.textContent = count > 0 ? `(${count})` : '';
+    }
+}
+
+/**
+ * Start the auto-record countdown
+ */
+function startAutoRecordCountdown() {
+    // Cancel any existing countdown
+    cancelAutoRecordCountdown();
+
+    appState.countdownValue = appState.autoRecordDelay;
+
+    // Show countdown display
+    if (countdownDisplay) countdownDisplay.classList.remove('hidden');
+    if (countdownTimer) countdownTimer.textContent = appState.countdownValue;
+    if (countdownBarFill) countdownBarFill.style.width = '100%';
+
+    // Start interval timer
+    appState.countdownTimer = setInterval(() => {
+        appState.countdownValue--;
+
+        // Update timer display
+        if (countdownTimer) countdownTimer.textContent = appState.countdownValue;
+
+        // Update progress bar
+        if (countdownBarFill) {
+            const progress = (appState.countdownValue / appState.autoRecordDelay) * 100;
+            countdownBarFill.style.width = `${progress}%`;
+        }
+
+        // Countdown finished — auto-accept step
+        if (appState.countdownValue <= 0) {
+            cancelAutoRecordCountdown();
+            handleAutoStepYes();
+        }
+    }, 1000);
+}
+
+/**
+ * Cancel the auto-record countdown
+ */
+function cancelAutoRecordCountdown() {
+    if (appState.countdownTimer) {
+        clearInterval(appState.countdownTimer);
+        appState.countdownTimer = null;
+    }
+    appState.countdownValue = 0;
+
+    // Hide countdown display
+    if (countdownDisplay) countdownDisplay.classList.add('hidden');
+}
+
+/**
+ * Auto-save step with grouped cards
+ */
+function autoSaveGroupedStep() {
+    if (appState.groupedCards.length === 0) {
+        setStatus('No cards selected', 'error');
+        return;
+    }
+
+    // Get the snapshot before changes
+    const startSnap = pendingChangeSnapshot || takeSnapshot();
+
+    // Take current snapshot (after selections)
+    const endSnap = takeSnapshot();
+
+    // Compute actions from start to end
+    const actions = computeActions(startSnap, endSnap);
+
+    // Create the step
+    const newStep = {
+        stepId: scenarioData.scenario.length + 1,
+        duration: stepDuration ? parseFloat(stepDuration.value) : 1.0,
+        actions: actions
+    };
+
+    // BUG #4 fix: attach pending group order overrides
+    if (appState.pendingGroupOrderOverrides) {
+        newStep.groupOrderOverrides = JSON.parse(JSON.stringify(appState.pendingGroupOrderOverrides));
+        var groups = appState.boardLayout.slotGroups || [];
+        groups.forEach(function (g) {
+            if (appState.pendingGroupOrderOverrides[g.id] !== undefined) {
+                g.groupOrder = appState.pendingGroupOrderOverrides[g.id];
+            }
+        });
+        appState.pendingGroupOrderOverrides = null;
+    }
+
+    // Add to scenario
+    scenarioData.scenario.push(newStep);
+
+    // Save snapshot for replay
+    stepSnapshots.push(JSON.parse(JSON.stringify(endSnap)));
+
+    // Update UI
+    totalSteps.textContent = scenarioData.scenario.length;
+    renderTimeline();
+
+    // Clear state
+    clearGroupedCards();
+    pendingChangeSnapshot = null;
+
+    setStatus(`Step ${newStep.stepId} saved with ${actions.length} actions (auto-recorded)`, 'success');
+    updateUI();
+}
+
+/**
+ * Show/hide grouping section based on phase
+ */
+function updateGroupingSectionVisibility() {
+    if (groupingSection) {
+        if (appState.phase === 'record') {
+            groupingSection.classList.remove('hidden');
+        } else {
+            groupingSection.classList.add('hidden');
+            // Disable grouping when leaving record phase
+            if (appState.groupingMode) {
+                appState.groupingMode = false;
+                if (groupingModeToggle) groupingModeToggle.checked = false;
+                document.body.classList.remove('grouping-mode-active');
+                clearGroupedCards();
+                cancelAutoRecordCountdown();
+            }
+        }
+    }
+}
+
+/**
+ * Handle dropping all grouped cards to a zone
+ * @param {HTMLElement} zone - Target zone element
+ */
+function handleGroupedCardsDrop(zone) {
+    console.log('[GroupDrop] Called with zone:', zone?.dataset?.zone, 'groupedCards:', appState.groupedCards.length);
+    if (appState.groupedCards.length === 0) return;
+
+    // Use pendingChangeSnapshot if available (captured when first card was selected)
+    // Otherwise take a new snapshot
+    const snapshotBeforeMove = pendingChangeSnapshot || takeSnapshot();
+    console.log('[GroupDrop] snapshotBeforeMove exists:', !!snapshotBeforeMove);
+
+    const zoneName = zone.dataset.zone;
+    const rotation = parseInt(zone.dataset.rotation) || 0;
+
+    // Collect old zones for later re-render
+    const oldZones = new Set();
+
+    // Move each grouped card to the target zone
+    appState.groupedCards.forEach(card => {
+        if (card.zone && card.zone !== zoneName) {
+            oldZones.add(card.zone);
+        }
+        if (card.element) {
+            card.element.remove();
+        }
+        card.zone = zoneName;
+        card.rotation = rotation;
+
+        const flipCheckbox = document.querySelector(`#flip${zoneName.charAt(0).toUpperCase() + zoneName.slice(1)}`);
+        if (flipCheckbox) {
+            card.isFaceUp = flipCheckbox.checked;
+        }
+    });
+
+    // Recalculate positions for old zones
+    oldZones.forEach(oldZoneName => {
+        const oldZoneCards = appState.tableCards.filter(c => c.zone === oldZoneName);
+        oldZoneCards.forEach((c, idx) => {
+            c.zonePosition = idx;
+        });
+        const oldZoneElement = document.querySelector(
+            `.player-zone[data-zone="${oldZoneName}"], .community-zone[data-zone="${oldZoneName}"], .card-drop-zone[data-zone="${oldZoneName}"]`
+        );
+        if (oldZoneElement) {
+            rerenderZoneCards(oldZoneName, oldZoneElement);
+        }
+    });
+
+    // Assign consecutive positions in new zone
+    const existingCardsInZone = appState.tableCards.filter(
+        c => c.zone === zoneName && !appState.groupedCards.some(gc => gc.id === c.id)
+    );
+    let nextPos = existingCardsInZone.length;
+
+    appState.groupedCards.forEach(card => {
+        card.zonePosition = nextPos++;
+        createZoneCardElement(card, zone);
+    });
+
+    const movedCount = appState.groupedCards.length;
+    updateUI();
+    setStatus(`Moved ${movedCount} cards to ${zoneName} zone`);
+    console.log('[GroupDrop] Moved', movedCount, 'cards to', zoneName);
+
+    // Clear grouped cards after move
+    clearGroupedCards();
+
+    // Show auto-step popup if in record mode
+    console.log('[GroupDrop] phase:', appState.phase, 'isEditingStep:', appState.isEditingStep, 'autoStepPopup:', !!autoStepPopup);
+    if (appState.phase === 'record' && !appState.isEditingStep) {
+        console.log('[GroupDrop] Calling showAutoStepPopup');
+        showAutoStepPopup(null, snapshotBeforeMove);
+    }
+}
+
+
+
+// ============================================
+// AI LAYOUT GENERATOR
+// ============================================
+
+/**
+ * Enable the AI button once a deck is loaded
+ */
+function enableAIButton() {
+    if (aiPhaseBtn) {
+        aiPhaseBtn.disabled = false;
+        aiPhaseBtn.title = 'AI Layout Generator';
+    }
+}
+
+/**
+ * Toggle the AI panel visibility
+ */
+function toggleAIPanel() {
+    if (!aiSection) return;
+
+    const isVisible = !aiSection.classList.contains('hidden');
+    if (isVisible) {
+        aiSection.classList.add('hidden');
+        if (aiPhaseBtn) aiPhaseBtn.classList.remove('active');
+    } else {
+        aiSection.classList.remove('hidden');
+        if (aiPhaseBtn) aiPhaseBtn.classList.add('active');
+        if (aiPresetSelect && appState.boardLayout) {
+            aiPresetSelect.value = appState.boardLayout.boardStyle || 'current';
+        }
+    }
+}
+
+// ============================================
+// AI REFERENCE ATTACHMENTS
+// ============================================
+
+/**
+ * Handle ref image file selection
+ */
+function handleRefImageAttach(e) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    // Limit to 3 images
+    const maxImages = 3;
+    const remaining = maxImages - aiRefImages.length;
+    const toAdd = files.slice(0, remaining);
+
+    for (const file of toAdd) {
+        const reader = new FileReader();
+        reader.onload = function (evt) {
+            const base64 = evt.target.result.split(',')[1]; // Remove data:image/...;base64, prefix
+            const mimeType = file.type || 'image/jpeg';
+            aiRefImages.push({ data: base64, mimeType: mimeType, name: file.name });
+            renderAttachPreview();
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // Reset input so same file can be re-selected
+    e.target.value = '';
+}
+
+/**
+ * Handle ref video file selection
+ */
+function handleRefVideoAttach(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    aiVideoFile = file;
+    aiVideoFrames = [];
+    renderAttachPreview();
+
+    // Extract frames from video
+    extractVideoFrames(file).then(function (frames) {
+        aiVideoFrames = frames;
+        renderAttachPreview();
+        debugLog('[AI] Extracted ' + frames.length + ' frames from video: ' + file.name);
+    }).catch(function (err) {
+        console.error('[AI] Video frame extraction failed:', err);
+        debugLog('[AI] Video frame extraction failed: ' + err.message);
+    });
+
+    e.target.value = '';
+}
+
+/**
+ * Extract frames from a video file using HTML5 canvas
+ */
+function extractVideoFrames(file, maxFrames) {
+    maxFrames = maxFrames || 10;
+    return new Promise(function (resolve, reject) {
+        const url = URL.createObjectURL(file);
+        const video = document.createElement('video');
+        video.muted = true;
+        video.preload = 'auto';
+
+        video.onloadedmetadata = function () {
+            const duration = video.duration;
+            if (!duration || duration <= 0) {
+                URL.revokeObjectURL(url);
+                return reject(new Error('Invalid video duration'));
+            }
+
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            // Scale down for smaller payload (max 640px wide)
+            const scale = Math.min(1, 640 / video.videoWidth);
+            canvas.width = Math.round(video.videoWidth * scale);
+            canvas.height = Math.round(video.videoHeight * scale);
+
+            const frameCount = Math.min(maxFrames, Math.floor(duration));
+            const interval = duration / (frameCount + 1);
+            const frames = [];
+            let currentFrame = 0;
+
+            function captureFrame() {
+                if (currentFrame >= frameCount) {
+                    URL.revokeObjectURL(url);
+                    resolve(frames);
+                    return;
+                }
+
+                const seekTime = interval * (currentFrame + 1);
+                video.currentTime = seekTime;
+            }
+
+            video.onseeked = function () {
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                const base64 = dataUrl.split(',')[1];
+                frames.push({ data: base64, mimeType: 'image/jpeg' });
+                currentFrame++;
+                captureFrame();
+            };
+
+            captureFrame();
+        };
+
+        video.onerror = function () {
+            URL.revokeObjectURL(url);
+            reject(new Error('Failed to load video'));
+        };
+
+        video.src = url;
+    });
+}
+
+/**
+ * Render attachment preview area
+ */
+function renderAttachPreview() {
+    if (!aiAttachPreview) return;
+
+    var html = '';
+
+    for (var i = 0; i < aiRefImages.length; i++) {
+        var img = aiRefImages[i];
+        html += '<div class="ai-attach-item">' +
+            '<img src="data:' + img.mimeType + ';base64,' + img.data + '" alt="ref">' +
+            '<span>' + (img.name || 'Image ' + (i + 1)) + '</span>' +
+            '<button class="ai-attach-remove" data-type="image" data-index="' + i + '" title="Remove">×</button>' +
+            '</div>';
+    }
+
+    if (aiVideoFile) {
+        var frameInfo = aiVideoFrames.length > 0 ? ' (' + aiVideoFrames.length + ' frames)' : ' (extracting...)';
+        html += '<div class="ai-attach-item">' +
+            '<span>🎬 ' + aiVideoFile.name + frameInfo + '</span>' +
+            '<button class="ai-attach-remove" data-type="video" data-index="0" title="Remove">×</button>' +
+            '</div>';
+    }
+
+    if (html) {
+        aiAttachPreview.innerHTML = html;
+        aiAttachPreview.classList.remove('hidden');
+
+        aiAttachPreview.querySelectorAll('.ai-attach-remove').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var type = this.getAttribute('data-type');
+                var idx = parseInt(this.getAttribute('data-index'));
+                if (type === 'image') aiRefImages.splice(idx, 1);
+                else { aiVideoFile = null; aiVideoFrames = []; }
+                renderAttachPreview();
+            });
+        });
+    } else {
+        aiAttachPreview.innerHTML = '';
+        aiAttachPreview.classList.add('hidden');
+    }
+}
+
+/**
+ * Get the API base URL from config
+ */
+function getAPIBaseUrl() {
+    if (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) {
+        return API_BASE_URL;
+    }
+    return 'https://banner-generator-ai.vercel.app';
+}
+
+/**
+ * Handle AI Generate button click
+ */
+async function handleAIGenerate() {
+    var brief = aiBriefInput ? aiBriefInput.value.trim() : '';
+    if (!brief) {
+        showAIError('Please describe your desired card layout.');
+        return;
+    }
+
+    var availableCards = (appState.trayCards || []).filter(function (c) { return c.inTray !== false; });
+    if (availableCards.length === 0) {
+        showAIError('No cards available. Load a deck first.');
+        return;
+    }
+
+    // BUG FIX: Read target layout from dropdown and load it BEFORE collecting slot IDs.
+    // Without this, selecting "Pusoy" while board is "Poker" sends Poker slot IDs to AI,
+    // causing all card placements to fail (slot IDs don't exist in the response layout).
+    var targetPreset = aiPresetSelect ? aiPresetSelect.value : 'current';
+    if (targetPreset !== 'current') {
+        var psEl = document.getElementById('presetSelect');
+        if (psEl) {
+            psEl.value = targetPreset;
+            handleLoadPreset();
+            debugLog('[AI] Switched board to target layout: ' + targetPreset);
+        }
+    }
+
+    var slots = appState.boardLayout.cardPlaces || [];
+    if (slots.length === 0) {
+        showAIError('No card slots on the board. Load a preset first.');
+        return;
+    }
+
+    var availableCardNames = availableCards.map(function (c) { return c.name; });
+    var availableSlotIds = slots.map(function (s) { return s.id; });
+    debugLog('[AI] Target preset: ' + targetPreset + ', slot IDs: ' + availableSlotIds.join(', '));
+
+    // Check mode toggle
+    var aiModeRadio = document.querySelector('input[name="aiMode"]:checked');
+    var aiMode = aiModeRadio ? aiModeRadio.value : 'setup';
+    var isScenarioMode = aiMode === 'scenario';
+
+    if (aiGenerateBtn) {
+        aiGenerateBtn.disabled = true;
+        aiGenerateBtn.classList.add('loading');
+    }
+    var attachInfo = '';
+    if (aiRefImages.length > 0) attachInfo += ' + ' + aiRefImages.length + ' ref image(s)';
+    if (aiVideoFrames.length > 0) attachInfo += ' + ' + aiVideoFrames.length + ' video frames';
+    showAIStatus(isScenarioMode ? '🎬 Generating scenario with AI...' + attachInfo : '🤖 Generating layout with AI...' + attachInfo);
+    hideAIError();
+
+    try {
+        var token = typeof getToken === 'function' ? getToken() : localStorage.getItem('autonim_poker_token');
+
+        var apiBase = getAPIBaseUrl();
+        var endpoint = isScenarioMode ? '/api/poker/ai-generate-scenario' : '/api/poker/ai-generate';
+        var response = await fetch(apiBase + endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify({
+                brief: brief,
+                availableCards: availableCardNames,
+                availableSlotIds: availableSlotIds,
+                targetPreset: targetPreset,
+                refImages: aiRefImages.length > 0 ? aiRefImages : undefined,
+                videoFrames: aiVideoFrames.length > 0 ? aiVideoFrames : undefined
+            })
+        });
+
+        if (!response.ok) {
+            var errData = await response.json().catch(function () { return {}; });
+            throw new Error(errData.error || 'Server error (' + response.status + ')');
+        }
+
+        var result = await response.json();
+        console.log('[AI] Full response:', JSON.stringify(result, null, 2));
+
+        if (isScenarioMode) {
+            // === SCENARIO MODE ===
+            if ((!result.initialSetup || result.initialSetup.length === 0) && (!result.steps || result.steps.length === 0)) {
+                showAIError('AI returned no setup or steps. Try a more detailed brief.');
+                return;
+            }
+
+            showAIStatus('🎬 Applying scenario: ' + (result.initialSetup?.length || 0) + ' cards + ' + (result.steps?.length || 0) + ' steps...');
+            await applyAIScenario(result);
+
+            // Build status
+            var statusParts = ['✅ Scenario applied! ' + (result.initialSetup?.length || 0) + ' cards, ' + (result.steps?.length || 0) + ' steps.'];
+            if (result.reasoning) statusParts.push('💭 AI: ' + result.reasoning);
+            if (result.debug) {
+                var d = result.debug;
+                var debugParts = ['Model: ' + d.model];
+                if (d.warnings && d.warnings.length > 0) debugParts.push('⚠ ' + d.warnings.length + ' warnings');
+                if (d.invalidCardRefs && d.invalidCardRefs.length > 0) debugParts.push('⚠ Invalid cards: ' + d.invalidCardRefs.join(', '));
+                statusParts.push('📊 ' + debugParts.join(' | '));
+            }
+            showAIStatus(statusParts.join('\n'));
+
+        } else {
+            // === SETUP MODE (existing behavior) ===
+            if (!result.cardAssignments || result.cardAssignments.length === 0) {
+                showAIError('AI returned no card assignments. Try a different brief.');
+                return;
+            }
+
+            showAIStatus('✅ AI generated ' + result.cardAssignments.length + ' card placements. Applying...');
+            await applyAILayout(result);
+
+            var statusParts = ['✅ Done! ' + result.cardAssignments.length + ' cards placed.'];
+            if (result.reasoning) statusParts.push('💭 AI: ' + result.reasoning);
+            if (result.debug) {
+                var d = result.debug;
+                var debugParts = ['Model: ' + d.model];
+                if (d.invalidCards && d.invalidCards.length > 0) debugParts.push('⚠ Invalid cards: ' + d.invalidCards.join(', '));
+                if (d.invalidSlots && d.invalidSlots.length > 0) debugParts.push('⚠ Invalid slots: ' + d.invalidSlots.join(', '));
+                if (d.duplicatesRemoved > 0) debugParts.push('⚠ ' + d.duplicatesRemoved + ' duplicates removed');
+                statusParts.push('📊 ' + debugParts.join(' | '));
+            }
+            showAIStatus(statusParts.join('\n'));
+            debugLog('[AI] Reasoning: ' + (result.reasoning || 'none'));
+        }
+
+    } catch (error) {
+        console.error('[AI] Generate error:', error);
+        showAIError(error.message || 'AI generation failed. Please try again.');
+    } finally {
+        if (aiGenerateBtn) {
+            aiGenerateBtn.disabled = false;
+            aiGenerateBtn.classList.remove('loading');
+        }
+    }
+}
+
+/**
+ * Apply AI-generated layout to the board
+ */
+async function applyAILayout(result) {
+    // NOTE: Do NOT re-load preset here. handleAIGenerate() already loaded the
+    // correct preset BEFORE collecting slot IDs and sending them to the API.
+    // Re-loading a different preset (e.g. server returning "pusoy" when user
+    // selected "poker") would cause slot ID mismatch and cards flying off-grid.
+
+    handleResetTable();
+    await new Promise(function (r) { setTimeout(r, 100); });
+
+    var placedCount = 0;
+    var errors = [];
+
+    for (var i = 0; i < result.cardAssignments.length; i++) {
+        var assignment = result.cardAssignments[i];
+        var slotId = assignment.slotId;
+        var cardName = assignment.cardName;
+        var faceUp = assignment.faceUp;
+
+        var card = null;
+        if (typeof resolveCardName === 'function') {
+            card = resolveCardName(cardName, appState.trayCards.filter(function (c) { return c.inTray !== false; }));
+        }
+        if (!card) {
+            card = appState.trayCards.find(function (c) {
+                return c.inTray !== false && c.name === cardName;
+            });
+        }
+        if (!card) {
+            errors.push('Card not found: ' + cardName);
+            continue;
+        }
+
+        var place = (appState.boardLayout.cardPlaces || []).find(function (p) { return p.id === slotId; });
+        if (!place) {
+            errors.push('Slot not found: ' + slotId);
+            continue;
+        }
+
+        var zoneName = 'grid-' + slotId;
+        var zoneElement = document.querySelector('.card-drop-zone[data-zone="' + zoneName + '"]');
+
+        if (zoneElement) {
+            card.isFaceUp = faceUp === true;
+            placeCardInZone(card, zoneName, place.rotation || 0, zoneElement);
+        } else {
+            card.isFaceUp = faceUp === true;
+            placeCardOnTable(card, place.x || 640, place.y || 360);
+        }
+        placedCount++;
+    }
+
+    if (errors.length > 0) {
+        debugLog('[AI] Placement errors:', errors);
+        console.warn('[AI] Some cards could not be placed:', errors);
+    }
+
+    debugLog('[AI] Applied layout: ' + placedCount + ' cards placed, ' + errors.length + ' errors');
+    setStatus('AI placed ' + placedCount + ' cards on the board', 'success');
+}
+
+/**
+ * Find a card in the tray by name (supports fuzzy matching via resolveCardName)
+ */
+function findTrayCardByName(cardName) {
+    var card = null;
+    if (typeof resolveCardName === 'function') {
+        card = resolveCardName(cardName, appState.trayCards.filter(function (c) { return c.inTray !== false; }));
+    }
+    if (!card) {
+        card = appState.trayCards.find(function (c) {
+            return c.inTray !== false && c.name === cardName;
+        });
+    }
+    return card;
+}
+
+/**
+ * Find a card on the table by name
+ */
+function findTableCardByName(cardName) {
+    return appState.tableCards.find(function (c) {
+        return c.name === cardName;
+    });
+}
+
+/**
+ * Place a card silently into a slot (no popups, no status messages)
+ */
+function silentPlaceCard(cardName, slotId, faceUp) {
+    var card = findTrayCardByName(cardName);
+    if (!card) {
+        console.warn('[AI Scenario] Card not in tray: ' + cardName);
+        return false;
+    }
+
+    var place = (appState.boardLayout.cardPlaces || []).find(function (p) { return p.id === slotId; });
+    if (!place) {
+        console.warn('[AI Scenario] Slot not found: ' + slotId);
+        return false;
+    }
+
+    var zoneName = 'grid-' + slotId;
+    var zoneElement = document.querySelector('.card-drop-zone[data-zone="' + zoneName + '"]');
+
+    var desiredFaceUp = faceUp === true;
+    card.isFaceUp = desiredFaceUp;
+
+    if (zoneElement) {
+        placeCardInZone(card, zoneName, place.rotation || 0, zoneElement);
+    } else {
+        debugLog('[AI Scenario] Zone element NOT found for: ' + zoneName + ', falling back to placeCardOnTable(' + (place.x || 640) + ',' + (place.y || 360) + ')');
+        placeCardOnTable(card, place.x || 640, place.y || 360);
+    }
+
+    // Re-set isFaceUp because placeCardInZone overrides it from UI checkboxes
+    card.isFaceUp = desiredFaceUp;
+    if (card.element) {
+        var img = card.element.querySelector('img');
+        if (img) {
+            img.src = desiredFaceUp ? (card.frontImageUrl || '') : (card.backImageUrl || '');
+        }
+        card.element.classList.toggle('face-up', desiredFaceUp);
+        card.element.classList.toggle('face-down', !desiredFaceUp);
+    }
+    return true;
+}
+
+/**
+ * Apply AI-generated multi-step scenario to the board
+ * Creates initial setup + recording steps with proper snapshots
+ */
+async function applyAIScenario(result) {
+    // Save state for rollback on error
+    var savedScenario = JSON.parse(JSON.stringify(scenarioData.scenario));
+    var savedSnapshots = JSON.parse(JSON.stringify(stepSnapshots));
+    var wasRecordPhase = appState.phase === 'record';
+
+    try {
+        // Suppress auto-step popups during bulk apply
+        appState._bulkApplying = true;
+
+        // === STEP 0: Reset and apply initial setup ===
+        // NOTE: Do NOT re-load preset here. handleAIGenerate() already loaded
+        // the correct preset BEFORE collecting slot IDs. Re-loading a different
+        // preset from the server response would cause slot ID mismatch.
+
+        handleResetTable();
+        await new Promise(function (r) { setTimeout(r, 100); });
+
+        // Ensure grid drop zones are rendered before placement
+        if (appState.boardLayout.type === 'grid') {
+            renderCardDropZones();
+        }
+
+        // Apply initial card placements
+        var setupCount = 0;
+        var setupErrors = [];
+        if (result.initialSetup && result.initialSetup.length > 0) {
+            for (var i = 0; i < result.initialSetup.length; i++) {
+                var entry = result.initialSetup[i];
+                if (silentPlaceCard(entry.card, entry.slot, entry.faceUp)) {
+                    setupCount++;
+                } else {
+                    setupErrors.push(entry.card + ' → ' + entry.slot);
+                }
+            }
+        }
+
+        debugLog('[AI Scenario] Initial setup: ' + setupCount + ' cards placed, ' + setupErrors.length + ' errors');
+        if (setupErrors.length > 0) {
+            console.warn('[AI Scenario] Setup errors:', setupErrors);
+        }
+
+        // Batch UI update after all cards placed
+        renderCardTray();
+        updateUI();
+
+        // Switch to record phase (saveInitialState is SKIPPED due to _bulkApplying)
+        setPhase('record');
+        await new Promise(function (r) { setTimeout(r, 50); });
+
+        // === Manually build scenarioData.initialState (since saveInitialState was skipped) ===
+        scenarioData.initialState = {};
+        appState.tableCards.forEach(function (card) {
+            scenarioData.initialState[card.id] = {
+                x: card.x || 0,
+                y: card.y || 0,
+                rotation: card.rotation || 0,
+                isFaceUp: card.isFaceUp,
+                zone: card.zone,
+                zonePosition: card.zonePosition || 0,
+                zOrder: typeof computeZOrderForCard === 'function' ? computeZOrderForCard(card) : 0,
+                flipAction: card.flipAction || false,
+                slamEffect: card.slamEffect || false,
+                isSelected: false
+            };
+        });
+        debugLog('[AI Scenario] Manual initialState built: ' + Object.keys(scenarioData.initialState).length + ' cards');
+
+        // === Manually build snapshot management (since saveInitialState was skipped) ===
+        scenarioData.scenario = [];
+        stepSnapshots = [];
+
+        // Build initial snapshot from current board state
+        var initialSnap = takeSnapshot();
+        stepSnapshots.push(JSON.parse(JSON.stringify(initialSnap)));
+
+        debugLog('[AI Scenario] Manual initial snapshot. tableCards=' + appState.tableCards.length + ', snapshot keys=' + Object.keys(initialSnap).length + ', stepSnapshots.length=' + stepSnapshots.length);
+
+        // === APPLY STEPS SEQUENTIALLY ===
+        if (result.steps && result.steps.length > 0) {
+            for (var si = 0; si < result.steps.length; si++) {
+                var step = result.steps[si];
+                debugLog('[AI Scenario] Processing step ' + (si + 1) + ': "' + step.label + '"');
+
+                // Take snapshot BEFORE this step's changes
+                var beforeSnapshot = takeSnapshot();
+
+                // Apply each action in this step
+                for (var ai = 0; ai < step.actions.length; ai++) {
+                    var act = step.actions[ai];
+                    applyScenarioAction(act);
+                }
+
+                // Wait for DOM updates
+                await new Promise(function (r) { setTimeout(r, 30); });
+
+                // Take snapshot AFTER this step's changes
+                var afterSnapshot = takeSnapshot();
+
+                // Compute internal actions from the diff
+                var internalActions = computeActions(beforeSnapshot, afterSnapshot);
+
+                // Build the step object
+                var stepObj = {
+                    stepId: si + 1,
+                    duration: step.duration || 1.0,
+                    actions: internalActions,
+                    label: step.label || ('Step ' + (si + 1))
+                };
+
+                // Push to scenario
+                scenarioData.scenario.push(stepObj);
+                stepSnapshots.push(JSON.parse(JSON.stringify(afterSnapshot)));
+
+                debugLog('[AI Scenario] Step ' + (si + 1) + ': ' + internalActions.length + ' internal actions | snapshots=' + stepSnapshots.length + ' scenario=' + scenarioData.scenario.length);
+            }
+        }
+
+        // === VERIFY SNAPSHOT INVARIANT ===
+        debugLog('[AI Scenario] Pre-check: snapshots=' + stepSnapshots.length + ', scenario=' + scenarioData.scenario.length + ', expected=' + (scenarioData.scenario.length + 1));
+        if (stepSnapshots.length !== scenarioData.scenario.length + 1) {
+            console.error('[AI Scenario] INVARIANT VIOLATION: snapshots=' + stepSnapshots.length + ', steps=' + scenarioData.scenario.length + ', expected snapshots=' + (scenarioData.scenario.length + 1));
+            // Log stack trace for debugging
+            console.trace('[AI Scenario] Invariant violation trace');
+            throw new Error('Snapshot invariant violated');
+        }
+
+        debugLog('[AI Scenario] ✓ Complete: ' + setupCount + ' cards, ' + scenarioData.scenario.length + ' steps. Snapshots: ' + stepSnapshots.length);
+
+        // Reset editing state
+        appState.isEditingStep = false;
+        currentStep = null;
+        startSnapshot = null;
+
+        // Update UI
+        if (typeof totalSteps !== 'undefined' && totalSteps) {
+            totalSteps.textContent = scenarioData.scenario.length;
+        }
+        if (typeof currentStepNum !== 'undefined' && currentStepNum) {
+            currentStepNum.textContent = '-';
+        }
+        if (typeof addStepBtn !== 'undefined' && addStepBtn) {
+            addStepBtn.disabled = false;
+        }
+
+        renderTimeline();
+        renderGroupOrderStrip();
+        updateUI();
+
+        setStatus('AI scenario: ' + setupCount + ' cards, ' + scenarioData.scenario.length + ' steps created', 'success');
+
+    } catch (err) {
+        console.error('[AI Scenario] Apply failed:', err);
+        // Rollback
+        scenarioData.scenario = savedScenario;
+        stepSnapshots = savedSnapshots;
+        handleResetTable();
+        throw new Error('Scenario apply failed: ' + err.message);
+    } finally {
+        appState._bulkApplying = false;
+    }
+}
+
+/**
+ * Apply a single AI scenario action to the current board state
+ */
+function applyScenarioAction(act) {
+    switch (act.action) {
+        case 'place': {
+            // Place a card from tray to a slot
+            var card = findTrayCardByName(act.card);
+            if (!card) {
+                console.warn('[AI Scenario] Cannot place - card not in tray: ' + act.card);
+                return;
+            }
+            var place = (appState.boardLayout.cardPlaces || []).find(function (p) { return p.id === act.to; });
+            if (!place) {
+                console.warn('[AI Scenario] Cannot place - slot not found: ' + act.to);
+                return;
+            }
+            var zoneName = 'grid-' + act.to;
+            var zoneElement = document.querySelector('.card-drop-zone[data-zone="' + zoneName + '"]');
+            card.isFaceUp = act.faceUp === true;
+            if (zoneElement) {
+                placeCardInZone(card, zoneName, place.rotation || 0, zoneElement);
+            } else {
+                placeCardOnTable(card, place.x || 640, place.y || 360);
+            }
+            // Re-set isFaceUp because placeCardInZone overrides it from UI checkboxes
+            card.isFaceUp = act.faceUp === true;
+            if (card.element) {
+                var img = card.element.querySelector('img');
+                if (img) {
+                    img.src = card.isFaceUp ? (card.frontImageUrl || '') : (card.backImageUrl || '');
+                }
+                card.element.classList.toggle('face-up', card.isFaceUp);
+                card.element.classList.toggle('face-down', !card.isFaceUp);
+            }
+            break;
+        }
+
+        case 'flip': {
+            // Flip a card in-place
+            var card = findTableCardByName(act.card);
+            if (!card) {
+                console.warn('[AI Scenario] Cannot flip - card not on table: ' + act.card);
+                return;
+            }
+            card.isFaceUp = act.faceUp === true;
+            // Re-render the card element
+            if (card.element) {
+                if (card.isFaceUp) {
+                    card.element.classList.remove('face-down');
+                    card.element.classList.add('face-up');
+                } else {
+                    card.element.classList.remove('face-up');
+                    card.element.classList.add('face-down');
+                }
+                // Update the image
+                var img = card.element.querySelector('img');
+                if (img) {
+                    img.src = card.isFaceUp ? (card.frontImageUrl || '') : (card.backImageUrl || '');
+                }
+            }
+            break;
+        }
+
+        case 'move': {
+            // Move card from current zone to new zone
+            var card = findTableCardByName(act.card);
+            if (!card) {
+                console.warn('[AI Scenario] Cannot move - card not on table: ' + act.card);
+                return;
+            }
+            var oldZone = card.zone;
+
+            // Remove from current zone visually
+            if (card.element) {
+                card.element.remove();
+                card.element = null;
+            }
+
+            // Remove from tableCards
+            var idx = appState.tableCards.indexOf(card);
+            if (idx > -1) appState.tableCards.splice(idx, 1);
+
+            // Re-index remaining cards in old zone
+            if (oldZone) {
+                appState.tableCards.filter(function (c) { return c.zone === oldZone; })
+                    .sort(function (a, b) { return (a.zonePosition || 0) - (b.zonePosition || 0); })
+                    .forEach(function (c, i) { c.zonePosition = i; });
+            }
+
+            // Place in new zone
+            var targetSlotId = act.to;
+            var place = (appState.boardLayout.cardPlaces || []).find(function (p) { return p.id === targetSlotId; });
+            if (!place) {
+                console.warn('[AI Scenario] Cannot move - target slot not found: ' + targetSlotId);
+                return;
+            }
+
+            if (act.faceUp !== undefined) card.isFaceUp = act.faceUp === true;
+            card.rotation = place.rotation || 0;
+            card.zone = 'grid-' + targetSlotId;
+            card.zonePosition = appState.tableCards.filter(function (c) { return c.zone === card.zone; }).length;
+
+            appState.tableCards.push(card);
+            var zoneElement = document.querySelector('.card-drop-zone[data-zone="' + card.zone + '"]');
+            if (zoneElement) {
+                createZoneCardElement(card, zoneElement);
+            }
+            break;
+        }
+
+        case 'remove': {
+            // Remove card from board (return to tray)
+            var card = findTableCardByName(act.card);
+            if (!card) {
+                console.warn('[AI Scenario] Cannot remove - card not on table: ' + act.card);
+                return;
+            }
+            var oldZone = card.zone;
+
+            // Remove element
+            if (card.element) {
+                card.element.remove();
+                card.element = null;
+            }
+
+            // Remove from tableCards
+            var idx = appState.tableCards.indexOf(card);
+            if (idx > -1) appState.tableCards.splice(idx, 1);
+
+            // Re-index remaining cards in old zone
+            if (oldZone) {
+                appState.tableCards.filter(function (c) { return c.zone === oldZone; })
+                    .sort(function (a, b) { return (a.zonePosition || 0) - (b.zonePosition || 0); })
+                    .forEach(function (c, i) { c.zonePosition = i; });
+            }
+
+            // Return to tray
+            card.inTray = true;
+            card.zone = null;
+            card.zonePosition = 0;
+            break;
+        }
+
+        default:
+            console.warn('[AI Scenario] Unknown action: ' + act.action + ' for ' + act.card);
+    }
+}
+
+function showAIStatus(msg) {
+    if (aiStatus) {
+        aiStatus.textContent = msg;
+        aiStatus.classList.remove('hidden');
+    }
+}
+
+function hideAIStatus() {
+    if (aiStatus) aiStatus.classList.add('hidden');
+}
+
+function showAIError(msg) {
+    if (aiError) {
+        aiError.textContent = '❌ ' + msg;
+        aiError.classList.remove('hidden');
+    }
+    hideAIStatus();
+}
+
+function hideAIError() {
+    if (aiError) aiError.classList.add('hidden');
+}
+
+

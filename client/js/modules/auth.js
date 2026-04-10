@@ -161,6 +161,8 @@ function logout() {
 // ============================================
 
 function showLoginScreen() {
+    console.warn('[DEV BYPASS] showLoginScreen requested but bypassed in Dev mode');
+    return;
     const loginOverlay = document.getElementById('loginOverlay');
     const appWrapper = document.querySelector('.app-wrapper');
     const timelineBar = document.getElementById('timelineBar');

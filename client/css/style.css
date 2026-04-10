@@ -4923,4 +4923,108 @@ body.indicator-active .ctrl-hint {
     text-anchor: middle;
     dominant-baseline: central;
 }
-
+
+
+/* --- Drag and Drop UX Enhancements --- */
+.poker-table:has(.card-drop-zone.drag-over, .player-zone.drag-over) .card-drop-zone:not(.drag-over),
+.poker-table:has(.card-drop-zone.drag-over, .player-zone.drag-over) .player-zone:not(.drag-over) {
+    opacity: 0.3 !important;
+    filter: grayscale(100%) !important;
+    transition: opacity 0.2s ease, filter 0.2s ease !important;
+}
+
+.card-drop-zone.drag-over,
+.player-zone.drag-over {
+    opacity: 1 !important;
+    filter: none !important;
+    scale: 1.15 !important;
+    z-index: 1000 !important;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6) !important;
+    border-color: var(--accent-green) !important;
+    background: rgba(78, 201, 176, 0.3) !important;
+    transition: scale 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.2s, filter 0.2s, box-shadow 0.2s, background 0.2s !important;
+}
+
+/* UI Drop Zone Number Popup Enhancement */
+.card-drop-zone .zone-number, .player-zone .zone-number {
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+    background: transparent;
+}
+.card-drop-zone.drag-over .zone-number,
+.player-zone.drag-over .zone-number {
+    transform: translateY(-65px) scale(1.4) !important;
+    color: #fff !important;
+    background: var(--accent-green) !important;
+    padding: 6px 14px !important;
+    border-radius: 8px !important;
+    z-index: 2010 !important;
+    font-weight: 900 !important;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.6) !important;
+}
+
+/* Explicit dim for inner cards in OTHER zones */
+.poker-table:has(.card-drop-zone.drag-over, .player-zone.drag-over) .card-drop-zone:not(.drag-over) .card,
+.poker-table:has(.card-drop-zone.drag-over, .player-zone.drag-over) .player-zone:not(.drag-over) .card,
+.poker-table:has(.card-drop-zone.drag-over, .player-zone.drag-over) .card-drop-zone:not(.drag-over) .zone-card,
+.poker-table:has(.card-drop-zone.drag-over, .player-zone.drag-over) .player-zone:not(.drag-over) .zone-card {
+    filter: brightness(0.4) grayscale(100%) !important;
+    transition: opacity 0.2s ease, filter 0.2s ease !important;
+}
+
+/* ============================================
+   Mini Preview Overlay
+============================================ */
+.mini-preview-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 960px;
+    height: 575px; 
+    background: rgba(10, 15, 10, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    box-shadow: 0 30px 100px rgba(0,0,0,0.9);
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    backdrop-filter: blur(10px);
+    transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.mini-preview-overlay.visible {
+    opacity: 1;
+}
+
+.mini-preview-title {
+    padding: 8px;
+    text-align: center;
+    font-weight: 800;
+    background: rgba(0,0,0,0.6);
+    font-size: 14px;
+    color: var(--accent-yellow);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.mini-preview-table {
+    position: relative;
+    flex: 1;
+    overflow: hidden;
+    /* Mini-poker table background */
+    background: radial-gradient(ellipse at center, #2a4a3a 0%, #153020 100%);
+}
+
+.mini-preview-marker {
+    position: absolute;
+    border: 1px dashed rgba(255,255,255,0.4);
+    background: rgba(255,255,255,0.1);
+    box-sizing: border-box;
+    border-radius: 3px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.5);
+}

@@ -203,6 +203,18 @@ function deleteSlotGroup(groupId) {
     var idx = appState.boardLayout.slotGroups.findIndex(function (g) { return g.id === groupId; });
     if (idx < 0) return;
 
+    var group = appState.boardLayout.slotGroups[idx];
+
+    // Remove the slots from the board altogether
+    if (group.slotIds && group.slotIds.length > 0 && appState.boardLayout.cardPlaces) {
+        appState.boardLayout.cardPlaces = appState.boardLayout.cardPlaces.filter(function(place) {
+            return group.slotIds.indexOf(place.id) === -1;
+        });
+        
+        if (typeof renderCardDropZones === 'function') renderCardDropZones();
+        if (typeof updateCardPlacesList === 'function') updateCardPlacesList();
+    }
+
     appState.boardLayout.slotGroups.splice(idx, 1);
     renormalizeGroupOrder();
 
